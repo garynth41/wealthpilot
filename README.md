@@ -38,7 +38,9 @@ npm install
 npm run dev                 # http://localhost:5173
 ```
 
-Scripts: `npm run typecheck` · `npm test` (32 unit tests: engines + email parser) · `npm run build` · `npm run e2e` (Playwright smoke through every page in demo mode, desktop + phone; needs `npx playwright install chromium` once) · `npm run e2e:db` (same against Supabase with `E2E_EMAIL` / `E2E_PW`) · `npm run check` (all of the above) · `npm run deploy` (build and push `dist/` to the `gh-pages` branch).
+Scripts: `npm run typecheck` · `npm test` (32 unit tests: engines + email parser) · `npm run build` · `npm run e2e` (Playwright smoke through every page in demo mode, desktop + phone; needs `npx playwright install chromium` once, or set `PW_CHROMIUM` to an installed Chrome/Edge executable) · `npm run e2e:db` (same against Supabase with `E2E_EMAIL` / `E2E_PW`) · `npm run check` (all of the above) · `npm run deploy` (build and push `dist/` to the `gh-pages` branch).
+
+**Windows:** `setup.ps1` (next to this README) does the whole first-time setup — checks Node ≥ 20, extracts the zip, creates `.env`, installs packages and the Playwright browser, runs `npm run check`, then starts `npm run dev` in its own window and opens the app. `powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "<path to zip>"`. Keep the project **outside OneDrive** (the script defaults to `C:\Users\<you>\CascadeProjects\pocketledger`): `node_modules` has tens of thousands of files and OneDrive sync fights with `npm install`.
 
 ## Deploy (GitHub Pages)
 
@@ -74,3 +76,8 @@ e2e/                   Playwright smoke + DB tests
 - Budget actuals are **never stored** — they are computed from transactions for the period's date range. A budget line only holds the plan (+ rollover).
 - Every write goes through the store (`insert / update / remove`), which is optimistic and falls back to the Repo; transactions post to balances via `lib/ledger.ts`.
 - Pages never talk to Supabase directly.
+
+## Changelog
+
+- **0.1.1** — e2e scripts resolve `dist/` with `fileURLToPath` so `npm run check` passes on Windows (`URL.pathname` gave `/C:/…`); `setup.ps1` first-time setup script for Windows; README run notes.
+- **0.1.0** — first release, spun off from CareerShift's finance modules.

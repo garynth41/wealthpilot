@@ -3,7 +3,8 @@ import { chromium } from 'playwright'
 import { createServer } from 'node:http'
 import { readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, extname } from 'node:path'
-const root = new URL('../dist', import.meta.url).pathname; mkdirSync('e2e/shots', { recursive: true })
+import { fileURLToPath } from 'node:url'
+const root = fileURLToPath(new URL('../dist', import.meta.url)); mkdirSync('e2e/shots', { recursive: true })   // fileURLToPath: works on Windows too (URL.pathname gives "/C:/…")
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }
 const srv = createServer((req, res) => { let p = join(root, decodeURIComponent(req.url.split('?')[0].split('#')[0])); if (!existsSync(p) || p.endsWith('/')) p = join(root, 'index.html'); res.setHeader('Content-Type', types[extname(p)] || 'application/octet-stream'); res.end(readFileSync(p)) }).listen(4173)
 let F = 0; const ok = (c, m) => { if (!c) F++; console.log((c ? 'PASS ' : 'FAIL ') + m) }
