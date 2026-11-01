@@ -1,8 +1,9 @@
 // DB mode: sign in with the confirmed e2e user, open the household, add a transaction, check it persisted and the budget period starts via RPC.
 import { chromium } from 'playwright'
-import { createServer } from 'node:http'; import { readFileSync, existsSync } from 'node:fs'; import { join, extname } from 'node:path'; import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'; import { readFileSync, statSync } from 'node:fs'; import { join, extname } from 'node:path'; import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../dist', import.meta.url)); const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
-const srv = createServer((req, res) => { let p = join(root, req.url.split('?')[0].split('#')[0]); if (!existsSync(p) || p.endsWith('/')) p = join(root, 'index.html'); res.setHeader('Content-Type', types[extname(p)] || 'text/plain'); res.end(readFileSync(p)) }).listen(4176)
+const isFile = f => { try { return statSync(f).isFile() } catch { return false } }   // a directory path must fall back to index.html too (Windows: readFileSync on a dir throws EISDIR)
+const srv = createServer((req, res) => { let p = join(root, req.url.split('?')[0].split('#')[0]); if (!isFile(p)) p = join(root, 'index.html'); res.setHeader('Content-Type', types[extname(p)] || 'text/plain'); res.end(readFileSync(p)) }).listen(4176)
 let F = 0; const ok = (c, m) => { if (!c) F++; console.log((c ? 'PASS ' : 'FAIL ') + m) }
 const b = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}); const p = await b.newPage({ viewport: { width: 1400, height: 950 } }); const errors = []; p.on('pageerror', e => errors.push(e.message))
 await p.goto('http://localhost:4176/'); await p.waitForTimeout(800); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(600)
