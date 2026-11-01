@@ -1,7 +1,7 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  First-time setup of PocketLedger on Windows: extract → install → test (npm run check) → production build → start dev server.
+  First-time setup of PocketLedger on Windows: extract -> install -> test (npm run check) -> production build -> start dev server.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "C:\Users\garyn\OneDrive\Claude_Apps\PocketLedger\pocketledger-v0.1.1.zip"
@@ -10,7 +10,7 @@
   Path to the project zip. Default: the newest pocketledger-v*.zip in the folder this script is in, then in
   %USERPROFILE%\OneDrive\Claude_Apps\PocketLedger, then in Downloads.
 .PARAMETER Dest
-  Where the project goes. Default: %USERPROFILE%\CascadeProjects\pocketledger. Keep this OUTSIDE OneDrive —
+  Where the project goes. Default: %USERPROFILE%\CascadeProjects\pocketledger. Keep this OUTSIDE OneDrive -
   node_modules has tens of thousands of files and OneDrive sync fights with npm install.
 .PARAMETER SkipCheck   Skip `npm run check` (typecheck + unit tests + build + Playwright smoke).
 .PARAMETER NoDev       Don't start the dev server / open the browser at the end.
@@ -26,10 +26,10 @@ function Step($m) { Write-Host "`n== $m" -ForegroundColor Cyan }
 function Ok($m)   { Write-Host "   OK  $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "   !!  $m" -ForegroundColor Yellow }
 function Fail($m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; exit 1 }
-function Run($exe, [string[]]$args) {
-  Write-Host "   > $exe $($args -join ' ')" -ForegroundColor DarkGray
-  & $exe @args
-  if ($LASTEXITCODE -ne 0) { Fail "$exe $($args -join ' ') exited with code $LASTEXITCODE" }
+function Run($exe, [string[]]$a) {
+  Write-Host "   > $exe $($a -join ' ')" -ForegroundColor DarkGray
+  & $exe @a
+  if ($LASTEXITCODE -ne 0) { Fail "$exe $($a -join ' ') exited with code $LASTEXITCODE" }
 }
 
 # ---------- 1. prerequisites ----------
@@ -37,13 +37,13 @@ Step 'Checking prerequisites'
 $node = Get-Command node -ErrorAction SilentlyContinue
 if (-not $node) { Fail 'Node.js is not installed. Install the LTS from https://nodejs.org (20 or newer), reopen PowerShell, run again.' }
 $nodeVer = (& node -v).TrimStart('v'); $major = [int]($nodeVer.Split('.')[0])
-if ($major -lt 20) { Fail "Node $nodeVer is too old — the app needs 20 or newer." }
+if ($major -lt 20) { Fail "Node $nodeVer is too old - the app needs 20 or newer." }
 Ok "Node $nodeVer"
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue; if (-not $npm) { Fail 'npm.cmd not found on PATH.' }
 Ok "npm $(& npm.cmd -v)"
 $git = Get-Command git -ErrorAction SilentlyContinue
-if ($git) { Ok "git $((& git --version) -replace 'git version ','')" } else { Warn 'git not found — needed later for GitHub Pages deploy (https://git-scm.com).' }
-if (Get-Command gh -ErrorAction SilentlyContinue) { Ok 'GitHub CLI (gh) present' } else { Warn 'GitHub CLI (gh) not found — optional; makes creating the repo for deploy easier (winget install GitHub.cli).' }
+if ($git) { Ok "git $((& git --version) -replace 'git version ','')" } else { Warn 'git not found - needed later for GitHub Pages deploy (https://git-scm.com).' }
+if (Get-Command gh -ErrorAction SilentlyContinue) { Ok 'GitHub CLI (gh) present' } else { Warn 'GitHub CLI (gh) not found - optional; makes creating the repo for deploy easier (winget install GitHub.cli).' }
 if ($Dest -match 'OneDrive') { Warn "Destination is inside OneDrive ($Dest). npm install will be slow and sync may corrupt node_modules. Consider -Dest outside OneDrive." }
 
 # ---------- 2. locate the zip ----------
@@ -74,7 +74,7 @@ $keepEnv = $null
 if (Test-Path $Dest) {
   if (Test-Path (Join-Path $Dest '.env')) { $keepEnv = Get-Content (Join-Path $Dest '.env') -Raw }
   $bak = "$Dest.bak-" + (Get-Date -Format 'yyyyMMdd-HHmm')
-  Warn "Destination exists — moving the old copy to $bak"
+  Warn "Destination exists - moving the old copy to $bak"
   Move-Item -Path $Dest -Destination $bak
 }
 New-Item -ItemType Directory -Path (Split-Path $Dest -Parent) -Force | Out-Null
@@ -99,14 +99,14 @@ Step 'Installing the Playwright browser for the smoke tests'
 if ($LASTEXITCODE -ne 0) {
   $fallback = @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
                 "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
-  if ($fallback) { $env:PW_CHROMIUM = $fallback; Warn "Playwright download failed — using $fallback for the smoke tests instead" }
+  if ($fallback) { $env:PW_CHROMIUM = $fallback; Warn "Playwright download failed - using $fallback for the smoke tests instead" }
   else { Warn 'Playwright download failed and no Chrome/Edge found; the e2e step of npm run check will fail.' }
 } else { Ok 'Chromium ready' }
 
 # ---------- 6. testing: typecheck + unit tests + production build + smoke ----------
 if ($SkipCheck) { Step 'Skipping npm run check (-SkipCheck)'; Run 'npm.cmd' @('run', 'build') }
 else {
-  Step 'Running the full check: typecheck → 32 unit tests → production build → Playwright smoke (desktop + phone)'
+  Step 'Running the full check: typecheck -> 32 unit tests -> production build -> Playwright smoke (desktop + phone)'
   Run 'npm.cmd' @('run', 'check')
   Ok 'All checks passed'
 }
@@ -116,20 +116,20 @@ Step 'Production build'
 if (Test-Path (Join-Path $Dest 'dist\index.html')) {
   $size = [math]::Round(((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 2)
   Ok "dist\ is ready ($size MB) - this is what 'npm run deploy' publishes to GitHub Pages"
-} else { Warn 'dist\index.html not found — the build did not complete.' }
+} else { Warn 'dist\index.html not found - the build did not complete.' }
 if (Test-Path .git) { Ok 'Git repository present (commit history preserved from the zip)' } elseif ($git) { & git init -q; & git add -A; & git -c user.name=setup -c user.email=setup@local commit -q -m 'PocketLedger initial import'; Ok 'Initialised a git repository' }
 
 # ---------- 8. start the dev server ----------
 if (-not $NoDev) {
   Step 'Starting the dev server (new window) and opening the app'
-  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', "Set-Location '$Dest'; `$host.UI.RawUI.WindowTitle = 'PocketLedger dev server — close this window to stop'; npm.cmd run dev"
+  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', "Set-Location '$Dest'; `$host.UI.RawUI.WindowTitle = 'PocketLedger dev server - close this window to stop'; npm.cmd run dev"
   $up = $false
   foreach ($i in 1..40) {
     Start-Sleep -Milliseconds 500
     try { $null = Invoke-WebRequest -Uri 'http://localhost:5173/' -UseBasicParsing -TimeoutSec 2; $up = $true; break } catch {}
   }
   if ($up) { Start-Process 'http://localhost:5173/'; Ok 'App is running at http://localhost:5173 (dev server window stays open)' }
-  else { Warn 'The dev server has not answered yet — check the dev-server window, then open http://localhost:5173 yourself.' }
+  else { Warn 'The dev server has not answered yet - check the dev-server window, then open http://localhost:5173 yourself.' }
 }
 
 Write-Host @"
