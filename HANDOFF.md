@@ -1,0 +1,42 @@
+# Handoff — PocketLedger (start here in the new chat)
+
+**Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
+
+## State as of this handoff (v0.1.0)
+
+- **Working, tested app** — see README for the feature list. 32 unit tests, 30 Playwright smoke checks (desktop + phone), 7 DB-mode checks all pass.
+- **Supabase project:** `pocketledger` — ref `dshswfcpovdpxcidolqb`, URL `https://dshswfcpovdpxcidolqb.supabase.co`, publishable key in `.env.example`. Schema applied as migrations `pocketledger_init`, `pocketledger_function_grants`, `pocketledger_helper_grants`, `pocketledger_fix_touch_and_log` (the combined, current schema is `supabase/migrations/0001_init.sql`). Email confirmation is ON (default) — new users must click the confirmation email before signing in.
+- **A throw-away e2e user exists** (`pl-e2e-1793508196267@gmail.com`, household "E2E household") — safe to delete from Supabase → Authentication.
+- **CareerShift's Supabase project (`jowuuzppfhqgusxqoqdk`) was PAUSED** to free the second free-tier slot. CareerShift is offline until it is restored (Supabase dashboard → project → Restore). Free tier allows 2 active projects.
+- Not yet done: GitHub repo + Pages deploy (`npm run deploy`), OAuth client IDs for Gmail/Outlook (Email → Settings), first real household data.
+
+## Architecture in one minute
+
+`pages/*` render from the zustand store (`app/store.ts`) which holds the whole household in memory (`Data`) and writes through a `Repo` (`SupabaseRepo` or `MemoryRepo` for the offline demo/tests). Realtime changes trigger a debounced `refresh()`. All math lives in pure functions under `lib/` (unit-tested) — pages only format. Email capture: `lib/email/extract.ts` (email → fact, never invents numbers) → `propose.ts` (match to accounts / recurring / categories, describe changes) → `apply.ts` (writes). Charts go through `components/Chart.tsx` (readable-layout rules from CareerShift v1.26).
+
+## Data model (18 tables)
+
+households, household_members, household_invites · accounts (assets and liabilities in one table, `kind` decides) · statements · categories (group, priority Essential/Important/Discretionary, Fixed/Variable/Irregular, default_budget, rollover) · pay_schedules (frequency + anchor date) · budget_periods + budget_lines (plan only; actuals derived) · transactions (positive amount; kind expense/income/transfer; transfer to a liability = debt payment) · recurring + bill_occurrences · goals + goal_contributions · planned_items · net_worth_snapshots · hardship_outreach · email_items + email_ledger · activity_log, ref_counters, app_meta.
+
+## Conventions to keep
+
+- Edit engines in `src/lib`, not in pages. Add a unit test in `src/lib/engines.test.ts` or `src/lib/email/email.test.ts` for every rule change.
+- Run `npm run check` before delivering; keep `README.md` current; bump `APP_VERSION` in `src/app/config.ts` (and `app_meta.latest_version` in the DB) on each release.
+- Never store email bodies or more than the last 4 digits of an account. Never invent an amount or date that is not in the email.
+- Schema changes: add a new file under `supabase/migrations/` AND apply it with the Supabase MCP (`apply_migration`); then run `get_advisors` (security).
+
+## Roadmap ideas (not started)
+
+1. CSV/OFX import of bank and card statements (map columns → transactions, dedupe by `external_id`).
+2. Rules engine for auto-categorizing by payee (extend the remembered-payee rules beyond email).
+3. Split transactions and tags UI; attachments (receipt photos) via Supabase Storage.
+4. Notifications: daily digest of bills due / low balance via a Supabase edge function + email.
+5. Sinking-fund math (yearly budgets spread per period) — the `budget_cadence` column exists, UI not yet.
+6. Multi-currency; per-member spending views; shared vs personal accounts.
+7. Bank sync via Plaid/Teller (would replace email capture for balances).
+8. PWA manifest + offline cache; native app wrappers.
+9. Migration helper to import CareerShift's finance data (expenses/debts/hardship/cash) into this schema.
+
+## Kickoff prompt for the new chat
+
+> I'm continuing work on **PocketLedger** (placeholder name), my personal budgeting/savings/financial-planning app. Attached is the project zip (Vite + React + TypeScript + Supabase; project ref dshswfcpovdpxcidolqb). Read HANDOFF.md and README.md first. Keep the conventions: engines in src/lib with unit tests, pages only render, run `npm run check` before delivering, never invent numbers from email. First task: …
