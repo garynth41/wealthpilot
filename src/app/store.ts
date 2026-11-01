@@ -14,7 +14,7 @@ interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
   repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean
   households: Array<{ id: string; name: string; role: Role }>
-  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number
+  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null
   settings: () => Settings
   canEdit: () => boolean; isOwner: () => boolean
   boot: () => Promise<void>
@@ -35,7 +35,7 @@ interface State {
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, households: [], latest: null, loadError: null, toasts: [], busy: 0,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   canEdit: () => { const s = get(); return s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly) },
   isOwner: () => get().mode === 'demo' || get().role === 'owner',
@@ -72,7 +72,7 @@ export const useStore = create<State>((set, get) => ({
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
-    try { const r = await repo.loadAll(); set({ household: r.household, data: r.data, role: r.role, readOnly: r.readOnly, loadError: null }) }
+    try { const r = await repo.loadAll(); set({ household: r.household, data: r.data, role: r.role, readOnly: r.readOnly, loadError: null, lastRefresh: Date.now() }) }
     catch (e) { set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
   async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); return r },

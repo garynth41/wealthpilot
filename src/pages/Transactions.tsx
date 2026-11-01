@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useData } from '../app/hooks'
 import type { Transaction, TxnKind } from '../app/data/types'
@@ -17,7 +18,8 @@ export function TransactionsPage() {
   const sp = spanFor(data, settings); const t = today()
   const from = range === 'period' ? sp.start : range === '30' ? addDays(t, -29) : range === 'month' ? monthStart(curMonth()) : range === '90' ? addDays(t, -89) : '0000'
   const to = range === 'period' ? sp.end : '9999'
-  const rows = useMemo(() => data.transactions.filter(x => x.date >= from && x.date <= to && (kind === 'all' || (kind === 'uncat' ? !x.category_id && x.kind !== 'transfer' : x.kind === kind)) && (!acct || x.account_id === acct || x.to_account_id === acct)).sort((a, b) => b.date.localeCompare(a.date) || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.transactions, from, to, kind, acct])
+  const [params, setParams] = useSearchParams(); const ids = useMemo(() => new Set((params.get('ids') || '').split(',').filter(Boolean)), [params])
+  const rows = useMemo(() => data.transactions.filter(x => (ids.size ? ids.has(x.id) : x.date >= from && x.date <= to) && (kind === 'all' || (kind === 'uncat' ? !x.category_id && x.kind !== 'transfer' : x.kind === kind)) && (!acct || x.account_id === acct || x.to_account_id === acct)).sort((a, b) => b.date.localeCompare(a.date) || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.transactions, from, to, kind, acct, ids])
   const inc = sum(rows.filter(x => x.kind === 'income' && x.status !== 'void').map(x => x.amount)), exp = sum(rows.filter(x => x.kind === 'expense' && x.status !== 'void').map(x => x.amount)), tr = sum(rows.filter(x => x.kind === 'transfer' && x.status !== 'void').map(x => x.amount))
   const uncat = data.transactions.filter(x => !x.category_id && x.kind !== 'transfer' && x.status !== 'void').length
   const change = (row: Transaction, k: string, v: unknown) => guarded(async () => {
@@ -38,6 +40,7 @@ export function TransactionsPage() {
   ]
   const addForm = () => open(<AddTxn onDone={close} />, { wide: true })
   return <>
+    {ids.size > 0 && <div className="banner info" style={{ marginBottom: 12 }}>Showing {rows.length} linked transaction{rows.length === 1 ? '' : 's'} from Insights. <button className="btn sm" onClick={() => setParams({})}>Show all</button></div>}
     <div className="kpis" style={{ marginBottom: 16 }}><KPI l="Income" v={fmtMoney(inc)} cls="good" s={`${rows.filter(x => x.kind === 'income').length} deposits`} /><KPI l="Spending" v={fmtMoney(exp)} cls="warn" s={`${rows.filter(x => x.kind === 'expense').length} transactions`} /><KPI l="Transfers & payments" v={fmtMoney(tr)} cls="info" s="to savings, cards and loans" /><KPI l="Net" v={(inc - exp - tr >= 0 ? '+' : '') + fmtMoney(inc - exp - tr)} cls={inc - exp - tr >= 0 ? 'good' : 'crit'} s="income − spending − transfers" /><KPI l="Uncategorized" v={String(uncat)} cls={uncat ? 'warn' : 'good'} s={uncat ? 'not counted against any budget line' : 'everything is categorized'} /></div>
     <div className="slicers"><div className="slicer"><div className="l">Range</div><div className="opts">{([['period', sp.label], ['30', 'Last 30 days'], ['month', 'This month'], ['90', 'Last 90 days'], ['all', 'All']] as const).map(([v, l]) => <button key={v} className={range === v ? 'on' : ''} onClick={() => setRange(v)}>{l}</button>)}</div></div>
       <div className="slicer"><div className="l">Type</div><div className="opts">{([['all', 'All'], ['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers'], ['uncat', 'Uncategorized']] as const).map(([v, l]) => <button key={v} className={kind === v ? 'on' : ''} onClick={() => setKind(v)}>{l}</button>)}</div></div>

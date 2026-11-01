@@ -17,8 +17,10 @@ Personal budgeting, savings and financial-planning app — a stand-alone spin-of
 | Money in & out | **Budget** | budget by **calendar month, pay period, every 2 weeks, twice a month or week**; planned vs spent per category and group; rollover categories; pace; savings rate; insights; chart; all periods |
 | | **Transactions** | ledger with inline editing, filters, add form (expense / income / transfer); every transaction moves account balances; actuals are always derived from here |
 | | **Bills & Subscriptions** | recurring items (bills, subscriptions, debt payments, savings transfers, recurring income) with schedules, autopay, reminders; upcoming/overdue list; Mark paid / Skip; cash needed by day |
+| | **Spending Intelligence** | merchant analysis (totals, visits, change vs prior window), subscriptions & detected recurring charges (incl. ones missing from Bills), waste detection (duplicates, bank/late fees, rising or dormant subscriptions, spending spikes on variable spend, outliers), financial-health scores (burn rate, savings rate, expense ratio, months covered, cash-flow score, efficiency score) |
 | | **Income & Pay Periods** | pay schedules (weekly, every 2 weeks, twice a month, monthly, …) from one known pay date; paychecks ahead; expected vs received; income by month |
 | Accounts & debt | **Accounts** | checking, savings, cash, investment, retirement, cards, loans; statements history; Record payment / New statement; net-worth snapshots |
+| | **Bank Connections** | import CSV / OFX / QFX statements: column auto-detection with manual override, Type-column and sign handling, de-duplication (file id, same day+amount+payee, near match, repeated in file), preview, balances posted through the ledger, optional statement balance, import history; bank sync (Plaid/Teller) marked not connected |
 | | **Debt Payoff** | avalanche vs snowball, minimums-only vs planned vs extra, utilization, interest cost, payoff projection and dates |
 | | **Savings Goals** | emergency fund, sinking funds, purchases, debt-payoff goals; progress, need-per-month, on-track, contributions |
 | Planning | **Trends & Analysis** | week / month / year income, spending, debt and net; spending by category and group; day-of-week; net worth |
@@ -42,7 +44,7 @@ npm install
 npm run dev                 # http://localhost:5173
 ```
 
-Scripts: `npm run typecheck` · `npm test` (32 unit tests: engines + email parser) · `npm run build` · `npm run e2e` (Playwright smoke through every page in demo mode, desktop + phone; needs `npx playwright install chromium` once, or set `PW_CHROMIUM` to an installed Chrome/Edge executable) · `npm run e2e:db` (same against Supabase with `E2E_EMAIL` / `E2E_PW`) · `npm run check` (all of the above) · `npm run deploy` (build and push `dist/` to the `gh-pages` branch).
+Scripts: `npm run typecheck` · `npm test` (53 unit tests: engines, intelligence, import, email parser) · `npm run build` · `npm run e2e` (Playwright smoke through every page in demo mode, desktop + phone; needs `npx playwright install chromium` once, or set `PW_CHROMIUM` to an installed Chrome/Edge executable) · `npm run e2e:db` (same against Supabase with `E2E_EMAIL` / `E2E_PW`) · `npm run check` (all of the above) · `npm run deploy` (build and push `dist/` to the `gh-pages` branch).
 
 **Windows:** `setup.ps1` (next to this README) does the whole first-time setup — checks Node ≥ 20, extracts the zip, creates `.env`, installs packages and the Playwright browser, runs `npm run check`, then starts `npm run dev` in its own window and opens the app. `powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "<path to zip>"`. Keep the project **outside OneDrive** (the script defaults to `C:\Users\<you>\CascadeProjects\wealthpilot`): `node_modules` has tens of thousands of files and OneDrive sync fights with `npm install`.
 
@@ -65,7 +67,7 @@ Scripts: `npm run typecheck` · `npm test` (32 unit tests: engines + email parse
 src/
   app/            config, Supabase client, zustand store, hooks
     data/         types (one interface per table), Repo interface, SupabaseRepo, MemoryRepo, demoSeed
-  lib/            pure engines (unit-tested): dates, money, accounts, paySchedule, periods, budget, recurring, debts, forecast, goals, ledger
+  lib/            pure engines (unit-tested): dates, money, accounts, paySchedule, periods, budget, recurring, debts, forecast, goals, ledger, intelligence, import
     email/        text/money/date extraction, extract (one email → one fact), propose (match + describe), apply (write), mail (Gmail/Outlook)
   components/     ui (Card, KPI, Pill, Modal…), Table (editable grid), Chart (Plotly wrapper + SVG gauge), Layout (nav, topbar, mobile)
   pages/          one file per screen
@@ -81,8 +83,13 @@ e2e/                   Playwright smoke + DB tests
 - Every write goes through the store (`insert / update / remove`), which is optimistic and falls back to the Repo; transactions post to balances via `lib/ledger.ts`.
 - Pages never talk to Supabase directly.
 
+## Roadmap
+
+`docs/ROADMAP.md` maps the "Personal Finance, Wealth Management & Tax Intelligence Platform" spec onto the app, release by release, and marks what is front-end only, what needs a migration or edge function, and what needs a paid service.
+
 ## Changelog
 
+- **0.3.0** — **Spending Intelligence** page (`lib/intelligence.ts`: merchants, detected recurring charges, subscription summary, waste detection, health scores) · **Bank Connections** page with CSV / OFX / QFX import and de-duplication (`lib/import.ts`) · theme: light / dark / **system** · About panel shows environment (development / staging / production), build, database reachability + latency and last successful sync · Transactions deep-links (`#/transactions?ids=…`) from findings · 21 new unit tests (53 total), 8 new smoke checks (incl. a real CSV import through the UI) · `docs/ROADMAP.md`.
 - **0.2.0** — renamed to **WealthPilot**: new logo (`Logo.tsx` + `favicon.svg`), navy/teal/gold theme tokens (light + dark), storage-key prefix `wealthpilot.`, export/backup file names, `app` tag in JSON backups, `package.json` name, `setup.ps1` defaults.
 - **0.1.2** — fixed `npm run e2e` crashing on Windows with `EISDIR`: the e2e static servers served any request path that matched a real directory (e.g. `/assets`) straight to `readFileSync`. They now fall back to `index.html` unless the path is a regular file.
 - **0.1.1** — e2e scripts resolve `dist/` with `fileURLToPath` so `npm run check` passes on Windows (`URL.pathname` gave `/C:/…`); `setup.ps1` first-time setup script for Windows; README run notes.

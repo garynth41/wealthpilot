@@ -112,7 +112,9 @@ export interface Settings {
   outlook?: { clientId?: string; tenant?: string; account?: string; since?: string; lastRun?: string | null; lastSummary?: string }
   finmail?: { since?: string; auto?: boolean; rules?: Record<string, { account?: string; category?: string; recurring?: string; none?: boolean }> }
   playbook?: string[]
+  imports?: ImportLog[]             // statement-import history (newest first, capped at 50)
 }
+export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
 export type Collection = 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems'

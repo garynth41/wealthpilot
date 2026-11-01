@@ -15,7 +15,7 @@ for (const W of [1400, 390]) {
   await p.goto('http://localhost:4173/'); await p.waitForTimeout(800); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(600)
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
-  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/goals', '/trends', '/hardship', '/email', '/settings', '/']
+  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/goals', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
   for (const path of pages) { await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(900); const h = await p.locator('h1').first().textContent(); const sw = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth); ok(h && sw <= 1, `${W}: ${path} renders "${h}" (sideways overflow ${sw}px)`); await p.screenshot({ path: `e2e/shots/${W}_${path.replace('/', '') || 'home'}.png`, fullPage: true }) }
   if (W === 1400) {
     // add a transaction
@@ -47,7 +47,23 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(800); ok((await p.locator('.card b').first().textContent()).startsWith('Pay period'), 'budget switches to pay periods'); await p.click('button:has-text("Start Pay period")').catch(() => {}); await p.waitForTimeout(700); ok(await p.locator('text=Spending plan').count() === 1, 'a pay-period budget starts from the previous period')
     await p.screenshot({ path: 'e2e/shots/1400_budget_pay.png', fullPage: true })
     // dark mode + back/forward
-    await p.click('.asof button.btn'); await p.waitForTimeout(300); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })
+    // insights: scores render and the waste table links to transactions
+    await p.goto('http://localhost:4173/#/insights'); await p.waitForTimeout(900); ok(/\/ 100/.test(await p.locator('.card').first().textContent()), 'insights shows a cash-flow score'); ok((await p.locator('table.tbl').count()) >= 2, 'insights renders merchant and subscription tables')
+    // connections: import a CSV with one new row and one duplicate of an existing transaction
+    const dupTx = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.find(t => t.kind === 'expense' && t.payee && t.account_id))
+    const chkId = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.find(a => a.name === 'Huntington Checking').id)
+    await p.goto('http://localhost:4173/#/connections'); await p.waitForTimeout(800); await p.selectOption('select.inp', chkId)
+    const csv = `Date,Description,Amount\n${dupTx.date},${dupTx.payee},-${dupTx.amount}\n2026-10-02,SMOKE TEST GROCER,-12.34\n`
+    await p.setInputFiles('input[type=file]', { name: 'stmt.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) }); await p.waitForTimeout(600)
+    ok((await p.locator('button:has-text("Review")').count()) === 1, 'csv columns auto-detected'); await p.click('button:has-text("Review")'); await p.waitForTimeout(400)
+    ok(/Duplicates[^0-9]*1/.test(await p.locator('.kpis').last().textContent()), 'import review flags the duplicate'); const nBefore = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length)
+    const chkBefore = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.find(a => a.name === 'Huntington Checking').balance)
+    await p.click('button:has-text("Import 1 transaction")'); await p.waitForTimeout(900)
+    ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length) === nBefore + 1, 'import adds only the new row')
+    ok(Math.abs(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.find(a => a.name === 'Huntington Checking').balance) - (chkBefore - 12.34)) < 0.01, 'imported expense moved the checking balance')
+    ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.some(t => t.source === 'import' && t.external_id && t.external_id.startsWith('csv:'))), 'imported row carries a csv external id')
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
+    await p.click('.asof button.btn'); await p.waitForTimeout(300); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })
     await p.goBack(); await p.waitForTimeout(500); ok((await p.locator('h1').first().textContent()) === 'Settings', 'browser back returns to the previous page')
   }
   ok(!errors.length, `${W}: no page errors ${errors.slice(0, 3).join(' | ')}`); await p.close()

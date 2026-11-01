@@ -85,3 +85,70 @@ describe('forecast', () => {
 describe('goals', () => {
   it('progress, need per month and on-track', () => { const { data } = seed(); const g = goalProgress(data, data.goals[0]); expect(g.saved).toBeGreaterThan(7150); expect(g.pct).toBeGreaterThan(0.4); expect(g.needPerMonth).toBeGreaterThan(0); expect(typeof g.onTrack).toBe('boolean'); const d = goalProgress(data, data.goals[1]); expect(d.saved).toBe(0) })
 })
+
+// ---------------- spending intelligence (0.3.0) ----------------
+import { merchantKey, merchantAnalysis, detectRecurring, subscriptionAnalysis, wasteDetection, healthIndicators } from './intelligence'
+import { SETTINGS_DEFAULTS, type Transaction, type Data } from '../app/data/types'
+const mkTx = (over: Partial<Transaction>, i: number): Transaction => ({ id: `t${i}`, household_id: 'h', date: '2026-10-01', kind: 'expense', amount: 10, account_id: 'chk', to_account_id: null, category_id: null, payee: 'X', memo: null, tags: [], status: 'cleared', source: 'manual', exclude_from_budget: false, ...over })
+const data0 = () => seed().data
+const withTx = (txs: Partial<Transaction>[]): Data => { const { data } = seed(); const cat = data.categories.find(c => c.name === 'Groceries')!; return { ...data, transactions: txs.map((t, i) => mkTx({ category_id: cat.id, ...t }, i)) } }
+
+describe('intelligence: merchants', () => {
+  it('normalises merchant names', () => { expect(merchantKey('KROGER #1234 COLUMBUS OH')).toBe('kroger'); expect(merchantKey('Kroger Fuel 0042')).toBe('kroger fuel'); expect(merchantKey('Netflix.com')).toBe('netflix'); expect(merchantKey('AMZN Mktp US*2K4')).toBe('amzn mktp us'); expect(merchantKey('')).toBe('unknown') })
+  it('totals per merchant with change vs the prior window', () => {
+    const d = withTx([{ date: '2026-10-05', payee: 'Kroger', amount: 50 }, { date: '2026-10-20', payee: 'KROGER #22', amount: 70 }, { date: '2026-09-10', payee: 'Kroger', amount: 100 }, { date: '2026-10-11', payee: 'Shell', amount: 40 }])
+    const m = merchantAnalysis(d, '2026-10-01', '2026-10-31'); expect(m[0].key).toBe('kroger'); expect(m[0].total).toBe(120); expect(m[0].count).toBe(2); expect(m[0].prior).toBe(100); expect(m[0].change).toBe(0.2); expect(m[1].change).toBeNull()
+  })
+})
+describe('intelligence: recurring & subscriptions', () => {
+  it('detects a steady monthly charge and flags a price rise', () => {
+    const d = withTx(['2026-06-14', '2026-07-14', '2026-08-15', '2026-09-14', '2026-10-14'].map((date, i) => ({ date, payee: 'Hulu', amount: i < 3 ? 14.99 : 15.99 })))
+    const r = detectRecurring(d, '2026-11-04'); expect(r).toHaveLength(1); expect(r[0].cadence).toBe('monthly'); expect(r[0].count).toBe(5); expect(r[0].rising).toBe(true); expect(r[0].known).toBe(false); expect(r[0].next).toBe('2026-11-13'); expect(r[0].annual).toBeCloseTo(14.99 * 12, 0)
+  })
+  it('ignores irregular or wildly varying charges', () => {
+    const d = withTx([{ date: '2026-06-01', payee: 'Shell', amount: 40 }, { date: '2026-06-09', payee: 'Shell', amount: 62 }, { date: '2026-07-20', payee: 'Shell', amount: 35 }, { date: '2026-09-02', payee: 'Shell', amount: 48 }])
+    expect(detectRecurring(d, '2026-11-04')).toHaveLength(0)
+  })
+  it('subscription summary combines Recurring rows with detected unknowns', () => {
+    const { data } = seed(); const s = subscriptionAnalysis(data, T0); const known = data.recurring.filter(r => r.kind === 'subscription' && r.status === 'Active').length
+    expect(s.count).toBeGreaterThanOrEqual(known); expect(s.monthly).toBeGreaterThan(0); expect(s.items.filter(i => i.source === 'recurring')).toHaveLength(known)
+  })
+})
+describe('intelligence: waste detection', () => {
+  it('finds duplicates, fees, late fees and outliers', () => {
+    const d = withTx([
+      { date: '2026-10-03', payee: 'Shell', amount: 45.1 }, { date: '2026-10-04', payee: 'SHELL', amount: 45.1 },   // duplicate
+      { date: '2026-10-05', payee: 'Huntington', memo: 'Overdraft fee', amount: 36 },                                   // bank fee
+      { date: '2026-10-06', payee: 'Chase', memo: 'Late fee', amount: 29 },                                             // late fee
+      ...[1, 2, 3, 4, 5, 6].map(i => ({ date: `2026-10-1${i}`, payee: 'Kroger', amount: 60 + i })), { date: '2026-10-20', payee: 'Kroger', amount: 480 },   // outlier
+    ])
+    const w = wasteDetection(d, '2026-11-04'); const kinds = w.map(x => x.kind)
+    expect(kinds).toContain('duplicate'); expect(kinds).toContain('bank_fee'); expect(kinds).toContain('late_fee'); expect(kinds).toContain('outlier')
+    expect(w[0].severity).toBe('crit'); expect(w.find(x => x.kind === 'duplicate')!.txnIds).toEqual(['t0', 't1']); expect(w.find(x => x.kind === 'outlier')!.txnIds).toEqual(['t10'])
+  })
+  it('flags a week that is a spending spike', () => {
+    const d = withTx([...[...Array(8)].map((_, w) => ({ date: addDays('2026-08-10', w * 7), payee: 'Kroger', amount: 100 })), { date: '2026-09-22', payee: 'Best Buy', amount: 900 }])
+    const s = wasteDetection(d, '2026-11-04').filter(x => x.kind === 'spike'); expect(s).toHaveLength(1); expect(s[0].date).toBe('2026-09-21'); expect(s[0].amount).toBe(900)
+    const rent = data0().categories.find(c => c.name === 'Rent / mortgage')!   // a Fixed cost paid once a month is not a spike
+    const f = withTx([...[...Array(8)].map((_, w) => ({ date: addDays('2026-08-10', w * 7), payee: 'Kroger', amount: 100 })), { date: '2026-09-22', payee: 'Landlord', amount: 1850, category_id: rent.id }])
+    expect(wasteDetection(f, '2026-11-04').filter(x => x.kind === 'spike')).toHaveLength(0)
+  })
+  it('flags a listed subscription with no charge in two cycles', () => {
+    const { data } = seed(); const sub = data.recurring.find(r => r.kind === 'subscription' && r.status === 'Active')!
+    const d: Data = { ...data, transactions: data.transactions.filter(t => merchantKey(t.payee) !== merchantKey(sub.payee || sub.name)), recurring: data.recurring.map(r => r.id === sub.id ? { ...r, last_paid_on: '2026-06-01' } : r) }
+    expect(wasteDetection(d, T0).some(x => x.kind === 'unused_subscription' && x.title.startsWith(sub.name))).toBe(true)
+  })
+})
+describe('intelligence: health', () => {
+  it('computes burn rate, savings rate, months covered and bounded scores', () => {
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings }
+    const h = healthIndicators(data, s, 3, T0)
+    expect(h.burnRate).toBeGreaterThan(0); expect(h.income).toBeGreaterThan(0); expect(h.expenseRatio).toBeCloseTo(h.burnRate / h.income, 2)
+    expect(h.cashFlowScore).toBeGreaterThanOrEqual(0); expect(h.cashFlowScore).toBeLessThanOrEqual(100); expect(h.efficiencyScore).toBeGreaterThanOrEqual(0); expect(h.efficiencyScore).toBeLessThanOrEqual(100)
+    expect(h.monthsCovered).not.toBeNull(); expect(h.savingsRate).not.toBeNull()
+  })
+  it('a household with no income gets null ratios and a zero-ish cash-flow score', () => {
+    const d = withTx([{ date: '2026-10-05', payee: 'Kroger', amount: 50 }]); const h = healthIndicators({ ...d, accounts: d.accounts.map(a => ({ ...a, balance: 0 })) }, SETTINGS_DEFAULTS, 3, T0)
+    expect(h.savingsRate).toBeNull(); expect(h.expenseRatio).toBeNull(); expect(h.cashFlowScore).toBe(0); expect(h.burnRate).toBeCloseTo(50 / 3, 2)
+  })
+})
