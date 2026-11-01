@@ -1,13 +1,13 @@
 :root{
   color-scheme:light;
   --ground:#f3f5f8; --surface:#ffffff; --surface-2:#f8fafc; --line:#dde3ea; --line-2:#eef1f5;
-  --ink:#14213d; --ink-2:#4c5a6e; --ink-3:#7d8899;
-  --accent:#1a8c4e; --accent-deep:#146d3d; --accent-soft:#dff3e7;
+  --ink:#0f1f3d; --ink-2:#4c5a6e; --ink-3:#7d8899;
+  --accent:#0f766e; --accent-deep:#115e59; --accent-soft:#d7f3ee; --gold:#f2b632;
   --blue:#2a78d6; --blue-soft:#e3eefc;
   --good:#1a8c4e; --good-soft:#dff3e7; --warn:#d99000; --warn-soft:#fff2cc; --crit:#d9403f; --crit-soft:#fde3e3;
   --soon:#e26a2c; --soon-soft:#fde8dc; --idle:#8b95a1; --idle-soft:#e9edf1; --wait:#6b5bd6; --wait-soft:#e9e6fb; --info:#2a78d6; --info-soft:#e3eefc;
-  --rail:#14213d; --rail-ink:#c9d3e3; --rail-active:#1a8c4e;
-  --shadow:0 1px 2px rgba(20,33,61,.06),0 4px 14px rgba(20,33,61,.05);
+  --rail:#0b1a33; --rail-ink:#c5d0e2; --rail-active:#0f9f94;
+  --shadow:0 1px 2px rgba(11,26,51,.06),0 4px 14px rgba(11,26,51,.05);
   --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   --rail-w:240px;
 }
@@ -15,11 +15,11 @@
   color-scheme:dark;
   --ground:#0f1522; --surface:#161e2e; --surface-2:#1b2536; --line:#2a3548; --line-2:#222c3d;
   --ink:#e8edf5; --ink-2:#b4bfd0; --ink-3:#8793a6;
-  --accent:#2fb36a; --accent-deep:#5fcf8f; --accent-soft:#17352a;
+  --accent:#2dd4bf; --accent-deep:#5eead4; --accent-soft:#113b37; --gold:#f2b632;
   --blue:#3987e5; --blue-soft:#1c2f4a;
   --good:#2fb36a; --good-soft:#17352a; --warn:#e8a622; --warn-soft:#3a2f12; --crit:#ef5a59; --crit-soft:#3d1d1f;
   --soon:#f0804a; --soon-soft:#3b2417; --idle:#8b95a1; --idle-soft:#242c3a; --wait:#8f82e6; --wait-soft:#28234a; --info:#3987e5; --info-soft:#1c2f4a;
-  --rail:#0b101b; --rail-ink:#aab6c9; --rail-active:#2fb36a; --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+  --rail:#070f1f; --rail-ink:#aab6c9; --rail-active:#14b8a6; --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
 }
 *{box-sizing:border-box} html,body{margin:0;height:100%} body{font:14px/1.45 var(--sans);color:var(--ink);background:var(--ground);-webkit-font-smoothing:antialiased}
 a{color:var(--blue)} button{font:inherit} input,select,textarea{font:inherit;color:var(--ink)} h1,h2,h3,h4{margin:0}
@@ -28,7 +28,7 @@ a{color:var(--blue)} button{font:inherit} input,select,textarea{font:inherit;col
 /* ---- rail ---- */
 .rail{background:var(--rail);color:var(--rail-ink);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow:hidden}
 .brand{display:flex;align-items:center;gap:10px;padding:18px 16px 14px;color:#fff}
-.brand .mark{width:34px;height:34px;border-radius:10px;background:var(--accent);display:grid;place-items:center;flex:none}
+.brand .mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,var(--accent),var(--accent-deep));display:grid;place-items:center;flex:none}
 .brand .mark svg{width:22px;height:22px}
 .brand b{font-size:16px;display:block;line-height:1.1} .brand small{font-size:11px;opacity:.7;letter-spacing:.04em;text-transform:uppercase}
 .rail-collapsed .brand > div, .rail-collapsed .nav .zone, .rail-collapsed .nav button span.t, .rail-collapsed .railfoot, .rail-collapsed .me{display:none}

@@ -59,7 +59,7 @@ export class SupabaseRepo implements Repo {
   async invite(email: string, role: Role) { const { error } = await sb().from('household_invites').upsert({ household_id: this.hh, email: email.toLowerCase(), role }, { onConflict: 'household_id,email' }); if (error) throw error }
   async removeMember(userId: string) { const { error } = await sb().from('household_members').delete().eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
   async setMemberRole(userId: string, role: Role, readOnly: boolean) { const { error } = await sb().from('household_members').update({ role, read_only: readOnly }).eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
-  async exportJson() { const all = await this.loadAll(); return { app: 'PocketLedger', exported_at: new Date().toISOString(), household: all.household, ...all.data } }
+  async exportJson() { const all = await this.loadAll(); return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: all.household, ...all.data } }
   async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
     let n = 0
     if (mode === 'replace') for (const k of [...IMPORT_ORDER].reverse()) { const { error } = await sb().from(TABLE[k]).delete().eq('household_id', this.hh); if (error) throw error }

@@ -1,23 +1,23 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  First-time setup of PocketLedger on Windows: extract -> install -> test (npm run check) -> production build -> start dev server.
+  First-time setup of WealthPilot on Windows: extract -> install -> test (npm run check) -> production build -> start dev server.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "C:\Users\garyn\OneDrive\Claude_Apps\PocketLedger\pocketledger-v0.1.1.zip"
+  powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "C:\Users\garyn\OneDrive\Claude_Apps\WealthPilot\wealthpilot-v0.2.0.zip"
 
 .PARAMETER Zip
-  Path to the project zip. Default: the newest pocketledger-v*.zip in the folder this script is in, then in
-  %USERPROFILE%\OneDrive\Claude_Apps\PocketLedger, then in Downloads.
+  Path to the project zip. Default: the newest wealthpilot-v*.zip in the folder this script is in, then in
+  %USERPROFILE%\OneDrive\Claude_Apps\WealthPilot, then in Downloads.
 .PARAMETER Dest
-  Where the project goes. Default: %USERPROFILE%\CascadeProjects\pocketledger. Keep this OUTSIDE OneDrive -
+  Where the project goes. Default: %USERPROFILE%\CascadeProjects\wealthpilot. Keep this OUTSIDE OneDrive -
   node_modules has tens of thousands of files and OneDrive sync fights with npm install.
 .PARAMETER SkipCheck   Skip `npm run check` (typecheck + unit tests + build + Playwright smoke).
 .PARAMETER NoDev       Don't start the dev server / open the browser at the end.
 #>
 param(
   [string]$Zip,
-  [string]$Dest = (Join-Path $env:USERPROFILE 'CascadeProjects\pocketledger'),
+  [string]$Dest = (Join-Path $env:USERPROFILE 'CascadeProjects\wealthpilot'),
   [switch]$SkipCheck,
   [switch]$NoDev
 )
@@ -49,11 +49,11 @@ if ($Dest -match 'OneDrive') { Warn "Destination is inside OneDrive ($Dest). npm
 # ---------- 2. locate the zip ----------
 Step 'Locating the project zip'
 if (-not $Zip) {
-  $candidates = @($PSScriptRoot, (Join-Path $env:USERPROFILE 'OneDrive\Claude_Apps\PocketLedger'), (Join-Path $env:USERPROFILE 'Downloads')) |
+  $candidates = @($PSScriptRoot, (Join-Path $env:USERPROFILE 'OneDrive\Claude_Apps\WealthPilot'), (Join-Path $env:USERPROFILE 'Downloads')) |
     Where-Object { $_ -and (Test-Path $_) } |
-    ForEach-Object { Get-ChildItem -Path $_ -Filter 'pocketledger-v*.zip' -ErrorAction SilentlyContinue } |
+    ForEach-Object { Get-ChildItem -Path $_ -Filter 'wealthpilot-v*.zip' -ErrorAction SilentlyContinue } |
     Sort-Object LastWriteTime -Descending
-  if (-not $candidates) { Fail 'No pocketledger-v*.zip found. Pass -Zip "<path>".' }
+  if (-not $candidates) { Fail 'No wealthpilot-v*.zip found. Pass -Zip "<path>".' }
   $Zip = $candidates[0].FullName
 }
 if (-not (Test-Path $Zip)) { Fail "Zip not found: $Zip" }
@@ -61,7 +61,7 @@ Ok $Zip
 
 # ---------- 3. extract ----------
 Step "Extracting to $Dest"
-$tmp = Join-Path $env:TEMP ("pocketledger-extract-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$tmp = Join-Path $env:TEMP ("wealthpilot-extract-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 Expand-Archive -Path $Zip -DestinationPath $tmp -Force
 # the zip may contain the project at its root or inside a single top-level folder
 $src = $tmp
@@ -86,7 +86,7 @@ Ok 'Extracted'
 Step 'Environment file'
 Set-Location $Dest
 if ($keepEnv) { Set-Content -Path .env -Value $keepEnv -NoNewline; Ok 'Kept your existing .env' }
-elseif (-not (Test-Path .env)) { Copy-Item .env.example .env; Ok '.env created from .env.example (points at the pocketledger Supabase project)' }
+elseif (-not (Test-Path .env)) { Copy-Item .env.example .env; Ok '.env created from .env.example (points at the WealthPilot Supabase project, named pocketledger in the dashboard)' }
 else { Ok '.env already present' }
 
 # ---------- 5. install ----------
@@ -117,12 +117,12 @@ if (Test-Path (Join-Path $Dest 'dist\index.html')) {
   $size = [math]::Round(((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 2)
   Ok "dist\ is ready ($size MB) - this is what 'npm run deploy' publishes to GitHub Pages"
 } else { Warn 'dist\index.html not found - the build did not complete.' }
-if (Test-Path .git) { Ok 'Git repository present (commit history preserved from the zip)' } elseif ($git) { & git init -q; & git add -A; & git -c user.name=setup -c user.email=setup@local commit -q -m 'PocketLedger initial import'; Ok 'Initialised a git repository' }
+if (Test-Path .git) { Ok 'Git repository present (commit history preserved from the zip)' } elseif ($git) { & git init -q; & git add -A; & git -c user.name=setup -c user.email=setup@local commit -q -m 'WealthPilot initial import'; Ok 'Initialised a git repository' }
 
 # ---------- 8. start the dev server ----------
 if (-not $NoDev) {
   Step 'Starting the dev server (new window) and opening the app'
-  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', "Set-Location '$Dest'; `$host.UI.RawUI.WindowTitle = 'PocketLedger dev server - close this window to stop'; npm.cmd run dev"
+  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', "Set-Location '$Dest'; `$host.UI.RawUI.WindowTitle = 'WealthPilot dev server - close this window to stop'; npm.cmd run dev"
   $up = $false
   foreach ($i in 1..40) {
     Start-Sleep -Milliseconds 500
@@ -135,7 +135,7 @@ if (-not $NoDev) {
 Write-Host @"
 
 =====================================================================
- PocketLedger is set up at: $Dest
+ WealthPilot is set up at: $Dest
    dev server:   npm run dev      -> http://localhost:5173
    full check:   npm run check    (typecheck, tests, build, smoke)
    production:   npm run build    -> dist\   |   npm run deploy -> GitHub Pages

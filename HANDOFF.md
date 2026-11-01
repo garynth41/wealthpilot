@@ -1,8 +1,8 @@
-# Handoff — PocketLedger (start here in the new chat)
+# Handoff — WealthPilot (formerly PocketLedger; start here in the new chat)
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.1.1)
+## State as of this handoff (v0.2.0)
 
 - **Working, tested app** — see README for the feature list. 32 unit tests, 30 Playwright smoke checks (desktop + phone), 7 DB-mode checks all pass.
 - **Supabase project:** `pocketledger` — ref `dshswfcpovdpxcidolqb`, URL `https://dshswfcpovdpxcidolqb.supabase.co`, publishable key in `.env.example`. Schema applied as migrations `pocketledger_init`, `pocketledger_function_grants`, `pocketledger_helper_grants`, `pocketledger_fix_touch_and_log` (the combined, current schema is `supabase/migrations/0001_init.sql`). Email confirmation is ON (default) — new users must click the confirmation email before signing in.
@@ -39,4 +39,4 @@ households, household_members, household_invites · accounts (assets and liabili
 
 ## Kickoff prompt for the new chat
 
-> I'm continuing work on **PocketLedger** (placeholder name), my personal budgeting/savings/financial-planning app. Attached is the project zip (Vite + React + TypeScript + Supabase; project ref dshswfcpovdpxcidolqb). Read HANDOFF.md and README.md first. Keep the conventions: engines in src/lib with unit tests, pages only render, run `npm run check` before delivering, never invent numbers from email. First task: …
+> I'm continuing work on **WealthPilot**, my personal budgeting/savings/financial-planning app. Attached is the project zip (Vite + React + TypeScript + Supabase; project ref dshswfcpovdpxcidolqb). Read HANDOFF.md and README.md first. Keep the conventions: engines in src/lib with unit tests, pages only render, run `npm run check` before delivering, never invent numbers from email. First task: …

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useStore, outdated } from '../app/store'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
+import { Logo } from './Logo'
 import { fmtDY, today, addDays } from '../lib/dates'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
@@ -46,7 +47,7 @@ export function Layout({ children }: { children: ReactNode }) {
     <header className="mbar"><button onClick={() => setDrawer(d => !d)} aria-label="Menu">☰</button><button onClick={() => nav(-1)} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><ThemeBtn /></header>
     <div className={`backdrop ${drawer ? 'show' : ''}`} onClick={() => setDrawer(false)} />
     <aside className={`rail ${drawer ? 'open' : ''}`}>
-      <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><svg viewBox="0 0 64 64"><path d="M16 40c6-10 10-10 16 0s10 10 16 0" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" /><circle cx="32" cy="22" r="6" fill="#fff" /></svg></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'}>{collapsed ? '›' : '‹'}</button></div>
+      <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'}>{collapsed ? '›' : '‹'}</button></div>
       <nav className="nav">{zones.map(z => <div key={z}><div className="zone">{z}</div>{VIEWS.filter(v => v.zone === z).map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span>{badges[v.path]?.n ? <span className="badge" title={badges[v.path].why}>{badges[v.path].n}</span> : null}</NavLink>)}</div>)}</nav>
       <div className="me"><span className="avatar">{(mode === 'demo' ? 'D' : (user?.email?.[0] || '?')).toUpperCase()}</span><span className="who"><b>{mode === 'demo' ? 'demo' : user?.email}</b><span>{role}{readOnly ? ' · read-only' : ''}</span></span><Btn sm onClick={() => (mode === 'demo' ? exitDemo() : signOut())}>Sign out</Btn></div>
       <div className="railfoot" onClick={about}>{APP_NAME} <b>v{APP_VERSION}</b><br />build {APP_BUILD}</div>

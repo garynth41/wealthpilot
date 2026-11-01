@@ -3,6 +3,7 @@ import { useStore } from '../app/store'
 import { APP_NAME, APP_VERSION } from '../app/config'
 import { hasSupabase } from '../app/supabase'
 import { Btn } from '../components/ui'
+import { Logo } from '../components/Logo'
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'recover'
 export function AuthPage({ recover }: { recover?: boolean }) {
@@ -11,7 +12,7 @@ export function AuthPage({ recover }: { recover?: boolean }) {
   const run = async (fn: () => Promise<unknown>, okMsg?: string) => { setBusy(true); setMsg(null); try { const r = await fn(); if (okMsg) setMsg({ cls: 'good', text: okMsg }); if (r === 'confirm') setMsg({ cls: 'info', text: 'Check your email for a confirmation link, then sign in.' }) } catch (e) { setMsg({ cls: 'crit', text: (e as Error).message }) } finally { setBusy(false) } }
   const submit = (e: FormEvent) => { e.preventDefault(); if (mode === 'signin') run(() => signIn(email, pw)); else if (mode === 'signup') run(() => signUp(email, pw)); else if (mode === 'forgot') run(() => resetPassword(email), 'Reset link sent — check your email.'); else run(() => updatePassword(pw).then(() => setMode('signin')), 'Password updated. Sign in with it.') }
   return <div className="auth"><div className="box">
-    <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><svg viewBox="0 0 64 64"><path d="M16 40c6-10 10-10 16 0s10 10 16 0" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" /><circle cx="32" cy="22" r="6" fill="#fff" /></svg></span><div><b style={{ fontSize: 18 }}>{APP_NAME}</b><small style={{ color: 'var(--ink-3)' }}>Budget · savings · planning</small></div></div>
+    <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><Logo /></span><div><b style={{ fontSize: 18 }}>{APP_NAME}</b><small style={{ color: 'var(--ink-3)' }}>Budget · savings · planning</small></div></div>
     <h2>{{ signin: 'Sign in', signup: 'Create account', forgot: 'Reset password', recover: 'Choose a new password' }[mode]}</h2>
     {hasSupabase() ? <form onSubmit={submit}>
       {mode !== 'recover' && <div className="field"><label htmlFor="email">Email</label><input id="email" className="inp" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></div>}

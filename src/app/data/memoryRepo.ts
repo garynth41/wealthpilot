@@ -62,7 +62,7 @@ export class MemoryRepo implements Repo {
   async invite(email: string, role: Role) { this.data.invites.push({ id: demoId(), household_id: this.household.id, email, role }); this.persist(); this.emit() }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
   async setMemberRole(userId: string, role: Role, readOnly: boolean) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly } : m); this.persist(); this.emit() }
-  async exportJson() { return { app: 'PocketLedger', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
+  async exportJson() { return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
   async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
     let n = 0; if (mode === 'replace') this.data = emptyData()
     for (const k of Object.keys(emptyData()) as Collection[]) { const rows = json[k]; if (Array.isArray(rows)) { for (const r of rows) { (this.data[k] as unknown[]).push({ ...(r as object), household_id: this.household.id }); n++ } } }

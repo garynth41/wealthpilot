@@ -72,12 +72,12 @@ const redirect = () => location.origin + location.pathname
 async function olTokenReq(s: Settings, params: Record<string, string>) {
   const r = await fetch(olBase(s.outlook?.tenant || 'consumers') + 'token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: s.outlook?.clientId || '', scope: OL_SCOPE, ...params }).toString() })
   const j = await r.json().catch(() => ({})); if (!r.ok || !j.access_token) throw new Error('Microsoft sign-in failed' + (j.error_description ? ': ' + String(j.error_description).split('\r\n')[0] : ''))
-  OL.token = j.access_token; OL.exp = Date.now() + (+j.expires_in || 3600) * 1000; if (j.refresh_token) { try { sessionStorage.setItem('pocketledger.olrt', j.refresh_token) } catch { /* */ } } return OL.token!
+  OL.token = j.access_token; OL.exp = Date.now() + (+j.expires_in || 3600) * 1000; if (j.refresh_token) { try { sessionStorage.setItem('wealthpilot.olrt', j.refresh_token) } catch { /* */ } } return OL.token!
 }
 export async function olToken(s: Settings, interactive = true) {
   if (OL.token && Date.now() < OL.exp - 60000) return OL.token
-  let rt: string | null = null; try { rt = sessionStorage.getItem('pocketledger.olrt') } catch { /* */ }
-  if (rt) { try { return await olTokenReq(s, { grant_type: 'refresh_token', refresh_token: rt }) } catch { try { sessionStorage.removeItem('pocketledger.olrt') } catch { /* */ } } }
+  let rt: string | null = null; try { rt = sessionStorage.getItem('wealthpilot.olrt') } catch { /* */ }
+  if (rt) { try { return await olTokenReq(s, { grant_type: 'refresh_token', refresh_token: rt }) } catch { try { sessionStorage.removeItem('wealthpilot.olrt') } catch { /* */ } } }
   if (!interactive) return null; if (!s.outlook?.clientId) throw new Error('Outlook is not set up yet — add the application (client) ID in Settings')
   const verifier = b64u(crypto.getRandomValues(new Uint8Array(32))), challenge = b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))), state = 'pl-ol-' + b64u(crypto.getRandomValues(new Uint8Array(12)))
   const url = olBase(s.outlook.tenant || 'consumers') + 'authorize?' + new URLSearchParams({ client_id: s.outlook.clientId, response_type: 'code', redirect_uri: redirect(), response_mode: 'query', scope: OL_SCOPE, state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account', login_hint: s.outlook.account || '' }).toString()

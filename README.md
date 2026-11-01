@@ -1,8 +1,12 @@
-# PocketLedger
+# WealthPilot
 
-Personal budgeting, savings and financial-planning app — a stand-alone spin-off of the money modules of CareerShift, rebuilt as a modern Vite + React + TypeScript single-page app on its own Supabase project.
+Personal budgeting, savings and financial-planning app — a stand-alone spin-off of the money modules of CareerShift, rebuilt as a modern Vite + React + TypeScript single-page app on its own Supabase project. (Formerly "PocketLedger"; the Supabase project keeps that name in the dashboard.)
 
-> **Name:** "PocketLedger" is a placeholder. To rename: change `VITE_APP_NAME` in `.env`, `<title>` in `index.html`, `name` in `package.json`, and the brand text in `src/components/Layout.tsx`.
+## Brand
+
+- **Mark:** a rising trend line ending in a gold "pilot" arrowhead — `src/components/Logo.tsx` (in-app, on the teal tile) and `public/favicon.svg` (same glyph on a navy tile). Change the glyph in both places together.
+- **Theme tokens** (`src/styles.css` `:root`, light and dark): navy ink/rail `#0b1a33`, brand accent teal `--accent #0f766e` (dark: `#2dd4bf`), gold `--gold #f2b632` for the logo and highlights only. Status colours (`--good` green, `--warn`, `--crit`, …) are deliberately separate from the brand accent.
+- Rename again: `VITE_APP_NAME` in `.env`/`.env.example`, the fallback in `src/app/config.ts` (and its `LS` storage-key prefix), `<title>`/`theme-color` in `index.html`, `name` in `package.json`, `setup.ps1`, this README and `HANDOFF.md`.
 
 ## What it does
 
@@ -40,13 +44,13 @@ npm run dev                 # http://localhost:5173
 
 Scripts: `npm run typecheck` · `npm test` (32 unit tests: engines + email parser) · `npm run build` · `npm run e2e` (Playwright smoke through every page in demo mode, desktop + phone; needs `npx playwright install chromium` once, or set `PW_CHROMIUM` to an installed Chrome/Edge executable) · `npm run e2e:db` (same against Supabase with `E2E_EMAIL` / `E2E_PW`) · `npm run check` (all of the above) · `npm run deploy` (build and push `dist/` to the `gh-pages` branch).
 
-**Windows:** `setup.ps1` (next to this README) does the whole first-time setup — checks Node ≥ 20, extracts the zip, creates `.env`, installs packages and the Playwright browser, runs `npm run check`, then starts `npm run dev` in its own window and opens the app. `powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "<path to zip>"`. Keep the project **outside OneDrive** (the script defaults to `C:\Users\<you>\CascadeProjects\pocketledger`): `node_modules` has tens of thousands of files and OneDrive sync fights with `npm install`.
+**Windows:** `setup.ps1` (next to this README) does the whole first-time setup — checks Node ≥ 20, extracts the zip, creates `.env`, installs packages and the Playwright browser, runs `npm run check`, then starts `npm run dev` in its own window and opens the app. `powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "<path to zip>"`. Keep the project **outside OneDrive** (the script defaults to `C:\Users\<you>\CascadeProjects\wealthpilot`): `node_modules` has tens of thousands of files and OneDrive sync fights with `npm install`.
 
 ## Deploy (GitHub Pages)
 
-1. Create a repo (e.g. `pocketledger`), push this folder.
+1. Create a repo (e.g. `wealthpilot`), push this folder.
 2. `npm run deploy` publishes `dist/` to `gh-pages`. In the repo settings choose Pages → branch `gh-pages`.
-3. The app is then at `https://<user>.github.io/pocketledger/`. `vite.config.ts` uses `base: './'` and the router uses hashes, so no path configuration is needed.
+3. The app is then at `https://<user>.github.io/wealthpilot/`. `vite.config.ts` uses `base: './'` and the router uses hashes, so no path configuration is needed.
 4. In Supabase → Authentication → URL configuration, add that URL to **Site URL / Redirect URLs** (for confirmation and password-reset links).
 
 ## Email capture setup (optional)
@@ -79,5 +83,7 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.2.0** — renamed to **WealthPilot**: new logo (`Logo.tsx` + `favicon.svg`), navy/teal/gold theme tokens (light + dark), storage-key prefix `wealthpilot.`, export/backup file names, `app` tag in JSON backups, `package.json` name, `setup.ps1` defaults.
+- **0.1.2** — fixed `npm run e2e` crashing on Windows with `EISDIR`: the e2e static servers served any request path that matched a real directory (e.g. `/assets`) straight to `readFileSync`. They now fall back to `index.html` unless the path is a regular file.
 - **0.1.1** — e2e scripts resolve `dist/` with `fileURLToPath` so `npm run check` passes on Windows (`URL.pathname` gave `/C:/…`); `setup.ps1` first-time setup script for Windows; README run notes.
 - **0.1.0** — first release, spun off from CareerShift's finance modules.
