@@ -6,8 +6,8 @@ import { LS } from '../app/config'
 /** Download rows as CSV or Excel. Values are the displayed text (labels, formatted money) so the file reads like the screen. */
 export async function exportTable(name: string, headers: string[], body: Array<Array<string | number>>, fmt: 'csv' | 'xlsx') {
   const file = `${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}`
-  if (fmt === 'csv') { const esc = (v: string | number) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t }; const text = [headers, ...body].map(r => r.map(esc).join(',')).join('\r\n'); dl(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }), file + '.csv'); return }
-  const XLSX = await import('xlsx'); const ws = XLSX.utils.aoa_to_sheet([headers, ...body]); ws['!cols'] = headers.map((h, i) => ({ wch: Math.min(48, Math.max(h.length, ...body.map(r => String(r[i] ?? '').length)) + 2) }))
+  if (fmt === 'csv') { const esc = (v: string | number) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t }; const text = (headers.length ? [headers, ...body] : body).map(r => r.map(esc).join(',')).join('\r\n'); dl(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }), file + '.csv'); return }
+  const XLSX = await import('xlsx'); const ws = XLSX.utils.aoa_to_sheet(headers.length ? [headers, ...body] : body); ws['!cols'] = headers.map((h, i) => ({ wch: Math.min(48, Math.max(h.length, ...body.map(r => String(r[i] ?? '').length)) + 2) }))
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31) || 'Sheet1'); XLSX.writeFile(wb, file + '.xlsx')
 }
 const dl = (blob: Blob, filename: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000) }

@@ -162,3 +162,12 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 
 /* goal milestones */
 .milestones{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:8px 0 2px} .milestones span{text-align:center;border-top:3px solid var(--line);padding-top:4px;font-size:11px;color:var(--ink-3)} .milestones span b{display:block;color:var(--ink-2)} .milestones span.done{border-top-color:var(--good)} .milestones span.done b{color:var(--good)}
+
+/* reports: print / Save as PDF — just the report, light colours, no chrome */
+.report-head{margin:0 0 12px} .report .report-sec{margin-bottom:14px}
+@media print{
+  :root,:root[data-theme="dark"]{--ground:#fff;--surface:#fff;--surface-2:#f6f7f9;--ink:#0f1f3d;--ink-2:#3d4a5c;--ink-3:#6b7685;--line:#d7dde5}
+  body{background:#fff!important} .rail,.mbar,.backdrop,.tabbar,.histnav,.topbar,.asof,.banner,.noprint,.railToggle,.toasts,.tblhead .btnrow,.colgrip,button.btn{display:none!important}
+  .app,.main,main{margin:0!important;padding:0!important;grid-template-columns:1fr!important} .card{box-shadow:none!important;border-color:#d7dde5;break-inside:auto} .kpis,.kpi,.js-plotly-plot,.tbl tr,.report-head{break-inside:avoid} .tbl thead{display:table-header-group}
+  .report .kpis{grid-template-columns:repeat(4,1fr)!important} .tblwrap{overflow:visible!important;max-height:none!important} @page{margin:14mm}
+}

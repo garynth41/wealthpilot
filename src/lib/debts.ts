@@ -17,17 +17,17 @@ export type Strategy = 'avalanche' | 'snowball'
 /** Whole-portfolio simulation: every account gets its planned payment, `extra` goes to the focus account, freed payments roll over. */
 export function simulate(accts: Account[], extra: number, strategy: Strategy = 'avalanche', minOnly = false) {
   let bal = accts.filter(a => debtBal(a) >= 1).map(a => ({ id: a.id, name: a.name, apr: (+a.apr || 0) / 100 / 12, b: debtBal(a), pay: assumedPay(a, minOnly ? +a.minimum_payment || 0 : debtPlanned(a)), paidOffMonth: null as number | null }))
-  const series = [sum(bal.map(x => x.b))]; let interest = 0, m = 0
+  const series = [sum(bal.map(x => x.b))]; let interest = 0, m = 0, paid = 0
   while (bal.some(x => x.b > 0.005) && m < 600) {
     m++; let pool = extra
     bal.sort((a, b) => strategy === 'avalanche' ? b.apr - a.apr : a.b - b.b)
-    bal.forEach(x => { if (x.b <= 0.005) { pool += x.pay; return } const i = x.b * x.apr; interest += i; x.b += i; const p = Math.min(x.b, x.pay); x.b -= p })
-    for (const x of bal) { if (pool <= 0) break; if (x.b <= 0.005) continue; const p = Math.min(x.b, pool); x.b -= p; pool -= p }
+    bal.forEach(x => { if (x.b <= 0.005) { pool += x.pay; return } const i = x.b * x.apr; interest += i; x.b += i; const p = Math.min(x.b, x.pay); x.b -= p; pool += x.pay - p; paid += p })   // a final payment smaller than the planned one frees the rest this month
+    for (const x of bal) { if (pool <= 0) break; if (x.b <= 0.005) continue; const p = Math.min(x.b, pool); x.b -= p; pool -= p; paid += p }
     bal.forEach(x => { if (x.b <= 0.005 && x.paidOffMonth == null) x.paidOffMonth = m })
     series.push(sum(bal.map(x => Math.max(0, x.b))))
-    if (m > 1 && series[m] >= series[m - 1] - 0.01) return { months: Infinity, interest: Infinity, series, order: bal }
+    if (m > 1 && series[m] >= series[m - 1] - 0.01) return { months: Infinity, interest: Infinity, series, order: bal, paid }
   }
-  return { months: m, interest, series, order: bal }
+  return { months: m, interest, series, order: bal, paid }
 }
 export function debtTotals(d: Data) {
   const a = liabilities(d), m = curMonth()

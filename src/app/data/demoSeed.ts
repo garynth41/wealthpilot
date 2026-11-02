@@ -124,9 +124,30 @@ export function demoSeed(): { household: Household; data: Data } {
   d.planned.push({ id: demoId(), household_id: hh, ref: 'X-001', date: addDays(t, 20), label: 'Tax refund', category: 'Tax refund', amount: 1240, status: 'Planned' })
   d.planned.push({ id: demoId(), household_id: hh, ref: 'X-002', date: addDays(t, 45), label: 'New tires', category: 'Vehicle', amount: -650, status: 'Planned' })
   d.planned.push({ id: demoId(), household_id: hh, ref: 'X-003', date: addDays(t, 80), label: 'Car registration', category: 'Vehicle', amount: -92, status: 'Planned' })
-  ;[-60, -30, 0].forEach((k, i) => d.snapshots.push({ id: demoId(), household_id: hh, date: addDays(t, k), cash: [10900, 11420, 11834][i], assets: [52300, 53100, 54134][i], liabilities: [14650, 14020, 13622][i], by_account: {} }))
   d.hardship.push({ id: demoId(), household_id: hh, ref: 'H-001', entity: 'American Express', type: 'Credit card', account_id: amex.id, monthly_obligation: null, phone: '800-555-0199', contact_name: '', status: 'Called — waiting', program: 'Interest / APR reduction', relief_monthly: 0, last_contact: addDays(t, -3), next_followup: addDays(t, 1), reference: '', outcome: 'Hardship team to call back within 3 business days', notes: 'Ask for 12-month reduced APR program', sort_order: 1 })
 
+  // more sample accounts so the demo covers every account type the spec lists: a second debit card, a cash wallet, a third credit card (Discover)
+  const chaseChk = acc({ name: 'Chase Total Checking', kind: 'checking', institution: 'Chase', last4: '7730', balance: 1240.18, color: '#117aca' })
+  const wallet = acc({ name: 'Cash wallet', kind: 'cash', balance: 86, color: '#8b95a1' })
+  const disc = acc({ name: 'Discover it', kind: 'credit_card', institution: 'Discover', last4: '3391', balance: 412.6, credit_limit: 4000, apr: 22.99, statement_date: addDays(t, -9), statement_balance: 388.1, minimum_payment: 35, due_date: addDays(t, 16), planned_payment: 120, color: '#e26a2c' })
+  ;([[3, 'Target', 54.18, 'Personal', 'Shopping', chaseChk], [9, 'Walgreens', 23.47, 'Health', 'Pharmacy', chaseChk], [16, 'Chipotle', 14.85, 'Food', 'Dining out', chaseChk], [24, 'Shell', 48.9, 'Transport', 'Fuel', chaseChk], [38, 'Target', 61.02, 'Personal', 'Shopping', chaseChk], [45, 'Speedway', 44.3, 'Transport', 'Fuel', chaseChk],
+     [2, 'Worthington Farmers Market', 22, 'Food', 'Groceries', wallet], [6, 'Parking — Short North', 8, 'Transport', 'Parking / tolls / transit', wallet], [13, 'Lunch money', 15, 'Personal', 'Kids & family', wallet], [27, 'Barber tip', 10, 'Personal', 'Personal care', wallet],
+     [4, 'The Home Depot', 136.42, 'Housing', 'Home maintenance', disc], [11, 'Amazon', 38.99, 'Personal', 'Shopping', disc], [19, 'Condado Tacos', 47.8, 'Food', 'Dining out', disc], [33, 'Lowe’s', 189.39, 'Housing', 'Home maintenance', disc]] as Array<[number, string, number, string, string, { id: string }]>)
+    .forEach(([k, payee, amount, g, c, a]) => tx(addDays(t, -k), 'expense', amount, { payee, category_id: cat(g, c).id, account_id: a.id }))
+  tx(addDays(t, -20), 'transfer', 200, { payee: 'Cash withdrawal (ATM)', account_id: chk.id, to_account_id: wallet.id, category_id: cat('Other', 'Transfer').id })
+  tx(addDays(t, -7), 'transfer', 150, { payee: 'Discover payment', account_id: chaseChk.id, to_account_id: disc.id, category_id: cat('Debt', 'Credit card payments').id })
+  // sample audit / security log (the real app fills this from a database trigger on every change)
+  const act = (min: number, action: string, table: string, summary: string) => d.activity.push({ id: d.activity.length + 1, household_id: hh, user_email: 'demo@wealthpilot.app', action, table_name: table, record_id: null, summary, created_at: new Date(Date.parse(t + 'T12:00:00') - min * 60000).toISOString() })
+  ;([[5, 'update', 'accounts', 'Huntington Checking balance 3184.22'], [12, 'insert', 'transactions', 'Kroger 68.4'], [40, 'update', 'goals', 'Emergency fund (6 months) monthly 300'], [95, 'insert', 'transactions', 'statement import: 14 rows'], [180, 'update', 'accounts', 'Chase Freedom statement 1362.55'],
+     [600, 'insert', 'holdings', 'VTI 22 @ 268.50'], [1440, 'update', 'categories', 'Dining out budget 160'], [2900, 'insert', 'email_items', 'AEP Ohio 152.4'], [4320, 'delete', 'transactions', 'duplicate Shell 45.10'], [7200, 'update', 'households', 'tax profile saved']] as Array<[number, string, string, string]>)
+    .forEach(([m, a, tb, sm]) => act(m, a, tb, sm))
+
+  // net-worth snapshots, derived from today's balances so they always include every demo account: assets grew and debt came down over two months
+  {
+    const live = d.accounts.filter(a => a.status === 'Active' && a.include_in_net_worth); const LIAB = ['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability']
+    const A = live.filter(a => !LIAB.includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0), L = live.filter(a => LIAB.includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0), CASH = live.filter(a => a.include_in_cash && !LIAB.includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0)
+    ;([[-60, 1830, 1030, 930], [-30, 1030, 400, 410], [0, 0, 0, 0]] as const).forEach(([k, da, dl, dc]) => d.snapshots.push({ id: demoId(), household_id: hh, date: addDays(t, k), cash: Math.round(CASH - dc), assets: Math.round(A - da), liabilities: Math.round(L + dl), by_account: {} }))
+  }
   const household: Household = { id: hh, name: 'Thomas household (demo)', currency: 'USD', settings: { ...SETTINGS_DEFAULTS, periodType: 'month', reserveFloor: 3000, runwayGreen: 6, runwayYellow: 3,
     // sample tax data (demo only): year-to-date federal withholding from the W-2 pay stubs, last year's return, Lewis Center-style local rates
     tax: { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, priorYearTax: 10200, priorYearAgi: 84000, autoAggregate: true, paychecksLeft: null, extraWithholdingPerCheck: 0, plannedEstimates: 0, seSetAsidePct: 25,

@@ -8,7 +8,7 @@ import { availableBalance, liquidity, goalAllocation } from '../lib/planning'
 import { Link } from 'react-router-dom'
 import { assets, liabilities, isLiability, debtBal, utilization, debtDueState, cashOnHand, netWorth, debtPlanned } from '../lib/accounts'
 import { fmtMoney, fm2, parseNum, sum } from '../lib/money'
-import { addDays, fmtD, fmtDY, today } from '../lib/dates'
+import { addDays, fmtD, fmtDY, today, ago } from '../lib/dates'
 import { post } from '../lib/ledger'
 import { Chart, C } from '../components/Chart'
 import { netWorthSeries } from '../lib/forecast'
@@ -34,6 +34,14 @@ export function AccountsPage() {
       <KPI l="Cash on hand" v={fmtMoney(cash)} cls="good" s="checking + savings + cash (counts-as-cash accounts)" /><KPI l="Total assets" v={fmtMoney(nw.assets)} cls="info" s={`${as.length} account${as.length === 1 ? '' : 's'}`} /><KPI l="Total debt" v={fmtMoney(nw.liabilities)} cls={nw.liabilities ? 'crit' : 'good'} s={`${li.length} card${li.length === 1 ? '' : 's'} & loans`} /><KPI l="Net worth" v={fmtMoney(nw.net)} cls={nw.net >= 0 ? 'good' : 'crit'} s={nws.length > 1 ? `${nw.net - nws[0].net >= 0 ? '+' : ''}${fmtMoney(nw.net - nws[0].net)} since ${fmtD(nws[0].date)}` : 'record snapshots to see the trend'} />
       <KPI l="Planned debt payments" v={fmtMoney(sum(li.map(debtPlanned))) + '/mo'} cls="warn" s={`minimums ${fmtMoney(sum(li.map(a => +a.minimum_payment || 0)))}/mo`} /></div>
     <div className="grid g12">
+      <Card span={12} title="Account balances as last updated" hint="every active account in one place · edit balances in the tables below">
+        <Table rows={data.accounts.filter(a => a.status === 'Active').slice().sort((a, b) => (isLiability(a) ? 1 : 0) - (isLiability(b) ? 1 : 0) || a.sort_order - b.sort_order)} name="account-balances" editable={false} search={false} pageSize={50}
+          cols={[{ k: 'institution', label: 'Institution', type: 'ro', fmt: a => a.institution || '—' }, { k: 'name', label: 'Account', type: 'ro', fmt: a => <b>{a.name}{a.last4 ? <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> ··{a.last4}</span> : null}</b> }, { k: 'kind', label: 'Type', type: 'ro', fmt: a => ACCOUNT_KIND_LABEL[a.kind] },
+            { k: 'balance', label: 'Current balance', type: 'ro', cls: 'num', sortVal: a => (isLiability(a) ? -1 : 1) * (+a.balance || 0), fmt: a => <span style={{ color: isLiability(a) ? 'var(--crit)' : undefined }}>{isLiability(a) ? '−' : ''}{fm2(Math.abs(+a.balance || 0))}</span> },
+            { k: '_avail', label: 'Available', type: 'ro', cls: 'num', sortVal: a => availableBalance(a) ?? -1, fmt: a => { const v = availableBalance(a); return v == null ? '—' : fm2(v) } },
+            { k: 'balance_as_of', label: 'Last updated', type: 'ro', sortVal: a => a.balance_as_of || '', fmt: a => a.balance_as_of ? <>{fmtDY(a.balance_as_of)} <span style={{ color: 'var(--ink-3)' }}>· {ago(a.balance_as_of)}</span></> : '—' }]} />
+        <Note>Balances change three ways: you type one in, a transaction posts to the account, or a statement import sets it. Each change is recorded in Settings → Activity log.</Note>
+      </Card>
       <Card span={12} title="Cash, savings & investments" hint="type the balance from your bank; transactions you log move it from there" right={canEdit ? <><Btn sm onClick={() => add('checking')}>+ Checking</Btn><Btn sm onClick={() => add('savings')}>+ Savings</Btn><Btn sm onClick={() => add('investment')}>+ Investment</Btn><Btn sm onClick={() => add('retirement')}>+ Retirement</Btn><Btn sm onClick={() => add('cash')}>+ Cash</Btn></> : undefined}>
         <Table rows={rows('asset')} cols={assetCols} editable={canEdit} onChange={change} onDelete={del} rowCls={a => a.status !== 'Active' ? 'st-idle ex-off' : 'st-good'} search={false} />
         <Note><b>Counts as cash</b> feeds the runway and the cash-flow forecast; retirement money is tracked in net worth but kept out of cash unless you turn that on in Settings.</Note></Card>

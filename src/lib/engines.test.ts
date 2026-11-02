@@ -72,11 +72,18 @@ describe('budget stats', () => {
 describe('debts', () => {
   it('payoff projection', () => { const p = payoffProjection(1000, 24, 100); expect(p.months).toBe(12); expect(p.interest).toBeGreaterThan(100); expect(payoffProjection(1000, 24, 10).months).toBe(Infinity) })
   it('avalanche beats snowball on interest', () => { const { data } = seed(); const a = simulate(data.accounts.filter(x => x.kind === 'credit_card' || x.kind === 'auto_loan'), 100, 'avalanche'); const s = simulate(data.accounts.filter(x => x.kind === 'credit_card' || x.kind === 'auto_loan'), 100, 'snowball'); expect(a.interest).toBeLessThanOrEqual(s.interest + 1); expect(isFinite(a.months)).toBe(true) })
-  it('totals and utilization', () => { const { data } = seed(); const t = debtTotals(data); expect(Math.round(t.balance)).toBe(13623); expect(t.util).toBeCloseTo((1362.55 + 2840.2) / 13000, 3); expect(utilization(data.accounts.find(a => a.name === 'Chase Freedom')!)).toBeCloseTo(0.2725, 3); expect(debtDueState(data.accounts.find(a => a.name === 'Auto loan')!).label).toMatch(/Autopay in 4d/) })
+  it('totals and utilization', () => { const { data } = seed(); const t = debtTotals(data); expect(Math.round(t.balance)).toBe(14035); expect(t.util).toBeCloseTo((1362.55 + 2840.2 + 412.6) / 17000, 3); expect(utilization(data.accounts.find(a => a.name === 'Chase Freedom')!)).toBeCloseTo(0.2725, 3); expect(debtDueState(data.accounts.find(a => a.name === 'Auto loan')!).label).toMatch(/Autopay in 4d/) })
 })
 
+describe('debts: payoff simulation conservation', () => {
+  it('every dollar paid is principal or interest, and no planned payment is wasted in a final month', () => {
+    const { data } = seed(); const debts = data.accounts.filter(x => ['credit_card', 'auto_loan'].includes(x.kind)); const start = debts.reduce((a, x) => a + x.balance, 0)
+    for (const st of ['avalanche', 'snowball'] as const) { const r = simulate(debts, 100, st); expect(r.paid).toBeCloseTo(start + r.interest, 2) }
+    const a = simulate(debts, 100, 'avalanche'), s = simulate(debts, 100, 'snowball'); expect(a.interest).toBeLessThanOrEqual(s.interest + 0.01)
+  })
+})
 describe('forecast', () => {
-  it('cash on hand excludes retirement', () => { const { data, household } = seed(); expect(cashOnHand(data, household.settings)).toBeCloseTo(3184.22 + 8650, 2); expect(netWorth(data).net).toBeCloseTo(3184.22 + 8650 + 42300 + 11860 - 13622.75, 1) })   // net worth incl. the Schwab brokerage account (0.6.0)
+  it('cash on hand excludes retirement', () => { const { data, household } = seed(); expect(cashOnHand(data, household.settings)).toBeCloseTo(3184.22 + 8650 + 1240.18 + 86, 2); expect(netWorth(data).net).toBeCloseTo(3184.22 + 8650 + 1240.18 + 86 + 42300 + 11860 - 13622.75 - 412.6, 1) })   // incl. Schwab brokerage (0.6.0), Chase checking, cash wallet and Discover (0.8.0)
   it('calendar runs day by day with pay and bills', () => { const { data, household } = seed(); const c = cashCalendar(data, household.settings, 60); expect(c.items.filter(x => x.src === 'pay').length).toBeGreaterThanOrEqual(4); expect(c.items.some(x => x.label.startsWith('Rent'))).toBe(true); expect(c.daily.length).toBe(61); expect(c.low.bal).toBeLessThan(c.start + 1); expect(c.items.every(x => x.bal != null)).toBe(true) })
   it('burn and 24-month runway', () => { const { data, household } = seed(); const b = burn(data, household.settings); expect(b.income).toBeGreaterThan(4000); expect(b.expenses).toBeGreaterThan(3000); const r = runwayProjection(data, household.settings); expect(r.xs.length).toBe(25); expect(r.ys[0]).toBeCloseTo(b.cash, 0); const lean = runwayProjection(data, household.settings, { leanOnly: true }); expect(lean.ys[24]).toBeGreaterThanOrEqual(r.ys[24] - 1) })
   it('net worth series ends today', () => { const { data } = seed(); const s = netWorthSeries(data); expect(s[s.length - 1].date).toBe(T0); expect(s.length).toBe(4) })
@@ -350,5 +357,37 @@ describe('tax: remaining deadlines and paydays', () => {
     expect(may.safeHarbor.estimatesLeft).toBe(3); expect(may.safeHarbor.quarterlyNeeded).toBeCloseTo(may.safeHarbor.shortfall / 3, 2)
     const { data } = seed(); const ps = data.paySchedules.find(x => x.kind === 'salary')!; const left = paychecksRemaining(data, 2026, '2026-11-01')
     expect(left).toBe(payDates(ps, '2026-11-02', '2026-12-31').length); expect(left).toBeGreaterThan(0); expect(paychecksRemaining(data, 2026, '2027-01-02')).toBe(0)
+  })
+})
+
+// ---------------- reports (0.8.0) ----------------
+import { periodRange, buildReport, reportRows, changeText } from './reports'
+describe('reports', () => {
+  it('period ranges: month / quarter / year, previous period, month-to-date when the period is still running', () => {
+    expect(periodRange('month', '2026-10-15', '2026-11-04')).toMatchObject({ from: '2026-10-01', to: '2026-10-31', prevFrom: '2026-09-01', prevTo: '2026-09-30', partial: false, label: 'October 2026' })
+    expect(periodRange('quarter', '2026-08-02', '2026-11-04')).toMatchObject({ from: '2026-07-01', to: '2026-09-30', prevFrom: '2026-04-01', prevTo: '2026-06-30', label: 'Q3 2026' })
+    const ytd = periodRange('year', '2026-03-01', '2026-11-04'); expect(ytd).toMatchObject({ from: '2026-01-01', to: '2026-11-04', prevFrom: '2025-01-01', prevTo: '2025-11-04', partial: true }); expect(ytd.label).toBe('2026 (to date)')
+  })
+  it('spending and cash-flow sections reconcile to the ledger; CSV rows carry every section', () => {
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings }; const rep = buildReport(data, s, 'month', '2026-10-01', undefined, T0)
+    const spend = data.transactions.filter(t => t.kind === 'expense' && t.status !== 'void' && !t.exclude_from_budget && t.date >= '2026-10-01' && t.date <= '2026-10-31').reduce((a, t) => a + t.amount, 0)
+    const sp = rep.sections.find(x => x.id === 'spending')!; expect(sp.kpis[0].value).toBeCloseTo(spend, 2); expect(sp.table!.rows.reduce((a, r) => a + +r[2], 0)).toBeCloseTo(spend, 1)
+    const cf = rep.sections.find(x => x.id === 'cashflow')!; expect(cf.table!.rows).toHaveLength(1); expect(+cf.table!.rows[0][2]).toBeCloseTo(spend, 2)
+    expect(rep.sections.map(x => x.id)).toEqual(['summary', 'spending', 'cashflow', 'networth', 'investments', 'tax'])
+    const rows = reportRows(rep); expect(rows[0][0]).toContain('October 2026'); for (const sec of rep.sections) expect(rows.some(r => r[0] === sec.title.toUpperCase())).toBe(true)
+    const q = buildReport(data, s, 'quarter', '2026-10-01', ['cashflow'], T0); expect(q.sections[0].table!.rows.map(r => r[0])).toEqual(['2026-10', '2026-11'])   // Q4 to date
+  })
+})
+describe('reports: change labels and net worth', () => {
+  it('rates change in points; small or sign-flipping bases show dollars, not percent', () => {
+    expect(changeText({ label: 'Savings rate', value: 0.264, fmt: 'pct', prev: 0.01 })).toBe('+25.4 pts')
+    expect(changeText({ label: 'Net', value: 1929, fmt: 'money', prev: 56 })).toBe('+$1,873')
+    expect(changeText({ label: 'Net', value: -200, fmt: 'money', prev: 300 })).toBe('−$500')
+    expect(changeText({ label: 'Income', value: 7315, fmt: 'money', prev: 5010 })).toBe('+46%')
+    expect(changeText({ label: 'Income', value: 10, fmt: 'money', prev: 10 })).toBe('no change')
+  })
+  it('net worth section: change = end − start, both from the same series', () => {
+    const { data, household } = seed(); const rep = buildReport(data, { ...SETTINGS_DEFAULTS, ...household.settings }, 'month', '2026-10-01', ['networth'], T0)
+    const [end, change] = rep.sections[0].kpis; expect(change.value).toBeCloseTo(end.value - end.prev!, 2)
   })
 })

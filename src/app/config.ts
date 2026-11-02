@@ -1,5 +1,5 @@
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'WealthPilot'
-export const APP_VERSION = '0.7.0'
+export const APP_VERSION = '0.8.0'
 export const APP_BUILD = typeof __APP_BUILD__ !== 'undefined' ? __APP_BUILD__ : 'dev'
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || ''

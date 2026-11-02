@@ -29,7 +29,7 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | 5 Tax Planning | Income aggregation (W-2, 1099, dividends, interest, gains, business, rental) | auto from pay schedules / holdings / rental + manual items (stored in household settings — no migration needed) | ✔ | 0.7.0 |
 | | Federal / state (Ohio) / local / SE tax engine; underpayment risk; withholding sliders; filing projection; tax calendar | `lib/tax.ts` + `lib/taxTables.ts` (sourced, by year) | ✔ | 0.7.0 |
 | 6 Goals & Planning | Emergency fund, debt payoff, retirement, home, education, purchases; progress, forecast, milestones, what-if | Goals: milestones + What-if per goal (`lib/planning.ts`) | ✔ | 0.5.0 |
-| 7 Reports | Monthly / quarterly / annual; spending, investment, tax, net worth; PDF / Excel / CSV | Reports page: print-to-PDF stylesheet, CSV ✔, Excel via SheetJS | FE | 0.8.0 |
+| 7 Reports | Monthly / quarterly / annual; spending, investment, tax, net worth; PDF / Excel / CSV | Reports page (`lib/reports.ts`): print → PDF, Excel workbook, CSV | ✔ | 0.8.0 |
 | 8 Security & Settings | MFA / 2FA | Settings → Security: TOTP enrol/verify/unenrol + code step at sign-in | ✔ | 0.4.0 |
 | | Session / device management, password | sign out other devices / everywhere, change password | ✔ | 0.4.0 |
 | | API-key vault, encryption status | "What is stored, and where" panel | ✔ | 0.4.0 |
@@ -37,6 +37,6 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | | Latency / error rate / uptime | Not meaningful for a static app + Supabase; show Supabase status + last refresh instead | — | — |
 | Data tables | Sort, filter, search, pagination, column visibility, resize, CSV/Excel export | `Table.tsx` — all of it, prefs remembered per table | ✔ | 0.4.0 |
 | Sample data | 50+ transactions, 5+ institutions, investment & retirement accounts | Offline demo: holdings added ✔ · tax sample with 0.7.0 | FE | 0.7.0 |
-| Navigation | 8 primary tabs | Regroup the rail zones to the spec's 8 once Investments / Tax / Reports exist | FE | 0.8.0 |
+| Navigation | 8 primary tabs | Rail grouped into the 8 sections (+ Overview) | ✔ | 0.8.0 |
 
 Not planned: MFA beyond TOTP, "API latency / uptime" dashboards, Plaid/Teller/MX until a backend exists.
