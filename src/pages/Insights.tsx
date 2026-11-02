@@ -11,7 +11,7 @@ const WASTE_LABEL: Record<WasteKind, string> = { duplicate: 'Duplicate charge', 
 
 export function InsightsPage() {
   const { data, settings } = useData(); const c = C(); const pal = PALETTE()
-  const [win, setWin] = useState<'30' | 'month' | '90'>('month'); const [look, setLook] = useState<3 | 6>(3)
+  const [win, setWin] = useState<'30' | 'month' | '90'>('30'); const [look, setLook] = useState<3 | 6>(3)
   const [from, to] = useMemo(() => (win === 'month' ? [monthStart(curMonth()), monthEnd(curMonth())] : [addDays(today(), -(+win) + 1), today()]), [win])
   const merchants = useMemo(() => merchantAnalysis(data, from, to), [data, from, to])
   const subs = useMemo(() => subscriptionAnalysis(data), [data])
@@ -27,7 +27,7 @@ export function InsightsPage() {
       <KPI l="Monthly burn rate" v={fmtMoney(health.burnRate)} cls="warn" s={`spending + debt payments · avg of ${prevMonths.length} closed months`} />
       <KPI l="Savings rate" v={fmtPct(health.savingsRate)} cls={health.savingsRate == null ? 'idle' : health.savingsRate >= settings.savingsTargetPct / 100 ? 'good' : 'warn'} s={`target ${settings.savingsTargetPct}% · income ${fmtMoney(health.income)}/mo`} />
       <KPI l="Expense ratio" v={fmtPct(health.expenseRatio)} cls={health.expenseRatio == null ? 'idle' : health.expenseRatio <= 0.8 ? 'good' : health.expenseRatio <= 1 ? 'warn' : 'crit'} s="spending ÷ income" />
-      <KPI l="Months covered" v={health.monthsCovered == null ? '—' : health.monthsCovered.toFixed(1)} cls={health.monthsCovered == null ? 'idle' : health.monthsCovered >= settings.runwayGreen ? 'good' : health.monthsCovered >= settings.runwayYellow ? 'warn' : 'crit'} s="cash on hand ÷ burn rate" />
+      <KPI l="Months covered" v={health.monthsCovered == null ? '—' : health.monthsCovered.toFixed(1)} cls={health.monthsCovered == null ? 'idle' : health.monthsCovered >= settings.runwayGreen ? 'good' : health.monthsCovered >= settings.runwayYellow ? 'warn' : 'crit'} s="cash on hand ÷ burn rate, if income stopped" />
       <KPI l="Subscriptions" v={fmtMoney(subs.monthly) + '/mo'} cls={subs.detectedUnknown.length ? 'warn' : 'info'} s={`${subs.count} items · ${fmtMoney(subs.annual)}/yr${subs.detectedUnknown.length ? ` · ${subs.detectedUnknown.length} not in Bills` : ''}`} />
       <KPI l="Waste found" v={fmtMoney(wasteTotal)} cls={wasteTotal > 0 ? 'crit' : 'good'} s={`${waste.length} findings · last 90 days`} />
     </div>

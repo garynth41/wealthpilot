@@ -52,7 +52,7 @@ Scripts: `npm run typecheck` · `npm test` (53 unit tests: engines, intelligence
 
 1. Create a repo (e.g. `wealthpilot`), push this folder.
 2. `npm run deploy` publishes `dist/` to `gh-pages`. In the repo settings choose Pages → branch `gh-pages`.
-3. The app is then at `https://<user>.github.io/wealthpilot/`. `vite.config.ts` uses `base: './'` and the router uses hashes, so no path configuration is needed.
+3. The app is then at `https://<user>.github.io/wealthpilot/` — live: **https://garynth41.github.io/wealthpilot/**. `vite.config.ts` uses `base: './'` and the router uses hashes, so no path configuration is needed.
 4. In Supabase → Authentication → URL configuration, add that URL to **Site URL / Redirect URLs** (for confirmation and password-reset links).
 
 ## Email capture setup (optional)
@@ -89,6 +89,7 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.3.1** — fixed the `Gauge` component: values above half-scale drew the arc the long way round (SVG large-arc flag) and the 0 / 50 / 100 tick labels were clipped — affected the Insights score gauges and the Dashboard / Forecast runway gauge above 12 months · Insights: merchants default to a 30-day window, subscriptions show the last charge from the ledger, "months covered" labelled "if income stopped" · deploy script uses gh-pages v6 flags · live site https://garynth41.github.io/wealthpilot/ · audit: every Insights figure recomputed independently against the demo data (burn rate, income, savings rate, expense ratio, months covered, shares, both scores, merchant totals and change %) — all match.
 - **0.3.0** — **Spending Intelligence** page (`lib/intelligence.ts`: merchants, detected recurring charges, subscription summary, waste detection, health scores) · **Bank Connections** page with CSV / OFX / QFX import and de-duplication (`lib/import.ts`) · theme: light / dark / **system** · About panel shows environment (development / staging / production), build, database reachability + latency and last successful sync · Transactions deep-links (`#/transactions?ids=…`) from findings · 21 new unit tests (53 total), 8 new smoke checks (incl. a real CSV import through the UI) · `docs/ROADMAP.md`.
 - **0.2.0** — renamed to **WealthPilot**: new logo (`Logo.tsx` + `favicon.svg`), navy/teal/gold theme tokens (light + dark), storage-key prefix `wealthpilot.`, export/backup file names, `app` tag in JSON backups, `package.json` name, `setup.ps1` defaults.
 - **0.1.2** — fixed `npm run e2e` crashing on Windows with `EISDIR`: the e2e static servers served any request path that matched a real directory (e.g. `/assets`) straight to `readFileSync`. They now fall back to `index.html` unless the path is a regular file.

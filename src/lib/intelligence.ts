@@ -58,7 +58,8 @@ export function detectRecurring(d: Data, asOf = today(), lookbackDays = 400): De
 export interface SubscriptionSummary { monthly: number; annual: number; count: number; detectedUnknown: DetectedRecurring[]; items: Array<{ name: string; monthly: number; annual: number; source: 'recurring' | 'detected'; lastCharged?: string | null; rising?: boolean }> }
 export function subscriptionAnalysis(d: Data, asOf = today()): SubscriptionSummary {
   const subs = recActive(d).filter(r => r.kind === 'subscription'); const det = detectRecurring(d, asOf)
-  const items: SubscriptionSummary['items'] = subs.map(r => { const m = det.find(x => x.key === merchantKey(r.payee || r.name)); return { name: r.name, monthly: round2(recMonthly(r)), annual: round2(recMonthly(r) * 12), source: 'recurring' as const, lastCharged: r.last_paid_on || m?.last || null, rising: m?.rising } })
+  const lastSeen = (key: string) => spendTx(d).filter(t => merchantKey(t.payee) === key && t.date <= asOf).map(t => t.date).sort().pop() || null
+  const items: SubscriptionSummary['items'] = subs.map(r => { const key = merchantKey(r.payee || r.name); const m = det.find(x => x.key === key); const seen = lastSeen(key); return { name: r.name, monthly: round2(recMonthly(r)), annual: round2(recMonthly(r) * 12), source: 'recurring' as const, lastCharged: [r.last_paid_on, seen].filter(Boolean).sort().pop() || null, rising: m?.rising } })
   const unknown = det.filter(x => !x.known && x.cadence !== 'other')
   unknown.forEach(x => items.push({ name: x.name, monthly: round2(x.annual / 12), annual: x.annual, source: 'detected', lastCharged: x.last, rising: x.rising }))
   items.sort((a, b) => b.annual - a.annual)

@@ -152,3 +152,10 @@ describe('intelligence: health', () => {
     expect(h.savingsRate).toBeNull(); expect(h.expenseRatio).toBeNull(); expect(h.cashFlowScore).toBe(0); expect(h.burnRate).toBeCloseTo(50 / 3, 2)
   })
 })
+describe('intelligence: subscription last-charged', () => {
+  it('uses the latest of last_paid_on and the newest matching transaction', () => {
+    const { data } = seed(); const s = subscriptionAnalysis(data, T0); const nf = s.items.find(i => i.name === 'Netflix')!
+    const newest = data.transactions.filter(t => merchantKey(t.payee) === 'netflix' && t.kind === 'expense').map(t => t.date).sort().pop()
+    expect(nf.lastCharged).toBe(newest)
+  })
+})

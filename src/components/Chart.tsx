@@ -40,11 +40,13 @@ function BigChart({ data, layout, title }: { data: Data; layout: Layout; title: 
 }
 export function Gauge({ value, max, color, steps, label, note }: { value: number; max: number; color: string; steps: Array<{ range: [number, number]; color: string }>; label: string; note?: ReactNode }) {
   // a semicircular gauge drawn as SVG (no Plotly dependency): coloured bands for the steps, a thick arc for the value, ticks every max/4
-  const cx = 150, cy = 150, R = 118, w = 22; const ang = (v: number) => Math.PI - (Math.min(max, Math.max(0, v)) / max) * Math.PI
+  // Geometry: 0 is at the left (180°), max at the right (0°), drawn clockwise over the top. The whole scale is a half circle, so no arc ever
+  // exceeds 180° and the SVG large-arc flag must stay 0 (setting it for spans > max/2 made the browser draw the complement the long way round).
+  const cx = 150, cy = 150, R = 104, w = 20; const ang = (v: number) => Math.PI - (Math.min(max, Math.max(0, v)) / max) * Math.PI
   const pt = (v: number, r: number) => [cx + r * Math.cos(ang(v)), cy - r * Math.sin(ang(v))]
-  const arc = (a: number, b: number, r: number) => { const [x1, y1] = pt(a, r), [x2, y2] = pt(b, r); const big = (b - a) / max > 0.5 ? 1 : 0; return `M ${x1} ${y1} A ${r} ${r} 0 ${big} 1 ${x2} ${y2}` }
+  const arc = (a: number, b: number, r: number) => { const [x1, y1] = pt(a, r), [x2, y2] = pt(b, r); return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}` }
   const c = C(); const ticks = [0, max / 4, max / 2, (3 * max) / 4, max]
-  return <div style={{ position: 'relative' }}><svg viewBox="0 0 300 170" style={{ width: '100%', maxWidth: 360, display: 'block', margin: '0 auto' }} role="img" aria-label={label}>
+  return <div style={{ position: 'relative' }}><svg viewBox="-12 0 324 165" style={{ width: '100%', maxWidth: 380, display: 'block', margin: '0 auto' }} role="img" aria-label={label}>
     {steps.map((st, i) => <path key={i} d={arc(st.range[0], st.range[1], R)} stroke={st.color} strokeWidth={w} fill="none" />)}
     <path d={arc(0, Math.max(0.001, value), R)} stroke={color} strokeWidth={w * 0.6} fill="none" strokeLinecap="round" />
     {ticks.map(t => { const [x, y] = pt(t, R + w / 2 + 4), [x2, y2] = pt(t, R + w / 2 + 16); return <g key={t}><line x1={x} y1={y} x2={x2} y2={y2} stroke={c.ink3} strokeWidth={1} /><text x={pt(t, R + w / 2 + 28)[0]} y={pt(t, R + w / 2 + 28)[1] + 4} textAnchor="middle" fontSize="12" fill={c.ink2}>{Number.isInteger(t) ? t : t.toFixed(1)}</text></g> })}
