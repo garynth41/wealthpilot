@@ -17,3 +17,23 @@ Start with **SimpleFIN Bridge**. Build once you have subscribed and linked your 
 4. Add Plaid later only if a needed bank is missing.
 
 Sources: SimpleFIN pricing and limits via Actual Budget's SimpleFIN docs (actualbudget.org/docs/advanced/bank-sync/simplefin); Plaid billing and Trial plan (plaid.com/docs/account/billing).
+
+
+## Status (v0.11.0) — built, waiting for your SimpleFIN subscription
+Implemented: `supabase/migrations/0004_bank_sync.sql` (tables `sync_connections`, `sync_secrets` — no browser access —, `sync_log`), edge function `sync-simplefin` (actions `connect`, `sync`, `disconnect`, `sync_all`), pure engine `src/lib/simplefin.ts` (the function carries an identical copy, enforced by a test), and the card on **Bank Connections**.
+
+To start: subscribe at bridge.simplefin.org, link your banks, create a *New Connection* setup token, paste it into Bank Connections → Connect, match the accounts, Save matching, Sync now.
+
+### Optional: daily automatic sync
+1. Function secret `CRON_SECRET` = a long random string (Supabase → Edge Functions → Secrets).
+2. In the SQL editor (needs the `pg_cron` and `pg_net` extensions, Database → Extensions):
+```sql
+select cron.schedule('wealthpilot-daily-sync', '17 9 * * *',
+  $$ select net.http_post(url := 'https://dshswfcpovdpxcidolqb.supabase.co/functions/v1/sync-simplefin',
+       headers := jsonb_build_object('Content-Type','application/json','x-cron-secret','<the CRON_SECRET>','apikey','<publishable key>'),
+       body := '{"action":"sync_all"}'::jsonb) $$);
+```
+SimpleFIN refreshes banks about once a day and allows roughly 24 requests a day, so one run per day is plenty.
+
+### Limits worth knowing
+SimpleFIN reports a card balance as a negative number; WealthPilot stores the positive amount owed (a positive card balance is treated as 0 owed). Pending items are skipped until they post. Categories are not assigned during sync — use **Auto-categorize** on Transactions.

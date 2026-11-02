@@ -97,6 +97,9 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/trends'); await p.waitForTimeout(900); ok((await p.locator('svg[aria-label="Treemap of spending by category"] rect').count()) >= 5, 'trends shows a category treemap'); ok((await p.locator('svg[aria-label="Heat map of daily spending"] rect').count()) > 100, 'trends shows a daily spending heat map')
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(900); ok(/Sinking funds/.test(await p.locator('main').textContent()) && /Home maintenance/.test(await p.locator('main').textContent()), 'budget shows sinking funds')
     ok((await (await p.request.get('http://localhost:4173/manifest.webmanifest')).json()).name === 'WealthPilot', 'web app manifest is served'); ok((await (await p.request.get('http://localhost:4173/sw.js')).text()).includes('wealthpilot-v1'), 'service worker is served')
+    // 0.11.0: bank sync card on Bank Connections explains itself in the demo (no real connection possible there)
+    await p.goto('http://localhost:4173/#/connections'); await p.waitForTimeout(700); const cx = await p.locator('main').textContent()
+    ok(/Automatic bank sync/.test(cx) && /not available in the offline demo/.test(cx), 'Bank Connections shows the automatic-sync card with the demo notice')
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.click('button:has-text("Security")'); await p.waitForTimeout(300); ok((await p.locator('.card').first().textContent()).includes('offline demo'), 'Security tab renders (demo notice)')
     // 0.10.0: members — invite with limited access drafts an email carrying a one-time temporary password; access can be changed afterwards
     await p.click('button:has-text("Members")'); await p.waitForTimeout(300); const members0 = await p.locator('table.tbl tbody tr').count()

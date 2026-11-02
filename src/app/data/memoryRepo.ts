@@ -1,6 +1,6 @@
 // Offline demo repo: the same contract as Supabase, kept in this browser (localStorage). Also the harness for the test suites.
 import type { Repo } from './repo'
-import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult } from './types'
 import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { monthKey, today } from '../../lib/dates'
@@ -64,6 +64,11 @@ export class MemoryRepo implements Repo {
   }
   async ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]) { for (const r of rows) { const i = this.data.emailLedger.findIndex(x => x.message_id === r.message_id); const row = { ...r, household_id: this.household.id, decided_at: new Date().toISOString() }; if (i >= 0) this.data.emailLedger[i] = row; else this.data.emailLedger.push(row) } this.persist() }
   async invite(email: string, role: Role) { this.data.invites.push({ id: demoId(), household_id: this.household.id, email, role }); this.persist(); this.emit() }
+  async syncStatus(): Promise<SyncStatus> { return { connection: null, log: [], available: false } }
+  async syncConnect(): Promise<void> { throw new Error('Bank sync needs a real household — it is not available in the offline demo') }
+  async syncNow(): Promise<SyncResult> { throw new Error('Bank sync is not available in the offline demo') }
+  async syncSetMap(): Promise<void> { /* nothing to map in the demo */ }
+  async syncDisconnect(): Promise<void> { /* nothing to disconnect */ }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly, modules } : m); this.persist(); this.emit() }
   /** Demo: no real account is created; a temporary password is generated locally so the invitation flow can be tried end to end. */

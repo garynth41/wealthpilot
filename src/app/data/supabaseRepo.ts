@@ -1,5 +1,5 @@
 import type { Repo } from './repo'
-import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult } from './types'
+import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type SyncLogRow } from './types'
 import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 
@@ -57,6 +57,18 @@ export class SupabaseRepo implements Repo {
   }
   async ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]) { if (!rows.length) return; const { error } = await sb().from('email_ledger').upsert(rows.map(r => ({ ...r, household_id: this.hh })), { onConflict: 'household_id,message_id' }); if (error) throw error }
   async invite(email: string, role: Role) { const { error } = await sb().from('household_invites').upsert({ household_id: this.hh, email: email.toLowerCase(), role }, { onConflict: 'household_id,email' }); if (error) throw error }
+  private async syncCall<T>(body: Record<string, unknown>): Promise<T> {
+    const { data, error } = await sb().functions.invoke('sync-simplefin', { body: { household_id: this.hh, ...body } })
+    if (error) { let msg = error.message; try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === 'function') { const j = await ctx.json(); if (j?.error || j?.message) msg = j.error || j.message } } catch { /* keep message */ } throw new Error(msg) }
+    return data as T }
+  async syncStatus(): Promise<SyncStatus> {
+    const c = sb(); const [cn, lg] = await Promise.all([c.from('sync_connections').select('*').eq('household_id', this.hh).maybeSingle(), c.from('sync_log').select('*').eq('household_id', this.hh).order('started_at', { ascending: false }).limit(15)])
+    if (cn.error || lg.error) return { connection: null, log: [], available: false }   // table missing (database not upgraded yet) or no access to Bank connections
+    return { connection: (cn.data as SyncConnection | null) || null, log: (lg.data || []) as SyncLogRow[], available: true } }
+  async syncConnect(setupToken: string) { await this.syncCall({ action: 'connect', setup_token: setupToken }) }
+  async syncNow() { return await this.syncCall<SyncResult>({ action: 'sync' }) }
+  async syncSetMap(map: Record<string, string>) { const { error } = await sb().from('sync_connections').update({ account_map: map }).eq('household_id', this.hh); if (error) throw error }
+  async syncDisconnect() { await this.syncCall({ action: 'disconnect' }) }
   async removeMember(userId: string) { const { error } = await sb().from('household_members').delete().eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { const { error } = await sb().from('household_members').update({ role, read_only: readOnly, modules }).eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
   async inviteWithPassword(req: InviteRequest): Promise<InviteResult> {

@@ -9,6 +9,8 @@ import { suggest, applySuggestion } from '../lib/rules'
 import { fm2, fmtMoney, round2 } from '../lib/money'
 import { fmtD, today, ago } from '../lib/dates'
 import { isLiability, acctLabel } from '../lib/accounts'
+import { BankSyncCard, syncKpi } from './BankSync'
+import type { SyncStatus } from '../app/data/types'
 
 type Stage = 'pick' | 'map' | 'review' | 'done'
 const COLS: Array<[keyof Mapping, string]> = [['date', 'Date'], ['payee', 'Payee / description'], ['amount', 'Amount (signed)'], ['debit', 'Debit / money out'], ['credit', 'Credit / money in'], ['memo', 'Memo'], ['id', 'Transaction id'], ['type', 'Type']]
@@ -18,6 +20,7 @@ export function ConnectionsPage() {
   const [stage, setStage] = useState<Stage>('pick'); const [file, setFile] = useState<{ name: string; text: string } | null>(null); const [acctId, setAcctId] = useState(accts[0]?.id || '')
   const [rows, setRows] = useState<string[][]>([]); const [map, setMap] = useState<Mapping | null>(null); const [ofx, setOfx] = useState<ReturnType<typeof parseOfx> | null>(null)
   const [skipDups, setSkipDups] = useState(true); const [setBalance, setSetBalance] = useState(true); const [result, setResult] = useState<ImportLog | null>(null); const [err, setErr] = useState('')
+  const [sync, setSync] = useState<SyncStatus | null>(null); const sk = syncKpi(sync)
   const account = data.accounts.find(a => a.id === acctId) as Account | undefined
   const format = file ? sniffFormat(file.name, file.text) : 'csv'
 
@@ -49,9 +52,10 @@ export function ConnectionsPage() {
       <KPI l="Connected sources" v={`${accts.length} account${accts.length === 1 ? '' : 's'}`} cls="info" s="statement files (CSV / OFX / QFX) · email capture · manual" />
       <KPI l="Last import" v={history[0] ? ago(history[0].at.slice(0, 10)) : '—'} cls={history[0] ? 'good' : 'idle'} s={history[0] ? `${history[0].file} · ${history[0].added} added` : 'nothing imported yet'} />
       <KPI l="Imported transactions" v={String(data.transactions.filter(t => t.source === 'import').length)} cls="info" s="source = import" />
-      <KPI l="Bank sync (Plaid / Teller)" v="Not connected" cls="idle" s="needs a server to hold credentials — on the roadmap" />
+      <KPI l="Automatic bank sync" v={sk.v} cls={sk.cls} s={sk.s} />
     </div>
     <div className="grid g12">
+      <BankSyncCard onKpi={setSync} />
       <Card span={7} title="Import a statement" hint="CSV, OFX or QFX from your bank or card — duplicates are detected before anything is written">
         {!canEdit && <Banner cls="warn">You have read-only access — imports are disabled.</Banner>}
         {stage === 'pick' && <>
