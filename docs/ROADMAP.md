@@ -21,7 +21,7 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | | Manual overrides with audit log | Inline balance edit ✔ + `activity_log` ✔ | ✔ | — |
 | 3 Bank Connections | CSV / OFX / QFX import with de-dup | **`lib/import.ts`** + Connections page (`external_id` unique index ✔) | FE | 0.3.0 |
 | | Sync status, history, logs, "Sync now" | Connections page: import history (source, file, rows, dupes) | FE+DB | 0.3.0 (history in settings json) |
-| | Plaid / Teller / MX | Needs a server to hold secrets + webhooks | EF + 3P | evaluate (step 7h) |
+| | Plaid / Teller / MX | Evaluated — see `docs/BANK_SYNC.md`: SimpleFIN Bridge ($15/yr) via an edge function recommended; Plaid Trial as fallback | EF + 3P | needs your sign-up |
 | 4 Investments & Retirement | Holdings: stocks, ETFs, funds, bonds, real estate, cash, alternatives | `holdings` table + Investments page | ✔ | 0.6.0 |
 | | Asset / sector / risk allocation | `lib/portfolio.ts` | ✔ | 0.6.0 |
 | | Retirement planner (age, contributions, return, inflation → value, readiness, replacement ratio) | `lib/retirement.ts` | ✔ | 0.6.0 |
