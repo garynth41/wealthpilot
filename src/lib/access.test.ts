@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MODULES, GRANTABLE, ALWAYS_ON, moduleForPath, allowedModules, canViewPath, allowedPaths, normaliseModules, accessLevel, accessToMember, describeAccess, genTempPassword, isTempPassword, passwordProblems, inviteEmailDraft, TEMP_PLACEHOLDER, mailtoLink } from './access'
+import { isCommonPassword, MODULES, GRANTABLE, ALWAYS_ON, moduleForPath, allowedModules, canViewPath, allowedPaths, normaliseModules, accessLevel, accessToMember, describeAccess, genTempPassword, isTempPassword, passwordProblems, inviteEmailDraft, TEMP_PLACEHOLDER, mailtoLink } from './access'
 import { VIEWS } from '../components/Layout'
 
 describe('modules', () => {
@@ -59,6 +59,17 @@ describe('temporary passwords and password rules', () => {
     expect(passwordProblems('WP-Abcd-efgh-jkm2')).toContain('not in the temporary-password format')
     expect(passwordProblems('Garynthomas99', { email: 'garynthomas@gmail.com' })).toContain('not contain your email name')
     expect(passwordProblems('Abcdefghij12', { confirm: 'Abcdefghij13' })).toContain('the two entries must match')
+  })
+})
+
+describe('common-password blocklist', () => {
+  it('blocks common bases with years, symbols and look-alike swaps', () => {
+    for (const pw of ['Password123', 'P@ssw0rd2026', 'Qwerty12345!', 'Welcome2026', 'Letmein99', 'Wealthpilot1', 'Iloveyou2026', 'pass-word_2025']) expect(isCommonPassword(pw), pw).toBe(true)
+    expect(passwordProblems('Password2026')).toContain('not a common password')
+  })
+  it('lets genuine passphrases through, including ones that merely contain a common word', () => {
+    for (const pw of ['Sunny-Harbor-2026', 'Correct7Horse-Battery', 'MyWelcomeMat-Is-Blue9', 'Tr0ub4dor&3xKcd']) expect(isCommonPassword(pw), pw).toBe(false)
+    expect(passwordProblems('Sunny-Harbor-2026')).toEqual([])
   })
 })
 

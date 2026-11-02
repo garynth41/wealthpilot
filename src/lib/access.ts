@@ -76,6 +76,16 @@ export function genTempPassword(rnd: () => number = Math.random): string {
 }
 export const isTempPassword = (pw: string) => /^WP-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/.test(pw)
 
+/** Very common passwords and the bases people build on (password + year, qwerty + !). Matched after normalising: lower-case, common look-alike characters undone, trailing digits/symbols and separators stripped.
+ *  A small offline backstop for when Supabase's leaked-password check (Pro plan) is not available — not a substitute for it. */
+const COMMON = ['password', 'passw0rd', 'letmein', 'welcome', 'iloveyou', 'admin', 'administrator', 'qwerty', 'qwertyuiop', 'asdfgh', 'asdfghjkl', 'zxcvbn', 'zxcvbnm', 'abc123', 'monkey', 'dragon', 'master', 'sunshine', 'princess', 'football', 'baseball', 'basketball', 'superman', 'batman', 'trustno', 'changeme', 'secret', 'login', 'starwars', 'whatever', 'freedom', 'shadow', 'michael', 'jordan', 'hello', 'charlie', 'donald', 'summer', 'winter', 'spring', 'autumn', 'ohio', 'cleveland', 'columbus', 'buckeye', 'buckeyes', 'wealthpilot', 'pocketledger', 'budget', 'finance', 'money', 'family', 'thomas', 'thomas1']
+const LOOKALIKE: Record<string, string> = { '0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's', '!': 'i' }
+export function isCommonPassword(pw: string): boolean {
+  const base = pw.toLowerCase().replace(/[\s._-]+/g, '').replace(/[0-9!@#$%^&*?]+$/, '')
+  const leet = base.replace(/[01345 7@$!]/g, c => LOOKALIKE[c] || c)
+  return COMMON.some(w => base === w || leet === w.replace(/[01345 7@$!]/g, c => LOOKALIKE[c] || c) || (w.length >= 6 && (base.startsWith(w) || leet.startsWith(w.replace(/[01345 7@$!]/g, c => LOOKALIKE[c] || c))) && base.length <= w.length + 4))
+}
+
 /** First-sign-in password rules. Returns the problems (empty = acceptable). */
 export function passwordProblems(pw: string, opts: { email?: string; temp?: string | null; confirm?: string } = {}): string[] {
   const p: string[] = []
@@ -86,6 +96,7 @@ export function passwordProblems(pw: string, opts: { email?: string; temp?: stri
   if (isTempPassword(pw)) p.push('not in the temporary-password format')
   const local = (opts.email || '').split('@')[0].toLowerCase()
   if (local.length >= 4 && pw.toLowerCase().includes(local)) p.push('not contain your email name')
+  if (isCommonPassword(pw)) p.push('not a common password')
   if (/^(.)\1+$/.test(pw) || /^(?:0123456789|1234567890|abcdefghij|qwertyuiop)/i.test(pw)) p.push('not a simple sequence')
   if (opts.confirm !== undefined && opts.confirm !== pw) p.push('the two entries must match')
   return p
