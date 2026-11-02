@@ -100,6 +100,17 @@ for (const W of [1400, 390]) {
     // 0.11.0: bank sync card on Bank Connections explains itself in the demo (no real connection possible there)
     await p.goto('http://localhost:4173/#/connections'); await p.waitForTimeout(700); const cx = await p.locator('main').textContent()
     ok(/Automatic bank sync/.test(cx) && /not available in the offline demo/.test(cx), 'Bank Connections shows the automatic-sync card with the demo notice')
+    // 0.11.1: full bank-sync screen against the pretend bank — connect, auto-prefilled matching (existing accounts matched, the rest created), enabled combined button, sync adds items once
+    await p.evaluate(() => localStorage.setItem('wealthpilot.simSync', '1')); await p.goto('http://localhost:4173/#/settings'); await p.goto('http://localhost:4173/#/connections'); await p.reload(); await p.waitForTimeout(900)
+    ok(await p.locator('button:has-text("Connect")').isDisabled(), 'Connect stays disabled until a token is pasted'); await p.fill('input[placeholder^="aHR0"]', 'aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmluLm9yZy9zaW1wbGVmaW4vY2xhaW0vVEVTVA=='); await p.click('button:has-text("Connect")'); await p.waitForTimeout(800)
+    const syncBtn = p.locator('button:has-text("Save matching & sync now")'); ok(await syncBtn.isEnabled(), 'sync button is enabled right after connecting (matching is pre-filled)')
+    const picks = await p.locator('table.tbl select.inp').evaluateAll(els => els.map(e => e.options[e.selectedIndex].text)); ok(picks.length === 4 && picks.filter(t => /Create a new account/.test(t)).length >= 1 && picks.filter(t => !/Create a new account|don't import/.test(t)).length >= 2, 'existing accounts are auto-matched and the rest are set to be created')
+    const acctsBefore = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.length), importedBefore = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.filter(t => t.source === 'import').length)
+    await syncBtn.click(); await p.waitForTimeout(1200); const afterSync = await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('wealthpilot.demo')).data; return { a: d.accounts.length, i: d.transactions.filter(t => t.source === 'import').length } })
+    ok(afterSync.a > acctsBefore && afterSync.i === importedBefore + 8, 'Save matching & sync creates the missing accounts and adds the bank transactions')
+    ok(/Sync history/.test(await p.locator('main').textContent()) && (await p.locator('button:has-text("Sync now")').isEnabled()), 'after syncing, history shows and plain "Sync now" is available')
+    await p.click('button:has-text("Sync now")'); await p.waitForTimeout(900); ok((await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.filter(t => t.source === 'import').length)) === importedBefore + 8, 'syncing again adds nothing twice')
+    await p.evaluate(() => localStorage.removeItem('wealthpilot.simSync')); await p.reload(); await p.waitForTimeout(600)
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.click('button:has-text("Security")'); await p.waitForTimeout(300); ok((await p.locator('.card').first().textContent()).includes('offline demo'), 'Security tab renders (demo notice)')
     // 0.10.0: members — invite with limited access drafts an email carrying a one-time temporary password; access can be changed afterwards
     await p.click('button:has-text("Members")'); await p.waitForTimeout(300); const members0 = await p.locator('table.tbl tbody tr').count()
@@ -118,4 +129,7 @@ for (const W of [1400, 390]) {
   }
   ok(!errors.length, `${W}: no page errors ${errors.slice(0, 3).join(' | ')}`); await p.close()
 }
+// 0.11.1: a password-reset link must open the "choose a new password" screen, never sign straight in (an unusable token shows the expired-link message)
+{ const rp = await b.newPage(); await rp.goto('http://localhost:4173/#access_token=not-a-real-token&refresh_token=x&expires_in=3600&token_type=bearer&type=recovery'); await rp.waitForTimeout(1500)
+  const rt = await rp.locator('body').textContent(); ok(/reset link has expired|Choose a new password/.test(rt) && !/Dashboard/.test(rt), 'a password-reset link opens the reset screen instead of signing in'); await rp.close() }
 console.log('smoke fails', F); await b.close(); srv.close()

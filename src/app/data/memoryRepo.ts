@@ -5,6 +5,7 @@ import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { monthKey, today } from '../../lib/dates'
 import { genTempPassword } from '../../lib/access'
+import { balanceFor, dropKnown } from '../../lib/simplefin'
 
 const KEY = LS('demo')
 const PREFIX: Partial<Record<Collection, string>> = { transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I' }
@@ -64,11 +65,31 @@ export class MemoryRepo implements Repo {
   }
   async ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]) { for (const r of rows) { const i = this.data.emailLedger.findIndex(x => x.message_id === r.message_id); const row = { ...r, household_id: this.household.id, decided_at: new Date().toISOString() }; if (i >= 0) this.data.emailLedger[i] = row; else this.data.emailLedger.push(row) } this.persist() }
   async invite(email: string, role: Role) { this.data.invites.push({ id: demoId(), household_id: this.household.id, email, role }); this.persist(); this.emit() }
-  async syncStatus(): Promise<SyncStatus> { return { connection: null, log: [], available: false } }
-  async syncConnect(): Promise<void> { throw new Error('Bank sync needs a real household — it is not available in the offline demo') }
-  async syncNow(): Promise<SyncResult> { throw new Error('Bank sync is not available in the offline demo') }
-  async syncSetMap(): Promise<void> { /* nothing to map in the demo */ }
-  async syncDisconnect(): Promise<void> { /* nothing to disconnect */ }
+  // Bank sync is not available in the demo — except for the test harness, which sets localStorage['wealthpilot.simSync']='1' to exercise the whole screen against a pretend bank.
+  private sim = { connected: false, map: {} as Record<string, string>, last: null as string | null, log: [] as SyncStatus['log'] }
+  private simOn() { try { return localStorage.getItem(LS('simSync')) === '1' } catch { return false } }
+  private static SIM_BANK = [{ id: 'S1', name: 'Total Checking (x4821)', org: 'Chase', last4: '4821', balance: 2310.55 }, { id: 'S2', name: 'Freedom Card ...7710', org: 'Chase', last4: '7710', balance: -640.12 }, { id: 'S3', name: 'Online Savings', org: 'Ally', last4: null, balance: 8000 }, { id: 'S4', name: 'Roth IRA', org: 'Fidelity', last4: null, balance: 21000 }]
+  async syncStatus(): Promise<SyncStatus> {
+    if (!this.simOn()) return { connection: null, log: [], available: false }
+    if (!this.sim.connected) return { connection: null, log: this.sim.log, available: true }
+    return { available: true, log: this.sim.log, connection: { household_id: this.household.id, provider: 'simplefin', status: 'connected', last_sync_at: this.sim.last, last_error: null, account_map: this.sim.map, discovered: MemoryRepo.SIM_BANK } } }
+  async syncConnect(): Promise<void> { if (!this.simOn()) throw new Error('Bank sync needs a real household — it is not available in the offline demo'); this.sim.connected = true }
+  async syncNow(): Promise<SyncResult> {
+    if (!this.simOn()) throw new Error('Bank sync is not available in the offline demo')
+    let added = 0, skipped = 0, accounts = 0
+    for (const b of MemoryRepo.SIM_BANK) {
+      const id = this.sim.map[b.id]; const acct = this.data.accounts.find(a => a.id === id); if (!acct) continue
+      accounts++; acct.balance = balanceFor(b, acct.kind); acct.balance_as_of = today()
+      const incoming = [{ date: today(), kind: 'expense', amount: 12.34, external_id: `sfin:${b.id}:a`, payee: 'SIM COFFEE' }, { date: today(), kind: 'income', amount: 100, external_id: `sfin:${b.id}:b`, payee: 'SIM DEPOSIT' }]
+      const { fresh, skipped: sk } = dropKnown(incoming, id, this.data.transactions.map(t => ({ account_id: t.account_id ?? null, date: t.date, kind: t.kind, amount: t.amount, external_id: t.external_id ?? null })))
+      skipped += sk; added += fresh.length
+      for (const f of fresh) this.data.transactions.push({ id: demoId(), household_id: this.household.id, ref: this.nextRef('transactions'), date: f.date, kind: f.kind as 'expense' | 'income', amount: f.amount, account_id: id, to_account_id: null, category_id: null, payee: f.payee, memo: null, tags: [], status: 'cleared', source: 'import', external_id: f.external_id, exclude_from_budget: false, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as never)
+    }
+    this.sim.last = new Date().toISOString(); const message = `${accounts} accounts synced · ${added} new transactions${skipped ? ` · ${skipped} already present` : ''}`
+    this.sim.log = [{ id: this.sim.log.length + 1, started_at: this.sim.last, finished_at: this.sim.last, trigger: 'manual' as const, ok: true, accounts, added, skipped, message }, ...this.sim.log]; this.persist(); this.emit()
+    return { ok: true, accounts, added, skipped, unmapped: 0, message } }
+  async syncSetMap(map: Record<string, string>): Promise<void> { if (this.simOn()) this.sim.map = map }
+  async syncDisconnect(): Promise<void> { this.sim = { connected: false, map: {}, last: null, log: [] } }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly, modules } : m); this.persist(); this.emit() }
   /** Demo: no real account is created; a temporary password is generated locally so the invitation flow can be tried end to end. */

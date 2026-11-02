@@ -83,6 +83,22 @@ export function autoMatch(sf: SfinAccount[], locals: Local[]): Record<string, st
   return out
 }
 
+/** A reasonable WealthPilot account type for a bank account that has no match yet, from its name — the owner can change it afterwards. */
+export function guessKind(name: string, balance = 0): string {
+  const n = String(name || '').toLowerCase()
+  if (/mortgage/.test(n)) return 'mortgage'
+  if (/auto|car loan|vehicle/.test(n) && /loan|financ/.test(n)) return 'auto_loan'
+  if (/student/.test(n)) return 'student_loan'
+  if (/line of credit|heloc/.test(n)) return 'line_of_credit'
+  if (/\bloan\b/.test(n)) return 'loan'
+  if (/credit|card|visa|mastercard|amex|discover|freedom|sapphire|platinum|rewards|cash\+?/.test(n) && !/saving|checking/.test(n)) return 'credit_card'
+  if (/401|403|ira\b|roth|retire|pension/.test(n)) return 'retirement'
+  if (/brokerage|invest|trading|stock|etf/.test(n)) return 'investment'
+  if (/sav|money market|\bmm\b|high.?yield|\bcd\b/.test(n)) return 'savings'
+  if (/check|chk|spending|everyday|debit|total/.test(n)) return 'checking'
+  return balance < 0 ? 'credit_card' : 'checking'
+}
+
 /** What WealthPilot stores as the balance: assets as reported; liabilities as the positive amount owed (SimpleFIN reports debt as a negative balance; a positive card balance is a credit, owed 0). */
 export function balanceFor(sf: Pick<SfinAccount, 'balance'>, kind: string): number {
   return isLiabilityKind(kind) ? r2(Math.max(0, -sf.balance)) : sf.balance

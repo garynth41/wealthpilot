@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import functionCopy from '../../supabase/functions/sync-simplefin/simplefin.ts?raw'
 import engineSource from './simplefin.ts?raw'
-import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindow, guessLast4, normaliseResponse, autoMatch, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin'
+import { guessKind, claimUrlFromToken, splitAccessUrl, redactUrl, syncWindow, guessLast4, normaliseResponse, autoMatch, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin'
 
 const b64 = (s: string) => btoa(s)
 const resp: SfinResponse = { errors: ['Connection to Chase failed at https://u:p@bridge.example/x'], accounts: [
@@ -60,6 +60,13 @@ describe('normalise, match and map', () => {
     const t = toNewTxns(n.accounts[0], { id: 'L1', kind: 'checking' })
     expect(t.map(x => [x.kind, x.amount, x.payee, x.external_id])).toEqual([['expense', 45.2, 'KROGER #123', 'sfin:A1:t1'], ['income', 1800, 'ACME PAYROLL', 'sfin:A1:t2']])
     expect(toNewTxns(n.accounts[1], { id: 'L2', kind: 'credit_card' }).map(x => x.kind)).toEqual(['expense', 'income'])
+  })
+})
+
+describe('account type guess', () => {
+  it('picks a sensible type from the bank account name, falling back on the sign of the balance', () => {
+    for (const [n, e] of [['Total Checking (x4821)', 'checking'], ['Chase Freedom Unlimited', 'credit_card'], ['Ally Online Savings', 'savings'], ['Fidelity 401(k)', 'retirement'], ['Roth IRA', 'retirement'], ['Schwab Brokerage', 'investment'], ['Auto Loan', 'auto_loan'], ['Home Mortgage', 'mortgage'], ['Student Loan', 'student_loan'], ['Platinum Card', 'credit_card'], ['Joint Spending', 'checking']] as const) expect(guessKind(n), n).toBe(e)
+    expect(guessKind('Account 7', -300)).toBe('credit_card'); expect(guessKind('Account 7', 300)).toBe('checking')
   })
 })
 

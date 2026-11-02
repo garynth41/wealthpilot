@@ -15,13 +15,13 @@ interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
   repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean; modules: string[] | null
   households: Array<{ id: string; name: string; role: Role }>
-  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean
+  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean; recovering: boolean
   settings: () => Settings
   canEdit: () => boolean; isOwner: () => boolean; canView: (path: string) => boolean; mustChangePassword: () => boolean
   boot: () => Promise<void>
   enterDemo: () => Promise<void>; exitDemo: () => void; resetDemo: () => void
   signIn: (email: string, password: string) => Promise<void>; signUp: (email: string, password: string) => Promise<string>; signOut: () => Promise<void>
-  resetPassword: (email: string) => Promise<void>; updatePassword: (pw: string) => Promise<void>
+  resetPassword: (email: string) => Promise<void>; updatePassword: (pw: string) => Promise<void>; finishRecovery: (pw: string) => Promise<void>
   verifyMfa: (code: string) => Promise<void>
   openHousehold: (id: string) => Promise<void>; createHousehold: (name: string) => Promise<void>
   refresh: () => Promise<void>
@@ -34,10 +34,12 @@ interface State {
   guarded: <T>(fn: () => Promise<T>, ok?: string) => Promise<T | undefined>
 }
 
+/** Captured before the Supabase client reads and clears the URL: a password-reset link lands with #access_token=…&type=recovery. */
+const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search)
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null, mfaPending: false,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   canEdit: () => { const s = get(); return s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly) },
   isOwner: () => get().mode === 'demo' || get().role === 'owner',
@@ -50,9 +52,10 @@ export const useStore = create<State>((set, get) => ({
       if (localStorage.getItem(LS('mode')) === 'demo') { await get().enterDemo(); return }
       if (!hasSupabase()) { set({ booting: false }); return }
       const { data: { session } } = await sb().auth.getSession()
-      sb().auth.onAuthStateChange((_e, s) => { set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } })
+      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } })
       set({ session, user: session?.user || null })
-      if (session) { if (await needsMfa()) set({ mfaPending: true }); else await loadHouseholds(session.user) }
+      if (session && get().recovering) { /* reset link: stay out of the household until the new password is saved */ }
+      else if (session) { if (await needsMfa()) set({ mfaPending: true }); else await loadHouseholds(session.user) }
     } catch (e) { set({ loadError: (e as Error).message }) }
     finally { set({ booting: false }) }
   },
@@ -67,6 +70,11 @@ export const useStore = create<State>((set, get) => ({
   async verifyMfa(code) { const { data: f, error: e1 } = await sb().auth.mfa.listFactors(); if (e1) throw e1; const factor = f.totp.find(x => x.status === 'verified') || f.totp[0]; if (!factor) throw new Error('No authenticator is enrolled'); const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s+/g, '') }); if (error) throw error; set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
   async signOut() { await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
+  async finishRecovery(pw) {
+    await get().updatePassword(pw); set({ recovering: false })
+    try { history.replaceState(null, '', location.pathname) } catch { /* */ }
+    const { data: { user } } = await sb().auth.getUser(); if (user) { if (await needsMfa()) set({ mfaPending: true }); else await loadHouseholds(user) }
+  },
   async resetPassword(email) { const { error } = await sb().auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error },
   async updatePassword(pw) { const { data, error } = await sb().auth.updateUser({ password: pw, data: { must_change_password: false } }); if (error) throw error; if (data.user) set({ user: data.user }) },
   async openHousehold(id) {

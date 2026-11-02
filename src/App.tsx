@@ -3,7 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useStore } from './app/store'
 import { ModalHost } from './components/ui'
 import { Layout, applySavedTheme } from './components/Layout'
-import { AuthPage, Onboarding, FirstSignIn } from './pages/Auth'
+import { AuthPage, Onboarding, FirstSignIn, ResetPassword } from './pages/Auth'
 import { Dashboard } from './pages/Dashboard'
 import { BudgetPage } from './pages/Budget'
 import { TransactionsPage } from './pages/Transactions'
@@ -28,12 +28,12 @@ applySavedTheme()
 if (olPopupRelay()) { /* this window was the Microsoft sign-in popup; it has posted the code back and is closing */ }
 
 export default function App() {
-  const { booting, boot, mode, household, user, loadError, mustChangePassword } = useStore()
+  const { booting, boot, mode, household, user, loadError, mustChangePassword, recovering } = useStore()
   useEffect(() => { boot() }, [boot])
   if (booting) return <div className="auth"><div className="note">Loading…</div></div>
-  const recover = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search)
+  if (recovering) return <ResetPassword />
   if (user && mustChangePassword()) return <FirstSignIn />
-  if (!mode) { if (user && !recover) return <Onboarding />; return <AuthPage recover={recover} /> }
+  if (!mode) { if (user) return <Onboarding />; return <AuthPage /> }
   if (!household) return <div className="auth"><div className="box">{loadError ? <div className="msg crit">{loadError}</div> : <div className="note">Opening your household…</div>}</div></div>
   return <ModalHost><HashRouter><Layout><Routes>
     <Route path="/" element={<Dashboard />} /><Route path="/forecast" element={<ForecastPage />} /><Route path="/budget" element={<BudgetPage />} /><Route path="/transactions" element={<TransactionsPage />} /><Route path="/bills" element={<BillsPage />} /><Route path="/income" element={<IncomePage />} />
