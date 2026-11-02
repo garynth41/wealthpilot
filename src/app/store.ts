@@ -6,17 +6,18 @@ import { MemoryRepo } from './data/memoryRepo'
 import { SupabaseRepo } from './data/supabaseRepo'
 import { hasSupabase, sb } from './supabase'
 import { LS, APP_VERSION, cmpVer } from './config'
+import { canViewPath } from '../lib/access'
 
 export type Mode = 'db' | 'demo' | null
 export interface Toast { id: number; text: string; err?: boolean }
 
 interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
-  repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean
+  repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean; modules: string[] | null
   households: Array<{ id: string; name: string; role: Role }>
   latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean
   settings: () => Settings
-  canEdit: () => boolean; isOwner: () => boolean
+  canEdit: () => boolean; isOwner: () => boolean; canView: (path: string) => boolean; mustChangePassword: () => boolean
   boot: () => Promise<void>
   enterDemo: () => Promise<void>; exitDemo: () => void; resetDemo: () => void
   signIn: (email: string, password: string) => Promise<void>; signUp: (email: string, password: string) => Promise<string>; signOut: () => Promise<void>
@@ -36,10 +37,12 @@ interface State {
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null, mfaPending: false,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null, mfaPending: false,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   canEdit: () => { const s = get(); return s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly) },
   isOwner: () => get().mode === 'demo' || get().role === 'owner',
+  canView: (path) => get().mode === 'demo' || canViewPath(path, get().modules),
+  mustChangePassword: () => get().mode === 'db' && !!(get().user?.user_metadata as { must_change_password?: boolean } | undefined)?.must_change_password,
 
   async boot() {
     set({ booting: true })
@@ -65,7 +68,7 @@ export const useStore = create<State>((set, get) => ({
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
   async signOut() { await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
   async resetPassword(email) { const { error } = await sb().auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error },
-  async updatePassword(pw) { const { error } = await sb().auth.updateUser({ password: pw }); if (error) throw error },
+  async updatePassword(pw) { const { data, error } = await sb().auth.updateUser({ password: pw, data: { must_change_password: false } }); if (error) throw error; if (data.user) set({ user: data.user }) },
   async openHousehold(id) {
     unsub?.(); const repo = new SupabaseRepo(id); localStorage.setItem(LS('household'), id)
     set({ mode: 'db', repo }); await get().refresh(); attach(repo)
@@ -74,7 +77,7 @@ export const useStore = create<State>((set, get) => ({
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
-    try { const r = await repo.loadAll(); set({ household: r.household, data: r.data, role: r.role, readOnly: r.readOnly, loadError: null, lastRefresh: Date.now() }) }
+    try { const r = await repo.loadAll(); set({ household: r.household, data: r.data, role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now() }) }
     catch (e) { set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
   async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); return r },

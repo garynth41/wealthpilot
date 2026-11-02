@@ -1,9 +1,10 @@
 // Offline demo repo: the same contract as Supabase, kept in this browser (localStorage). Also the harness for the test suites.
 import type { Repo } from './repo'
-import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest } from './types'
 import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { monthKey, today } from '../../lib/dates'
+import { genTempPassword } from '../../lib/access'
 
 const KEY = LS('demo')
 const PREFIX: Partial<Record<Collection, string>> = { transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I' }
@@ -23,7 +24,7 @@ export class MemoryRepo implements Repo {
   private persist() { try { localStorage.setItem(KEY, JSON.stringify({ household: this.household, data: this.data })) } catch { /* quota or private mode */ } }
   reset() { const s = demoSeed(); this.household = s.household; this.data = s.data; this.persist(); this.emit() }
   private emit() { this.listeners.forEach(f => f()) }
-  async loadAll() { return { household: this.household, data: this.data, role: 'owner' as Role, readOnly: false } }
+  async loadAll() { return { household: this.household, data: this.data, role: 'owner' as Role, readOnly: false, modules: null } }
   private nextRef(coll: Collection) { const p = PREFIX[coll]; if (!p) return undefined; const rows = this.data[coll] as Array<{ ref?: string | null }>; const n = Math.max(0, ...rows.map(r => +String(r.ref || '').split('-')[1] || 0)) + 1; return `${p}-${String(n).padStart(3, '0')}` }
   async insert<C extends Collection>(coll: C, row: Partial<RowOf<C>>) {
     const r = { ...row, id: (row as { id?: string }).id || demoId(), household_id: this.household.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as RowOf<C> & { ref?: string | null }
@@ -64,7 +65,11 @@ export class MemoryRepo implements Repo {
   async ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]) { for (const r of rows) { const i = this.data.emailLedger.findIndex(x => x.message_id === r.message_id); const row = { ...r, household_id: this.household.id, decided_at: new Date().toISOString() }; if (i >= 0) this.data.emailLedger[i] = row; else this.data.emailLedger.push(row) } this.persist() }
   async invite(email: string, role: Role) { this.data.invites.push({ id: demoId(), household_id: this.household.id, email, role }); this.persist(); this.emit() }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
-  async setMemberRole(userId: string, role: Role, readOnly: boolean) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly } : m); this.persist(); this.emit() }
+  async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly, modules } : m); this.persist(); this.emit() }
+  /** Demo: no real account is created; a temporary password is generated locally so the invitation flow can be tried end to end. */
+  async inviteWithPassword(req: InviteRequest) { const email = req.email.trim().toLowerCase(); const existing = this.data.members.find(m => m.email === email); const user_id = existing?.user_id || demoId(); const temp = existing ? null : genTempPassword()
+    this.data.members = [...this.data.members.filter(m => m.user_id !== user_id), { household_id: this.household.id, user_id, email, display_name: req.display_name || null, role: req.role, read_only: req.read_only, modules: req.modules, joined_at: new Date().toISOString() }]; this.data.invites = this.data.invites.filter(i => i.email !== email); this.persist(); this.emit()
+    return { user_id, existing: !!existing, temp_password: temp, sent: false, send_error: null, can_send: false } }
   async exportJson() { return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
   async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
     let n = 0; if (mode === 'replace') this.data = emptyData()

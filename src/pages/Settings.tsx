@@ -4,17 +4,19 @@ import { useStore } from '../app/store'
 import type { Category, PeriodType, Role } from '../app/data/types'
 import { PAY_FREQ_LABEL } from '../app/data/types'
 import { APP_NAME, APP_VERSION, APP_BUILD } from '../app/config'
-import { Card, Btn, Pill, Note, Field, useConfirm, Seg } from '../components/ui'
+import { Card, Btn, Pill, Note, Field, useConfirm, Seg, useModal, MHead, MBody, MFoot } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { fmtMoney, parseNum } from '../lib/money'
 import { fmtDY, today, ago } from '../lib/dates'
 import { hasSupabase, sb } from '../app/supabase'
 import { ruleHits, planAutoCategorise, type PayeeRule } from '../lib/rules'
+import { GRANTABLE, ACCESS_LABEL, accessLevel, accessToMember, describeAccess, normaliseModules, canEditAccess, inviteEmailDraft, mailtoLink, type AccessLevel } from '../lib/access'
+import type { Member, InviteResult } from '../app/data/types'
 
 export function SettingsPage() {
   const { data, household, settings, saveSettings, insert, update, remove, guarded, canEdit, isOwner, repo, refresh, mode, user, groups } = useData(); const confirm = useConfirm()
   const [tab, setTab] = useState<'general' | 'categories' | 'rules' | 'members' | 'security' | 'data' | 'activity'>('general')
-  const [name, setName] = useState(household?.name || ''); const [s, setS] = useState({ ...settings }); const [inviteEmail, setInviteEmail] = useState(''); const [inviteRole, setInviteRole] = useState<Role>('editor'); const fileRef = useRef<HTMLInputElement>(null)
+  const [name, setName] = useState(household?.name || ''); const [s, setS] = useState({ ...settings }); const fileRef = useRef<HTMLInputElement>(null)
   const saveGeneral = () => guarded(async () => { if (name !== household?.name) await repo!.renameHousehold(name); await saveSettings({ periodType: s.periodType, periodAnchor: s.periodAnchor || null, semimonthlyDays: s.semimonthlyDays, reserveFloor: +s.reserveFloor || 0, runwayGreen: +s.runwayGreen || 6, runwayYellow: +s.runwayYellow || 3, dueSoonDays: +s.dueSoonDays || 7, budgetCritPct: +s.budgetCritPct || 10, savingsTargetPct: +s.savingsTargetPct || 20, includeRetirementInCash: !!s.includeRetirementInCash, payFrequencyDefault: s.payFrequencyDefault }); await refresh() }, 'Settings saved')
   const catCols: Col<Category>[] = [{ k: 'group', label: 'Group', type: 'select', opts: [...groups, 'Income', 'Housing', 'Transport', 'Food', 'Health', 'Bills', 'Debt', 'Personal', 'Savings', 'Other'].filter((v, i, a) => a.indexOf(v) === i), w: 110 }, { k: 'name', label: 'Category', type: 'text', w: 160 }, { k: 'kind', label: 'Kind', type: 'select', opts: ['expense', 'income', 'transfer'], w: 100 }, { k: 'priority', label: 'Priority', type: 'select', opts: ['Essential', 'Important', 'Discretionary'], w: 120 }, { k: 'cost_type', label: 'Cost type', type: 'select', opts: ['Fixed', 'Variable', 'Irregular'], w: 100 }, { k: 'default_budget', label: 'Default budget', type: 'money', cls: 'num' }, { k: 'budget_cadence', label: 'Cadence', type: 'select', opts: ['period', 'monthly', 'yearly'], labels: { period: 'per period', monthly: 'per month', yearly: 'per year (sinking fund)' }, w: 150 }, { k: 'rollover', label: 'Rollover', type: 'bool' }, { k: 'sort_order', label: 'Order', type: 'int', w: 60 }, { k: 'archived', label: 'Archived', type: 'bool' }, { k: 'notes', label: 'Notes', type: 'text', w: 160 }, { k: 'ref', label: 'ID', type: 'ro', cls: 'id' }]
   const exportJson = () => guarded(async () => { const j = await repo!.exportJson(); const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `wealthpilot-backup-${today()}.json`; a.click() }, 'Backup downloaded')
@@ -39,10 +41,7 @@ export function SettingsPage() {
       <Note>Total default budget: <b>{fmtMoney(data.categories.filter(c => !c.archived && c.kind === 'expense').reduce((n, c) => n + c.default_budget, 0))}</b>/period · income {fmtMoney(data.categories.filter(c => !c.archived && c.kind === 'income').reduce((n, c) => n + c.default_budget, 0))}</Note></Card>}
     {tab === 'rules' && <RulesTab />}
     {tab === 'security' && <SecurityTab />}
-    {tab === 'members' && <div className="grid g12">
-      <Card span={7} title="Members"><div className="tblwrap"><table className="tbl"><thead><tr><th>Email</th><th>Role</th><th>Read-only</th><th>Last seen</th><th></th></tr></thead><tbody>{data.members.map(m => <tr key={m.user_id}><td>{m.email}{m.user_id === user?.id ? ' (you)' : ''}</td><td>{isOwner && m.user_id !== user?.id ? <select value={m.role} onChange={e => guarded(() => repo!.setMemberRole(m.user_id, e.target.value as Role, m.read_only).then(refresh))}><option>owner</option><option>editor</option><option>viewer</option></select> : <Pill cls={m.role === 'owner' ? 'good' : 'info'}>{m.role}</Pill>}</td><td>{isOwner && m.user_id !== user?.id ? <input type="checkbox" checked={m.read_only} onChange={e => guarded(() => repo!.setMemberRole(m.user_id, m.role, e.target.checked).then(refresh))} /> : m.read_only ? 'yes' : ''}</td><td>{m.last_seen_at ? fmtDY(m.last_seen_at.slice(0, 10)) : '—'}{m.last_version ? ` · v${m.last_version}` : ''}</td><td>{isOwner && m.user_id !== user?.id && <button className="del" onClick={async () => { if (await confirm(`Remove ${m.email}?`, 'Remove')) guarded(() => repo!.removeMember(m.user_id).then(refresh)) }}>✕</button>}</td></tr>)}</tbody></table></div></Card>
-      <Card span={5} title="Invite someone" hint="they sign up with this email and the household appears for them">{isOwner ? <><Field label="Email"><input className="inp" type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} /></Field><Field label="Role"><select className="inp" value={inviteRole} onChange={e => setInviteRole(e.target.value as Role)}><option value="editor">editor — can add and change</option><option value="viewer">viewer — read only</option><option value="owner">owner — full control</option></select></Field><Btn primary onClick={() => guarded(async () => { await repo!.invite(inviteEmail.trim(), inviteRole); setInviteEmail(''); await refresh() }, 'Invite saved')} disabled={!inviteEmail.includes('@')}>Invite</Btn>{data.invites.length > 0 && <Note>Pending: {data.invites.map(i => `${i.email} (${i.role})`).join(', ')}</Note>}</> : <Note>Only owners can invite.</Note>}</Card>
-    </div>}
+    {tab === 'members' && <MembersTab />}
     {tab === 'data' && <div className="grid g12">
       <Card span={6} title="Backup" hint="everything in this household as one JSON file"><div className="btnrow"><Btn primary onClick={exportJson}>Download JSON backup</Btn><Btn onClick={exportCsv}>Transactions as CSV</Btn></div><Note>Keep a backup before big changes. The JSON restores into any household (ids are remapped).</Note></Card>
       <Card span={6} title="Restore" hint="from a JSON backup"><input type="file" ref={fileRef} accept="application/json" className="inp" /><div className="btnrow" style={{ marginTop: 8 }}><Btn onClick={() => importJson('merge')} disabled={!canEdit}>Merge into this household</Btn><Btn danger onClick={() => importJson('replace')} disabled={!canEdit}>Replace everything</Btn></div></Card>
@@ -130,3 +129,61 @@ function SecurityTab() {
   </div>
 }
 function KPIs({ items }: { items: Array<[string, string, string]> }) { return <>{items.map(([l, v, s]) => <div key={l} className="kpi info"><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>)}</> }
+
+// ---------------- Members: who is in the household and what each can see ----------------
+type AccessPick = { level: AccessLevel; modules: string[]; editWithin: boolean }
+const pickFrom = (m: { role: Role; read_only: boolean; modules?: string[] | null }): AccessPick => { const lv = accessLevel({ role: m.role, read_only: m.read_only, modules: m.modules ?? null }); return { level: lv, modules: normaliseModules(m.modules) || [], editWithin: canEditAccess({ role: m.role, read_only: m.read_only, modules: m.modules ?? null }) } }
+function AccessPicker({ v, onChange, allowOwner }: { v: AccessPick; onChange: (p: AccessPick) => void; allowOwner?: boolean }) {
+  const opts: Array<[AccessLevel, string]> = [['full', 'Full'], ['readonly', 'Read-only'], ['limited', 'Limited'], ...(allowOwner ? [['owner', 'Owner'] as [AccessLevel, string]] : [])]
+  return <>
+    <Field label="Access"><Seg value={v.level} options={opts} onChange={level => onChange({ ...v, level })} /></Field>
+    <Note>{describeAccess(accessToMember(v.level, v.modules, v.editWithin))}</Note>
+    {v.level === 'limited' && <div style={{ marginTop: 8 }}>
+      <div className="note" style={{ marginTop: 0 }}>Sections this person can open (Dashboard, Reports and Settings are always available and show only what they can see):</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '4px 12px', margin: '6px 0 10px' }}>{GRANTABLE.map(m => <label key={m.k} title={m.hint}><input type="checkbox" checked={v.modules.includes(m.k)} onChange={e => onChange({ ...v, modules: e.target.checked ? [...v.modules, m.k] : v.modules.filter(k => k !== m.k) })} /> {m.label}</label>)}</div>
+      <label><input type="checkbox" checked={v.editWithin} onChange={e => onChange({ ...v, editWithin: e.target.checked })} /> Can add and change things in those sections (otherwise read-only)</label>
+    </div>}
+  </>
+}
+function MembersTab() {
+  const { data, household, guarded, isOwner, repo, refresh, mode, user } = useData(); const confirm = useConfirm(); const { open, close } = useModal()
+  const [email, setEmail] = useState(''); const [dname, setDname] = useState(''); const [note, setNote] = useState(''); const [pick, setPick] = useState<AccessPick>({ level: 'readonly', modules: [], editWithin: false }); const [busy, setBusy] = useState(false)
+  const siteUrl = (import.meta.env.VITE_SITE_URL as string | undefined) || (location.origin + location.pathname)
+  const inviter = mode === 'demo' ? 'The demo household' : (user?.email || 'A household owner')
+  const access = accessToMember(pick.level, pick.modules, pick.editWithin)
+  const draft = inviteEmailDraft({ appName: APP_NAME, household: household?.name || 'Household', inviter, email: email.trim().toLowerCase(), displayName: dname, access, siteUrl, note })
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (pick.level !== 'limited' || pick.modules.length > 0) && email.trim().toLowerCase() !== (user?.email || '').toLowerCase()
+  const showResult = (r: InviteResult, to: string, dn: string, a: typeof access, n: string) => {
+    const d = inviteEmailDraft({ appName: APP_NAME, household: household?.name || 'Household', inviter, email: to, displayName: dn, access: a, siteUrl, note: n, tempPassword: r.temp_password, existing: r.existing })
+    const copy = (t: string) => navigator.clipboard?.writeText(t).then(() => useStore.getState().toast('Copied'))
+    open(<><MHead title={r.existing ? 'Added to the household' : 'Account created — send the invitation'} /><MBody>
+      {r.sent ? <div className="msg good">The invitation was emailed to {to}.</div> : r.send_error ? <div className="msg warn">Automatic email failed ({r.send_error}) — send it yourself below.</div> : <div className="msg info">{r.can_send ? 'Send the invitation below.' : 'Automatic sending is not set up, so send this email yourself — copy it or open it in your email app.'}</div>}
+      {r.temp_password && <div className="field"><label>Temporary password — shown once, never stored</label><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><code style={{ fontSize: 18, padding: '6px 10px', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8 }}>{r.temp_password}</code><Btn sm onClick={() => copy(r.temp_password!)}>Copy</Btn></div></div>}
+      <div className="field"><label>Subject</label><input className="inp" readOnly value={d.subject} /></div>
+      <div className="field"><label>Message</label><textarea className="inp" readOnly rows={14} value={d.body} style={{ fontFamily: 'var(--mono)', fontSize: 12.5 }} /></div>
+    </MBody><MFoot><Btn onClick={() => copy(`Subject: ${d.subject}\n\n${d.body}`)}>Copy email</Btn><a className="btn primary" href={mailtoLink(to, d.subject, d.body)}>Open in email app</a><Btn onClick={close}>Done</Btn></MFoot></>)
+  }
+  const invite = async () => {
+    if (!valid || !repo) return; setBusy(true)
+    const to = email.trim().toLowerCase(), dn = dname.trim(), a = access, n = note
+    try { const r = await repo.inviteWithPassword({ email: to, display_name: dn || null, role: a.role, read_only: a.read_only, modules: a.modules, subject: draft.subject, body: draft.body }); setEmail(''); setDname(''); setNote(''); await refresh(); showResult(r, to, dn, a, n) }
+    catch (e) { useStore.getState().toast((e as Error).message, true) } finally { setBusy(false) }
+  }
+  const editAccess = (m: Member) => { let p = pickFrom(m); const Body = () => { const [v, setV] = useState(p); return <><MHead title={`Access for ${m.email}`} /><MBody><AccessPicker v={v} onChange={x => { p = x; setV(x) }} allowOwner /></MBody><MFoot><Btn onClick={close}>Cancel</Btn><Btn primary onClick={() => { const a = accessToMember(p.level, p.modules, p.editWithin); if (p.level === 'limited' && !p.modules.length) { useStore.getState().toast('Pick at least one section', true); return } close(); guarded(() => repo!.setMemberAccess(m.user_id, a.role, a.read_only, a.modules).then(refresh), 'Access updated') }}>Save</Btn></MFoot></> }; open(<Body />) }
+  const lvCls: Record<AccessLevel, string> = { owner: 'good', full: 'info', readonly: 'idle', limited: 'warn' }
+  return <div className="grid g12">
+    <Card span={7} title="Members" hint="what each person can see and change — owners manage members, settings and categories"><div className="tblwrap"><table className="tbl"><thead><tr><th>Who</th><th>Access</th><th>Last seen</th><th></th></tr></thead><tbody>{data.members.map(m => { const lv = accessLevel({ role: m.role, read_only: m.read_only, modules: m.modules ?? null }); const me = m.user_id === user?.id
+      return <tr key={m.user_id}><td>{m.display_name ? <><b>{m.display_name}</b><br /></> : null}{m.email}{me ? ' (you)' : ''}</td><td><Pill cls={lvCls[lv]}>{ACCESS_LABEL[lv]}</Pill>{lv === 'limited' && <div className="note" style={{ margin: '3px 0 0' }}>{describeAccess({ role: m.role, read_only: m.read_only, modules: m.modules ?? null }).replace(/^Limited — /, '')}</div>}</td><td>{m.last_seen_at ? fmtDY(m.last_seen_at.slice(0, 10)) : '—'}{m.last_version ? ` · v${m.last_version}` : ''}</td>
+        <td style={{ whiteSpace: 'nowrap' }}>{isOwner && !me && <><Btn sm onClick={() => editAccess(m)}>Change</Btn> <button className="del" title="Remove from household" onClick={async () => { if (await confirm(`Remove ${m.email} from this household? Their sign-in stays; they just lose access here.`, 'Remove')) guarded(() => repo!.removeMember(m.user_id).then(refresh), 'Removed') }}>✕</button></>}</td></tr> })}</tbody></table></div>
+      {data.invites.filter(i => !i.accepted_at).length > 0 && <Note>Waiting to sign up: {data.invites.filter(i => !i.accepted_at).map(i => `${i.email} (${ACCESS_LABEL[accessLevel({ role: i.role, read_only: !!i.read_only, modules: i.modules ?? null })]})`).join(', ')}</Note>}</Card>
+    <Card span={5} title="Invite someone" hint="creates their sign-in with a temporary password and drafts the invitation email for you">{isOwner ? <>
+      <Field label="Email"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" /></Field>
+      <Field label="Name (optional)"><input className="inp" value={dname} onChange={e => setDname(e.target.value)} placeholder="how the email greets them" /></Field>
+      <AccessPicker v={pick} onChange={setPick} />
+      <Field label="Personal note (optional)"><textarea className="inp" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="added to the end of the email" /></Field>
+      <Btn primary onClick={invite} disabled={!valid || busy}>{busy ? 'Creating…' : 'Create sign-in & draft email'}</Btn>
+      <Note>New people get a one-time temporary password and must choose their own the first time they sign in. Someone who already has a {APP_NAME} account is simply added — the email tells them to use their existing password.{mode === 'demo' ? ' In the demo no real account is created.' : ''}</Note>
+      <details style={{ marginTop: 8 }}><summary className="note" style={{ cursor: 'pointer', marginTop: 0 }}>Preview the email</summary><pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: 12 }}>{`Subject: ${draft.subject}\n\n${draft.body}`}</pre></details>
+    </> : <Note>Only owners can invite people or change access.</Note>}</Card>
+  </div>
+}

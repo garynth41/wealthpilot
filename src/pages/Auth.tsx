@@ -4,6 +4,7 @@ import { APP_NAME, APP_VERSION } from '../app/config'
 import { hasSupabase } from '../app/supabase'
 import { Btn } from '../components/ui'
 import { Logo } from '../components/Logo'
+import { passwordProblems } from '../lib/access'
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'recover' | 'mfa'
 export function AuthPage({ recover }: { recover?: boolean }) {
@@ -39,5 +40,25 @@ export function Onboarding() {
     <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household') } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
     {err && <div className="msg crit">{err}</div>}
     <div className="links"><button onClick={() => signOut()}>Sign out</button></div>
+  </div></div>
+}
+
+/** Shown to anyone whose account was created with a temporary password: they must choose their own before seeing any data. */
+export function FirstSignIn() {
+  const { user, updatePassword, signOut } = useStore(); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
+  const problems = passwordProblems(pw, { email: user?.email || '', confirm: pw2 })
+  const submit = async (e: FormEvent) => { e.preventDefault(); if (problems.length) return; setBusy(true); setErr(''); try { await updatePassword(pw) } catch (x) { setErr((x as Error).message) } finally { setBusy(false) } }
+  return <div className="auth"><div className="box">
+    <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><Logo /></span><div><b style={{ fontSize: 18 }}>{APP_NAME}</b><small style={{ color: 'var(--ink-3)' }}>Welcome{user?.email ? `, ${user.email}` : ''}</small></div></div>
+    <h2>Choose your password</h2>
+    <p className="note" style={{ marginTop: 0 }}>You signed in with a temporary password. Pick your own now — it replaces the temporary one and is the only password that will work from here on.</p>
+    <form onSubmit={submit}>
+      <div className="field"><label htmlFor="npw">New password</label><input id="npw" className="inp" type="password" autoComplete="new-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} /></div>
+      <div className="field"><label htmlFor="npw2">Type it again</label><input id="npw2" className="inp" type="password" autoComplete="new-password" required value={pw2} onChange={e => setPw2(e.target.value)} /></div>
+      <ul className="note" style={{ margin: '0 0 10px', paddingLeft: 18 }}>{['at least 10 characters', 'upper- and lower-case letters', 'a number', 'the two entries must match'].map(r => <li key={r} style={{ color: pw && !problems.includes(r) ? 'var(--good)' : undefined }}>{r}</li>)}{problems.filter(p => !['at least 10 characters', 'upper- and lower-case letters', 'a number', 'the two entries must match'].includes(p)).map(p => <li key={p} style={{ color: 'var(--crit)' }}>{p}</li>)}</ul>
+      <Btn type="submit" primary block disabled={busy || problems.length > 0}>Save password and continue</Btn>
+      {err && <div className="msg crit">{err}</div>}
+      <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button></div>
+    </form>
   </div></div>
 }

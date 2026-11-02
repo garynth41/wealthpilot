@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { useStore, outdated } from '../app/store'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
 import { Logo } from './Logo'
@@ -8,6 +8,7 @@ import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
 import { Toasts, useModal, MHead, MBody, Btn } from './ui'
 import { sb } from '../app/supabase'
+import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
 
 export interface View { path: string; title: string; sub: string; zone: string; icon: string; tab?: string }
 export const VIEWS: View[] = [
@@ -40,22 +41,26 @@ export function useBadges() {
     return { '/bills': { n: up.length, why: `${up.length} bill${up.length === 1 ? '' : 's'} overdue or due within 7 days` }, '/email': { n: em, why: `${em} past-due, declined or bank alert` }, '/hardship': { n: hs, why: `${hs} creditor call${hs === 1 ? '' : 's'} due` } } as Record<string, { n: number; why: string }> }, [data])
 }
 export function Layout({ children }: { children: ReactNode }) {
-  const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly } = useStore()
+  const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules } = useStore()
+  const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path)) }, [mode, modules])
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS('rail')) === 'collapsed' } catch { return false } })
   const [drawer, setDrawer] = useState(false); const badges = useBadges(); const { open } = useModal(); const online = useOnline()
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
+  const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname)
   useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
   useEffect(() => { try { localStorage.setItem(LS('rail'), collapsed ? 'collapsed' : 'open') } catch { /* */ } }, [collapsed])
-  const zones = [...new Set(VIEWS.map(v => v.zone))]
+  const zones = [...new Set(visible.map(v => v.zone))]
   const about = () => open(<><MHead title={`About ${APP_NAME}`} /><MBody><p><b>{APP_NAME}</b> v{APP_VERSION} · build <code>{APP_BUILD}</code></p><StatusPanel /><p className="note">Personal budgeting, savings and financial planning. Data lives in your own Supabase project; email bodies are never stored — only amounts, dates, payees and the last four digits of an account.</p></MBody></>)
-  const tabs = VIEWS.filter(v => v.tab)
+  const tabs = visible.filter(v => v.tab)
+  if (blocked) return <Navigate to="/" replace />
+  const access = mode === 'db' ? { role, read_only: readOnly, modules } : null
   return <div className={`app ${collapsed ? 'rail-collapsed' : ''}`}>
     <header className="mbar"><button onClick={() => setDrawer(d => !d)} aria-label="Menu">☰</button><button onClick={() => nav(-1)} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><ThemeBtn /></header>
     <div className={`backdrop ${drawer ? 'show' : ''}`} onClick={() => setDrawer(false)} />
     <aside className={`rail ${drawer ? 'open' : ''}`}>
       <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'}>{collapsed ? '›' : '‹'}</button></div>
-      <nav className="nav">{zones.map(z => <div key={z}><div className="zone">{z}</div>{VIEWS.filter(v => v.zone === z).map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span>{badges[v.path]?.n ? <span className="badge" title={badges[v.path].why}>{badges[v.path].n}</span> : null}</NavLink>)}</div>)}</nav>
-      <div className="me"><span className="avatar">{(mode === 'demo' ? 'D' : (user?.email?.[0] || '?')).toUpperCase()}</span><span className="who"><b>{mode === 'demo' ? 'demo' : user?.email}</b><span>{role}{readOnly ? ' · read-only' : ''}</span></span><Btn sm onClick={() => (mode === 'demo' ? exitDemo() : signOut())}>Sign out</Btn></div>
+      <nav className="nav">{zones.map(z => <div key={z}><div className="zone">{z}</div>{visible.filter(v => v.zone === z).map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span>{badges[v.path]?.n ? <span className="badge" title={badges[v.path].why}>{badges[v.path].n}</span> : null}</NavLink>)}</div>)}</nav>
+      <div className="me"><span className="avatar">{(mode === 'demo' ? 'D' : (user?.email?.[0] || '?')).toUpperCase()}</span><span className="who"><b>{mode === 'demo' ? 'demo' : user?.email}</b><span>{access ? (accessLevel(access) === 'owner' ? 'owner' : accessLevel(access) === 'full' ? 'full access' : accessLevel(access) === 'readonly' ? 'read-only' : 'limited access') : role}</span></span><Btn sm onClick={() => (mode === 'demo' ? exitDemo() : signOut())}>Sign out</Btn></div>
       <div className="railfoot" onClick={about}>{APP_NAME} <b>v{APP_VERSION}</b> · <span className={`envtag env-${envName()}`}>{envName()}</span><br />build {APP_BUILD}</div>
     </aside>
     <main className="main">
@@ -64,7 +69,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {outdated() && <div className="banner crit">This copy is <b>v{APP_VERSION}</b> but a newer release is registered — reload or redeploy to get it.</div>}
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
       {!online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes will fail until you are back online.'}</div>}
-      {mode === 'db' && !useStore.getState().canEdit() && <div className="banner info">You have <b>{role}{readOnly ? ' (read-only)' : ''}</b> access — everything is read-only.</div>}
+      {access && accessLevel(access) !== 'owner' && accessLevel(access) !== 'full' && <div className="banner info">{describeAccess(access)}{accessLevel(access) === 'limited' ? ' — other sections are hidden.' : '.'}</div>}
       <div className={useStore.getState().canEdit() ? '' : 'ro'}>{children}</div>
     </main>
     <nav className="tabbar">{tabs.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')}><Icon n={v.icon} /><span>{v.tab}</span>{badges[v.path]?.n ? <span className="badge">{badges[v.path].n}</span> : null}</NavLink>)}<button onClick={() => setDrawer(true)}><Icon n="menu" /><span>Menu</span></button></nav>

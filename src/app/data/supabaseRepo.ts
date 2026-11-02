@@ -1,5 +1,5 @@
 import type { Repo } from './repo'
-import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role } from './types'
+import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult } from './types'
 import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 
@@ -30,7 +30,7 @@ export class SupabaseRepo implements Repo {
     const me = data.members.find(m => m.user_id === user?.id)
     const household: Household = { ...hhRes.data, settings: { ...SETTINGS_DEFAULTS, ...(hhRes.data.settings || {}) } }
     if (me) c.from('household_members').update({ last_seen_at: new Date().toISOString(), last_version: APP_VERSION }).eq('household_id', this.hh).eq('user_id', me.user_id).then(() => {})
-    return { household, data, role: (me?.role || 'viewer') as Role, readOnly: !!me?.read_only }
+    return { household, data, role: (me?.role || 'viewer') as Role, readOnly: !!me?.read_only, modules: me?.role === 'owner' ? null : (me?.modules ?? null) }
   }
   // numeric columns arrive as strings from PostgREST when they are `numeric`; normalise once here
   private num = <T extends Record<string, unknown>>(row: T): T => { const out: Record<string, unknown> = { ...row }; for (const k of Object.keys(out)) { const v = out[k]; if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && NUMERIC.has(k)) out[k] = +v } return out as T }
@@ -58,7 +58,11 @@ export class SupabaseRepo implements Repo {
   async ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]) { if (!rows.length) return; const { error } = await sb().from('email_ledger').upsert(rows.map(r => ({ ...r, household_id: this.hh })), { onConflict: 'household_id,message_id' }); if (error) throw error }
   async invite(email: string, role: Role) { const { error } = await sb().from('household_invites').upsert({ household_id: this.hh, email: email.toLowerCase(), role }, { onConflict: 'household_id,email' }); if (error) throw error }
   async removeMember(userId: string) { const { error } = await sb().from('household_members').delete().eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
-  async setMemberRole(userId: string, role: Role, readOnly: boolean) { const { error } = await sb().from('household_members').update({ role, read_only: readOnly }).eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
+  async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { const { error } = await sb().from('household_members').update({ role, read_only: readOnly, modules }).eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
+  async inviteWithPassword(req: InviteRequest): Promise<InviteResult> {
+    const { data, error } = await sb().functions.invoke('invite-member', { body: { household_id: this.hh, ...req } })
+    if (error) { let msg = error.message; try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === 'function') { const j = await ctx.json(); if (j?.error) msg = j.error } } catch { /* keep message */ } throw new Error(msg) }
+    if (!data?.ok) throw new Error(data?.error || 'Invitation failed'); return data as InviteResult }
   async exportJson() { const all = await this.loadAll(); return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: all.household, ...all.data } }
   async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
     let n = 0

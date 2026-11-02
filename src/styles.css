@@ -127,7 +127,7 @@ select:disabled{color:var(--ink-3);background:var(--surface-2)}
 /* ---- auth ---- */
 .auth{min-height:100vh;display:grid;place-items:center;padding:20px} .auth .box{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:var(--shadow)}
 .auth h2{font-size:20px;margin:14px 0 14px} .auth .links{display:flex;gap:12px;justify-content:space-between;margin-top:12px;font-size:13px} .auth .links button{border:0;background:none;color:var(--blue);cursor:pointer;padding:0}
-.msg{border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px;background:var(--info-soft);color:var(--info)} .msg.crit{background:var(--crit-soft);color:var(--crit)} .msg.good{background:var(--good-soft);color:var(--good)}
+.msg{border-radius:8px;padding:8px 10px;font-size:13px;margin-top:10px;background:var(--info-soft);color:var(--info)} .msg.crit{background:var(--crit-soft);color:var(--crit)} .msg.good{background:var(--good-soft);color:var(--good)} .msg.warn{background:var(--warn-soft);color:var(--warn)} a.btn{text-decoration:none}
 /* ---- email review ---- */
 .gm-row{display:flex;gap:10px;padding:10px 4px;border-top:1px solid var(--line-2);align-items:flex-start} .gm-row:first-child{border-top:0} .gm-main{flex:1;min-width:0;font-size:13.5px} .gm-sub{color:var(--ink-2);font-size:12.5px} .gm-why{color:var(--ink-3);font-size:12px}
 .gm-edit{display:grid;grid-template-columns:110px 150px minmax(180px,1fr) minmax(140px,1fr);gap:6px;margin-top:6px} .gm-edit input,.gm-edit select{border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:var(--surface);font-size:12.5px;min-width:0}

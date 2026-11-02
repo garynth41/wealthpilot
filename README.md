@@ -63,6 +63,23 @@ Scripts: `npm run typecheck` · `npm test` (71 unit tests: engines, intelligence
 - **Outlook:** Entra admin → App registrations → *Single-page application* with redirect URI `https://<your-site>/` → API permissions `User.Read`, `Mail.Read` (delegated). Paste the Application (client) ID; tenant `consumers` for personal outlook.com.
 - Nothing is sent, labelled or deleted. Bodies are never stored.
 
+## Members, access and invitations
+
+Owners manage people under **Settings → Members**. Each member has one of four access levels:
+
+| Level | Can see | Can change |
+|---|---|---|
+| **Owner** | everything | everything, plus members, settings and categories |
+| **Full access** | everything | everything except members/settings |
+| **Read-only** | everything | nothing |
+| **Limited** | only the sections ticked (Transactions & insights, Budget, Bills, Income, Accounts & debts, Bank connections & email, Investments, Tax, Goals, Hardship) | those sections, or nothing if read-only |
+
+Dashboard, Reports and Settings are always available and only show what the member can already see. The map lives in `src/lib/access.ts` (`MODULES`) and the database enforces the same map with row-level security (`module_allowed` in `supabase/migrations/0003_member_access.sql`) — a limited member's API calls cannot read other sections' tables at all.
+
+**Inviting someone** creates their sign-in with a one-time temporary password (`WP-xxxx-xxxx-xxxx`) and drafts the invitation email for you, with Copy and *Open in email app* buttons. The password is shown once and never stored. On their first sign-in they must choose their own password (10+ characters, mixed case, a number, not the temporary one) before any data is shown. Someone who already has an account is simply added, and the email tells them to use their existing password.
+
+This runs in the `invite-member` edge function (`supabase/functions/invite-member/`), deployed with `supabase functions deploy invite-member` (or the Supabase MCP). To send invitations automatically, set the function secrets `RESEND_API_KEY` and `INVITE_FROM` (`WealthPilot <invites@yourdomain>`); without them the app shows the drafted email for you to send. Set `VITE_SITE_URL` in `.env` so the email links to the deployed site rather than the page you are on.
+
 ## Project layout
 
 ```
@@ -91,6 +108,7 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.10.0** — **Members & access** (`lib/access.ts`): four access levels — Owner, Full, Read-only and Limited (pick which sections a person can open and whether they can change anything there); enforced by row-level security per module, not just by the menu · **Invitations with a temporary password**: the new `invite-member` edge function creates the sign-in, issues a one-time `WP-xxxx-xxxx-xxxx` password (returned once, never stored) and the app drafts the invitation email with Copy / Open-in-email-app; optional automatic sending through Resend · **First sign-in**: temporary-password accounts must choose their own password (strength-checked, cannot reuse the temporary one) before seeing any data · the menu, phone tabs and routes hide sections a limited member cannot open · a household must always keep one owner (trigger) · migration `0003_member_access.sql` · 10 new unit tests (100), 7 new smoke checks (100).
 - **0.9.1** — Fix: drop-down lists (`<select>` option popups) were hard to read — on Windows the native list ignored the theme and painted a white popup with light text in dark mode; options and selects now carry explicit theme colours in both light and dark (selected option teal-tinted, disabled dimmed) · database: removed the e2e test user and its household.
 - **0.9.0** — **Sinking funds** (`lib/sinking.ts`): a category's default budget can be per period, per month or per year; monthly / yearly amounts are spread over whatever budget period you use (whole months exactly 1/12, other periods by days) when a period starts, with a year-to-date fund card on Budget; Save-as-defaults no longer overwrites yearly amounts · **Installable app / offline**: web manifest, icons, service worker (app shell cached, network-first HTML, nothing from Supabase/Google/Microsoft cached), offline banner; the demo works fully offline · **Trends**: squarified category treemap and a 26-week daily-spending heat map (`lib/visuals.ts`, pure SVG) · demo: four sinking-fund categories · 5 new unit tests (90), 5 new smoke checks.
 - **0.8.0** — **Reports & Analytics** (`lib/reports.ts`, Reports page): monthly / quarterly / annual reports with PDF / Excel / CSV export; change labels use percentage points for rates and dollars when the base is tiny or flips sign · **navigation** regrouped into the spec's sections: Spending Intelligence, Account Balances, Bank Connections, Investments & Retirement, Tax Planning & Compliance, Goals & Financial Planning, Reports & Analytics, Security & Settings · Account Balances page opens with **balances as last updated** (institution, type, current, available, last updated) · **fixed a payoff-simulator bug** present since v0.1.0: a final payment smaller than the planned one wasted the rest instead of rolling it to the next debt the same month (now conserves every dollar; avalanche ≤ snowball verified) · demo data: second debit card (Chase Total Checking), cash wallet, Discover card, 16 more transactions across 7 institutions, a sample audit log, net-worth snapshots derived from live balances · 5 new unit tests (85), 7 new smoke checks.

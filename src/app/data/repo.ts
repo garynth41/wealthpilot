@@ -1,9 +1,9 @@
-import type { Collection, Data, Household, RowOf, Settings, EmailLedgerRow, Role } from './types'
+import type { Collection, Data, Household, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult } from './types'
 
 /** Every read and write goes through a Repo. Two implementations: Supabase (real) and Memory (offline demo + tests). */
 export interface Repo {
   readonly mode: 'db' | 'demo'
-  loadAll(): Promise<{ household: Household; data: Data; role: Role; readOnly: boolean }>
+  loadAll(): Promise<{ household: Household; data: Data; role: Role; readOnly: boolean; modules: string[] | null }>
   insert<C extends Collection>(coll: C, row: Partial<RowOf<C>>): Promise<RowOf<C>>
   insertMany<C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]): Promise<RowOf<C>[]>
   update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>): Promise<RowOf<C>>
@@ -13,8 +13,10 @@ export interface Repo {
   startPeriod(type: string, start: string, end: string, label?: string): Promise<string>
   ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]): Promise<void>
   invite(email: string, role: Role): Promise<void>
+  /** Create or find the account, add the membership, issue a temporary password (new accounts) — see supabase/functions/invite-member. */
+  inviteWithPassword(req: InviteRequest): Promise<InviteResult>
   removeMember(userId: string): Promise<void>
-  setMemberRole(userId: string, role: Role, readOnly: boolean): Promise<void>
+  setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null): Promise<void>
   exportJson(): Promise<Record<string, unknown>>
   importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<number>
   /** Called with a change notification (realtime); returns an unsubscribe. */

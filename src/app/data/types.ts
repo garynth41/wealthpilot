@@ -98,8 +98,11 @@ export interface EmailItem extends Stamped {
 export interface EmailLedgerRow { household_id: UUID; message_id: string; src: string; decision: 'applied' | 'ignored'; subject?: string | null; message_at?: string | null; decided_at?: string }
 
 export interface Household { id: UUID; name: string; currency: string; settings: Settings; created_at?: string }
-export interface Member { household_id: UUID; user_id: UUID; email: string; display_name?: string | null; role: Role; read_only: boolean; joined_at?: string; last_seen_at?: string | null; last_version?: string | null }
-export interface Invite { id: UUID; household_id: UUID; email: string; role: Role; created_at?: string; accepted_at?: string | null }
+export interface Member { household_id: UUID; user_id: UUID; email: string; display_name?: string | null; role: Role; read_only: boolean; modules?: string[] | null; joined_at?: string; last_seen_at?: string | null; last_version?: string | null }   // modules: null = every module (see lib/access.ts)
+export interface Invite { id: UUID; household_id: UUID; email: string; role: Role; read_only?: boolean; modules?: string[] | null; display_name?: string | null; created_at?: string; accepted_at?: string | null; temp_password_issued_at?: string | null; sent_at?: string | null }
+/** What an owner asks for when inviting; the server issues the temporary password and returns it once. */
+export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; subject: string; body: string }
+export interface InviteResult { user_id: UUID; existing: boolean; temp_password: string | null; sent: boolean; send_error?: string | null; can_send: boolean }
 export interface ActivityRow { id: number; household_id: UUID; user_email?: string | null; action: string; table_name: string; record_id?: string | null; summary?: string | null; created_at: string }
 
 /** Household-level settings stored in households.settings (merged over SETTINGS_DEFAULTS). */

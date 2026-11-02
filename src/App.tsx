@@ -3,7 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useStore } from './app/store'
 import { ModalHost } from './components/ui'
 import { Layout, applySavedTheme } from './components/Layout'
-import { AuthPage, Onboarding } from './pages/Auth'
+import { AuthPage, Onboarding, FirstSignIn } from './pages/Auth'
 import { Dashboard } from './pages/Dashboard'
 import { BudgetPage } from './pages/Budget'
 import { TransactionsPage } from './pages/Transactions'
@@ -28,10 +28,11 @@ applySavedTheme()
 if (olPopupRelay()) { /* this window was the Microsoft sign-in popup; it has posted the code back and is closing */ }
 
 export default function App() {
-  const { booting, boot, mode, household, user, loadError } = useStore()
+  const { booting, boot, mode, household, user, loadError, mustChangePassword } = useStore()
   useEffect(() => { boot() }, [boot])
   if (booting) return <div className="auth"><div className="note">Loading…</div></div>
   const recover = /type=recovery/.test(location.hash) || /type=recovery/.test(location.search)
+  if (user && mustChangePassword()) return <FirstSignIn />
   if (!mode) { if (user && !recover) return <Onboarding />; return <AuthPage recover={recover} /> }
   if (!household) return <div className="auth"><div className="box">{loadError ? <div className="msg crit">{loadError}</div> : <div className="note">Opening your household…</div>}</div></div>
   return <ModalHost><HashRouter><Layout><Routes>
