@@ -123,6 +123,18 @@ for (const W of [1400, 390]) {
     ok((await p.locator('table.tbl tbody tr').count()) === members0 + 1 && /pat\.smoke@example\.com/.test(await p.locator('table.tbl').textContent()) && /Limited/.test(await p.locator('table.tbl').textContent()), 'new member is listed as Limited')
     await p.click('table.tbl tr:has-text("pat.smoke") button:has-text("Change")'); await p.waitForTimeout(300); await p.click('.modal .seg button:has-text("Full")'); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(500)
     ok(/Full access/.test(await p.locator('table.tbl tr:has-text("pat.smoke")').textContent()), 'changing access to Full updates the member row')
+    // 0.11.2: email-capture settings live in Settings → General, and dialogs/toasts stay readable in both themes
+    await p.click('.seg button:has-text("General")'); await p.waitForTimeout(300)
+    ok(/Email capture \(Gmail \/ Outlook\)/.test(await p.locator('main').textContent()), 'Settings → General has the Email capture card')
+    await p.click('button:has-text("Open email capture settings")'); await p.waitForTimeout(300)
+    ok(await p.locator('.modal :text("Google OAuth client ID")').count() > 0 && await p.locator('.modal :text("Application (client) ID")').count() > 0, 'the card opens the Gmail and Outlook client-ID fields')
+    const contrast = async () => p.evaluate(() => { const rgb = c => c.match(/[\d.]+/g).map(Number); const L = ([r, g, b]) => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4 }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b) }
+      const one = el => { const cs = getComputedStyle(el); const a = L(rgb(cs.color)), b = L(rgb(cs.backgroundColor)); return (Math.max(a, b) + .05) / (Math.min(a, b) + .05) }
+      document.body.insertAdjacentHTML('beforeend', '<div id="_t" class="toasts"><div class="toast">x</div><div class="toast err">x</div></div><div id="_b"><div class="banner">x</div><div class="msg warn">x</div><div class="msg crit">x</div></div>')
+      const r = [...document.querySelectorAll('#_t .toast, #_b > div, .modal')].map(one); document.getElementById('_t').remove(); document.getElementById('_b').remove(); return Math.min(...r) })
+    const cLight = await contrast(); await p.evaluate(() => { document.documentElement.dataset.theme = 'dark' }); const cDark = await contrast(); await p.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+    ok(cLight >= 4.5 && cDark >= 4.5, `dialog, toast, banner and message text meet 4.5:1 in light (${cLight.toFixed(1)}) and dark (${cDark.toFixed(1)})`)
+    await p.click('.modal button:has-text("Cancel")'); await p.waitForTimeout(200)
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
     await p.click('.asof button.btn'); await p.waitForTimeout(300); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })
     await p.goBack(); await p.waitForTimeout(500); ok((await p.locator('h1').first().textContent()) === 'Settings', 'browser back returns to the previous page')
