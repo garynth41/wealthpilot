@@ -1,5 +1,6 @@
 // Offline demo data — a believable household, dated relative to today. Also used by the test suites.
 import { addDays, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
+import { plannedForPeriod } from '../../lib/sinking'
 import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType, type Holding } from './types'
 
 export const STARTER_CATEGORIES: Array<[string, string, 'expense' | 'income' | 'transfer', Priority, CostType, number]> = [
@@ -24,8 +25,9 @@ export function demoSeed(): { household: Household; data: Data } {
   const d = emptyData()
   const cat = (group: string, name: string) => { const c = d.categories.find(x => x.group === group && x.name === name); if (!c) throw new Error('no category ' + name); return c }
   STARTER_CATEGORIES.forEach(([group, name, kind, priority, cost_type, sort_order]) => d.categories.push({ id: demoId(), household_id: hh, ref: 'C-' + String(sort_order).padStart(3, '0'), name, group, kind, priority, cost_type, default_budget: 0, budget_cadence: 'period', rollover: false, sort_order, archived: false } as Category))
-  const DEF: Record<string, number> = { 'Rent / mortgage': 1850, Electric: 140, Gas: 60, 'Water / sewer / trash': 75, Internet: 80, 'Car payment': 312, Fuel: 180, 'Car insurance': 128, Groceries: 650, 'Dining out': 160, 'Coffee & snacks': 40, 'Health insurance': 420, Pharmacy: 35, 'Gym & fitness': 40, Phone: 95, 'Subscriptions & streaming': 48, 'Credit card payments': 400, Shopping: 150, 'Personal care': 60, Entertainment: 80, 'Gifts & giving': 50, 'Kids & family': 120, 'Emergency fund': 300, 'Savings goals': 200, Miscellaneous: 100, Paycheck: 4610, 'Side income': 400 }
+  const DEF: Record<string, number> = { 'Rent / mortgage': 1850, Electric: 140, Gas: 60, 'Water / sewer / trash': 75, Internet: 80, 'Car payment': 312, Fuel: 180, 'Car insurance': 128, Groceries: 650, 'Dining out': 160, 'Coffee & snacks': 40, 'Health insurance': 420, Pharmacy: 35, 'Gym & fitness': 40, Phone: 95, 'Subscriptions & streaming': 48, 'Credit card payments': 400, Shopping: 150, 'Personal care': 60, Entertainment: 80, 'Gifts & giving': 600, 'Home maintenance': 1800, Travel: 2400, 'Medical & dental': 900, 'Kids & family': 120, 'Emergency fund': 300, 'Savings goals': 200, Miscellaneous: 100, Paycheck: 4610, 'Side income': 400 }
   d.categories.forEach(c => { c.default_budget = DEF[c.name] || 0; if (['Dining out', 'Shopping', 'Entertainment', 'Gifts & giving'].includes(c.name)) c.rollover = true })
+  d.categories.forEach(c => { if (['Gifts & giving', 'Home maintenance', 'Travel', 'Medical & dental'].includes(c.name)) { c.budget_cadence = 'yearly'; c.rollover = true } })   // sinking funds: yearly amounts spread per period
 
   // accounts
   const acc = (p: Partial<Data['accounts'][number]>) => { const a = { id: demoId(), household_id: hh, ref: 'A-' + String(d.accounts.length + 1).padStart(3, '0'), name: 'x', kind: 'checking', balance: 0, apr: 0, minimum_payment: 0, autopay: false, include_in_cash: true, include_in_net_worth: true, status: 'Active', sort_order: d.accounts.length + 1, balance_as_of: t, ...p } as Data['accounts'][number]; d.accounts.push(a); return a }
@@ -49,7 +51,7 @@ export function demoSeed(): { household: Household; data: Data } {
   months.forEach((m, i) => {
     const p = { id: demoId(), household_id: hh, ref: 'B-' + String(i + 1).padStart(3, '0'), period_type: 'month' as const, start_date: monthStart(m), end_date: monthEnd(m), label: null, status: (m < cm ? 'closed' : 'open') as 'closed' | 'open', expected_income: 5010 }
     d.periods.push(p)
-    d.categories.filter(c => c.kind !== 'transfer' && c.default_budget > 0).forEach(c => d.lines.push({ id: demoId(), household_id: hh, period_id: p.id, category_id: c.id, planned: c.default_budget, rollover_in: 0 }))
+    d.categories.filter(c => c.kind !== 'transfer' && c.default_budget > 0).forEach(c => d.lines.push({ id: demoId(), household_id: hh, period_id: p.id, category_id: c.id, planned: plannedForPeriod(c, p.start_date, p.end_date), rollover_in: 0 }))
   })
 
   // recurring bills

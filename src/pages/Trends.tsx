@@ -4,6 +4,7 @@ import { Card, KPI, Note, Seg, AList } from '../components/ui'
 import { Chart, C, PALETTE } from '../components/Chart'
 import { trendSeries, rangeStat } from '../lib/budget'
 import { netWorthSeries } from '../lib/forecast'
+import { treemap, spendingHeatmap } from '../lib/visuals'
 import { fmtMoney, sum } from '../lib/money'
 import { addDays, curMonth, mAdd, mShort, monthEnd, monthStart, today } from '../lib/dates'
 
@@ -32,8 +33,35 @@ export function TrendsPage() {
         <Chart title="Spending by category" data={[...top.map((k, i) => ({ type: 'bar' as const, name: k, x: months.map(mShort), y: stats.map(s => s.byCat[k] || 0), marker: { color: pal[i % pal.length] }, hovertemplate: `${k} · %{x}: $%{y:,.0f}<extra></extra>` })), { type: 'bar', name: 'Other + debt payments', x: months.map(mShort), y: stats.map(s => Object.entries(s.byCat).filter(([k]) => !top.includes(k)).reduce((a, [, v]) => a + v, 0) + s.debt), marker: { color: c.line }, hovertemplate: 'Other · %{x}: $%{y:,.0f}<extra></extra>' }]} layout={{ barmode: 'stack', showlegend: true, yaxis: { tickformat: '$,.0f' }, xaxis: { type: 'category' } }} height={320} /></Card>
       <Card span={5} title="Insights"><AList items={ins} />
         <h3 style={{ marginTop: 14 }}>By group · last {look} months</h3><div className="tblwrap"><table className="tbl"><tbody>{Object.entries(grp).sort((a, b) => b[1] - a[1]).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{fmtMoney(v)}</td><td className="num" style={{ color: 'var(--ink-3)' }}>{fmtMoney(v / look)}/mo</td></tr>)}</tbody></table></div></Card>
+      <Card span={7} title="Where the money went" hint={`treemap · spending by category, last ${look} months · size = dollars`}><Treemap items={top.concat(Object.keys(tot).filter(k => !top.includes(k) && tot[k] > 0)).map(k => ({ key: k, label: k, value: Math.round(tot[k]) }))} colors={pal} /></Card>
+      <Card span={5} title="Spending heat map" hint="daily spending, last 26 weeks · darker = more"><Heatmap /></Card>
       <Card span={6} title="Spending by day of week" hint="last 90 days"><Chart title="Spending by day of week" data={[{ type: 'bar', x: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], y: dow, marker: { color: c.blue }, hovertemplate: '%{x}: $%{y:,.0f}<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={220} /><Note>Weekend-heavy spending usually means dining and shopping; weekday peaks are bills and fuel.</Note></Card>
       <Card span={6} title="Net worth" hint="recorded snapshots plus today"><Chart title="Net worth" data={[{ type: 'scatter', mode: 'lines+markers', name: 'Net', x: nws.map(x => x.date), y: nws.map(x => x.net), line: { color: c.accent, width: 2 }, fill: 'tozeroy', fillcolor: c.accentSoft, hovertemplate: '%{x|%b %d, %Y}: $%{y:,.0f}<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'date', tickformat: '%b %d', hoverformat: '%b %d, %Y', nticks: 6 } }} height={220} /></Card>
     </div>
   </>
+}
+
+/** SVG treemap: one tile per category, labelled when there is room. */
+function Treemap({ items, colors }: { items: Array<{ key: string; label: string; value: number }>; colors: string[] }) {
+  const W = 640, H = 300; const rects = treemap(items, W, H); const total = items.reduce((a, i) => a + i.value, 0)
+  if (!rects.length) return <Note>No spending in this window.</Note>
+  return <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Treemap of spending by category">
+    {rects.map((r, i) => <g key={r.key}><title>{`${r.label}: ${fmtMoney(r.value)} (${Math.round(r.value / total * 100)}%)`}</title>
+      <rect x={r.x + 1} y={r.y + 1} width={Math.max(0, r.w - 2)} height={Math.max(0, r.h - 2)} rx={6} fill={colors[i % colors.length]} opacity={0.9} />
+      {r.w > 70 && r.h > 34 && <text x={r.x + 8} y={r.y + 20} fontSize={r.w > 140 ? 14 : 12} fontWeight={600} fill="#fff">{r.label.length * 7 > r.w - 12 ? r.label.slice(0, Math.max(3, Math.floor((r.w - 12) / 7) - 1)) + '…' : r.label}</text>}
+      {r.w > 70 && r.h > 52 && <text x={r.x + 8} y={r.y + 38} fontSize={12} fill="#fff" opacity={0.9}>{fmtMoney(r.value)} · {Math.round(r.value / total * 100)}%</text>}</g>)}
+  </svg>
+}
+/** Calendar heat map of daily spending (Mon–Sun rows, one column per week). */
+function Heatmap() {
+  const { data } = useData(); const h = useMemo(() => spendingHeatmap(data, 26), [data]); const cs = 14, gap = 3, left = 28, top = 18
+  const weeks = Math.max(1, ...h.cells.map(c => c.week + 1)); const W = left + weeks * (cs + gap), H = top + 7 * (cs + gap) + 22
+  const fill = ['var(--line-2)', 'color-mix(in srgb, var(--accent) 25%, transparent)', 'color-mix(in srgb, var(--accent) 50%, transparent)', 'color-mix(in srgb, var(--accent) 75%, transparent)', 'var(--accent)']
+  const months = h.cells.filter(c => c.dow === 0 && +c.date.slice(8) <= 7)
+  return <><svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Heat map of daily spending">
+    {['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map((d, i) => d && <text key={i} x={0} y={top + i * (cs + gap) + cs - 3} fontSize={10} fill="var(--ink-3)">{d}</text>)}
+    {months.map(m => <text key={m.date} x={left + m.week * (cs + gap)} y={11} fontSize={10} fill="var(--ink-3)">{new Date(m.date + 'T12:00').toLocaleDateString('en-US', { month: 'short' })}</text>)}
+    {h.cells.map(c => <rect key={c.date} x={left + c.week * (cs + gap)} y={top + c.dow * (cs + gap)} width={cs} height={cs} rx={3} fill={fill[c.level]}><title>{`${c.date}: ${c.amount ? fmtMoney(c.amount) : 'no spending'}`}</title></rect>)}
+    <text x={left} y={H - 4} fontSize={10} fill="var(--ink-3)">less</text>{fill.map((f, i) => <rect key={i} x={left + 28 + i * (cs + gap)} y={H - 15} width={cs - 2} height={cs - 2} rx={3} fill={f} />)}<text x={left + 32 + 5 * (cs + gap)} y={H - 4} fontSize={10} fill="var(--ink-3)">more</text>
+  </svg><Note>{fmtMoney(h.total)} over 26 weeks · busiest day {fmtMoney(h.max)} · levels split at {h.thresholds.map(t => fmtMoney(t)).join(' / ')}.</Note></>
 }

@@ -42,7 +42,7 @@ export function useBadges() {
 export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly } = useStore()
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS('rail')) === 'collapsed' } catch { return false } })
-  const [drawer, setDrawer] = useState(false); const badges = useBadges(); const { open } = useModal()
+  const [drawer, setDrawer] = useState(false); const badges = useBadges(); const { open } = useModal(); const online = useOnline()
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
   useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
   useEffect(() => { try { localStorage.setItem(LS('rail'), collapsed ? 'collapsed' : 'open') } catch { /* */ } }, [collapsed])
@@ -63,6 +63,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><ThemeBtn /></div></div>
       {outdated() && <div className="banner crit">This copy is <b>v{APP_VERSION}</b> but a newer release is registered — reload or redeploy to get it.</div>}
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
+      {!online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes will fail until you are back online.'}</div>}
       {mode === 'db' && !useStore.getState().canEdit() && <div className="banner info">You have <b>{role}{readOnly ? ' (read-only)' : ''}</b> access — everything is read-only.</div>}
       <div className={useStore.getState().canEdit() ? '' : 'ro'}>{children}</div>
     </main>
@@ -97,3 +98,6 @@ export function StatusPanel() {
     {row('Last successful sync', lastRefresh ? `${new Date(lastRefresh).toLocaleTimeString()} (${ago(lastRefresh)})` : '—')}
   </tbody></table>
 }
+
+/** navigator.onLine, kept current. */
+export function useOnline() { const [on, setOn] = useState(() => typeof navigator === 'undefined' || navigator.onLine); useEffect(() => { const up = () => setOn(true), down = () => setOn(false); window.addEventListener('online', up); window.addEventListener('offline', down); return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down) } }, []); return on }

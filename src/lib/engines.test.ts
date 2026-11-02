@@ -391,3 +391,43 @@ describe('reports: change labels and net worth', () => {
     const [end, change] = rep.sections[0].kpis; expect(change.value).toBeCloseTo(end.value - end.prev!, 2)
   })
 })
+
+// ---------------- sinking funds (0.9.0) ----------------
+import { plannedForPeriod, cadencePlan, sinkingFunds } from './sinking'
+describe('sinking funds', () => {
+  it('spreads monthly and yearly amounts over any period length', () => {
+    const y = { default_budget: 1200, budget_cadence: 'yearly' as const }, m = { default_budget: 300, budget_cadence: 'monthly' as const }, p = { default_budget: 75, budget_cadence: 'period' as const }
+    expect(plannedForPeriod(y, '2026-02-01', '2026-02-28')).toBe(100); expect(plannedForPeriod(m, '2026-02-01', '2026-02-28')).toBe(300)   // whole months: exactly 1/12 and the monthly amount
+    expect(plannedForPeriod(y, '2026-10-02', '2026-10-15')).toBeCloseTo(1200 * 14 / 365, 2); expect(plannedForPeriod(m, '2026-10-02', '2026-10-15')).toBeCloseTo(300 * 14 / (365 / 12), 2)
+    expect(plannedForPeriod(p, '2026-10-02', '2026-10-15')).toBe(75)
+  })
+  it('cadencePlan fixes stale lines and adds missing ones; per-period categories are left alone', () => {
+    const { data } = seed(); const gifts = data.categories.find(c => c.name === 'Gifts & giving')!; const per = data.lines.filter(l => l.category_id === gifts.id)[0]; const period = data.periods.find(p => p.id === per.period_id)!
+    expect(cadencePlan(data, period).updates).toHaveLength(0)
+    const d2 = { ...data, categories: data.categories.map(c => c.id === gifts.id ? { ...c, default_budget: 2400 } : c) }; const plan = cadencePlan(d2, period)
+    expect(plan.updates).toEqual([{ id: per.id, planned: 200 }]); expect(plan.updates.every(u => data.lines.find(l => l.id === u.id)!.category_id === gifts.id)).toBe(true)
+  })
+  it('year-to-date fund: accrued = yearly × share of year elapsed; balance = accrued − spent', () => {
+    const { data, household } = seed(); const f = sinkingFunds(data, { ...SETTINGS_DEFAULTS, ...household.settings }, T0); const hm = f.find(x => x.cat.name === 'Home maintenance')!
+    const share = (Date.parse(T0) - Date.parse('2026-01-01')) / 86400000 + 1; expect(hm.accrued).toBeCloseTo(1800 * share / 365, 1)
+    expect(hm.balance).toBeCloseTo(hm.accrued - hm.spent, 2); expect(hm.spent).toBeCloseTo(136.42 + 189.39, 2)
+  })
+})
+
+// ---------------- visuals (0.9.0) ----------------
+import { treemap, spendingHeatmap } from './visuals'
+describe('visuals', () => {
+  it('treemap: areas proportional to values, tiles inside the box and non-overlapping', () => {
+    const items = [{ key: 'a', label: 'A', value: 6 }, { key: 'b', label: 'B', value: 6 }, { key: 'c', label: 'C', value: 4 }, { key: 'd', label: 'D', value: 3 }, { key: 'e', label: 'E', value: 2 }, { key: 'f', label: 'F', value: 2 }, { key: 'g', label: 'G', value: 1 }, { key: 'z', label: 'Z', value: 0 }]
+    const r = treemap(items, 600, 400); expect(r).toHaveLength(7)
+    for (const x of r) { expect(x.w * x.h).toBeCloseTo(x.value / 24 * 600 * 400, -1); expect(x.x).toBeGreaterThanOrEqual(-0.01); expect(x.y).toBeGreaterThanOrEqual(-0.01); expect(x.x + x.w).toBeLessThanOrEqual(600.01); expect(x.y + x.h).toBeLessThanOrEqual(400.01) }
+    for (const a of r) for (const b of r) if (a !== b) { const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y); expect(ox <= 0.02 || oy <= 0.02).toBe(true) }
+    expect(treemap([], 100, 100)).toEqual([])
+  })
+  it('heat map: Monday-start weeks, totals match the ledger, quartile levels', () => {
+    const { data } = seed(); const h = spendingHeatmap(data, 8, T0); expect(h.cells[0].dow).toBe(0); expect(h.cells[h.cells.length - 1].date).toBe(T0)
+    const start = h.cells[0].date; const total = data.transactions.filter(t => t.kind === 'expense' && t.status !== 'void' && t.date >= start && t.date <= T0).reduce((a, t) => a + t.amount, 0)
+    expect(h.total).toBeCloseTo(total, 2); expect(h.cells.reduce((a, c) => a + c.amount, 0)).toBeCloseTo(total, 1); expect(h.cells.filter(c => c.amount === 0).every(c => c.level === 0)).toBe(true)
+    expect(h.cells.filter(c => c.amount > 0 && c.amount === h.max).every(c => c.level === 4 || h.thresholds[2] === h.max)).toBe(true)
+  })
+})

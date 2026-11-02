@@ -5,7 +5,7 @@ import { readFileSync, statSync, mkdirSync } from 'node:fs'
 import { join, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../dist', import.meta.url)); mkdirSync('e2e/shots', { recursive: true })   // fileURLToPath: works on Windows too (URL.pathname gives "/C:/…")
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' }
 const isFile = f => { try { return statSync(f).isFile() } catch { return false } }   // a directory path must fall back to index.html too (Windows: readFileSync on a dir throws EISDIR)
 const srv = createServer((req, res) => { let p = join(root, decodeURIComponent(req.url.split('?')[0].split('#')[0])); if (!isFile(p)) p = join(root, 'index.html'); res.setHeader('Content-Type', types[extname(p)] || 'application/octet-stream'); res.end(readFileSync(p)) }).listen(4173)
 let F = 0; const ok = (c, m) => { if (!c) F++; console.log((c ? 'PASS ' : 'FAIL ') + m) }
@@ -93,6 +93,10 @@ for (const W of [1400, 390]) {
     await p.click('button:has-text("Annual")'); await p.waitForTimeout(500); ok(/annual report/i.test(await p.locator('main').textContent()), 'switching to an annual report rebuilds it')
     const zones = await p.locator('.nav .zone').allTextContents(); ok(['Spending Intelligence', 'Account Balances', 'Bank Connections', 'Investments & Retirement', 'Tax Planning & Compliance', 'Goals & Financial Planning', 'Reports & Analytics', 'Security & Settings'].every(z => zones.map(x => x.toLowerCase()).includes(z.toLowerCase())), 'navigation has the eight primary sections')
     await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(800); ok((await p.locator('main').textContent()).includes('Account balances as last updated'), 'accounts page lists balances as last updated')
+    // 0.9.0: treemap + heat map on Trends; sinking funds on Budget; manifest + service worker shipped
+    await p.goto('http://localhost:4173/#/trends'); await p.waitForTimeout(900); ok((await p.locator('svg[aria-label="Treemap of spending by category"] rect').count()) >= 5, 'trends shows a category treemap'); ok((await p.locator('svg[aria-label="Heat map of daily spending"] rect').count()) > 100, 'trends shows a daily spending heat map')
+    await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(900); ok(/Sinking funds/.test(await p.locator('main').textContent()) && /Home maintenance/.test(await p.locator('main').textContent()), 'budget shows sinking funds')
+    ok((await (await p.request.get('http://localhost:4173/manifest.webmanifest')).json()).name === 'WealthPilot', 'web app manifest is served'); ok((await (await p.request.get('http://localhost:4173/sw.js')).text()).includes('wealthpilot-v1'), 'service worker is served')
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.click('button:has-text("Security")'); await p.waitForTimeout(300); ok((await p.locator('.card').first().textContent()).includes('offline demo'), 'Security tab renders (demo notice)')
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
     await p.click('.asof button.btn'); await p.waitForTimeout(300); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })

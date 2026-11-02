@@ -6,6 +6,7 @@ import { Card, KPI, Btn, Pill, Note, AList, useModal, Seg } from '../components/
 import { Chart, C } from '../components/Chart'
 import { spanFor, nextSpan, prevSpan, findPeriod, periodLabel, type Span } from '../lib/periods'
 import { periodStat, insights, type LineStat } from '../lib/budget'
+import { cadencePlan, sinkingFunds, sinkingTotals } from '../lib/sinking'
 import { fmtMoney, fm2, parseNum, round2 } from '../lib/money'
 import { fmtD, today } from '../lib/dates'
 import { AddTxn } from './Transactions'
@@ -16,13 +17,14 @@ export function BudgetPage() {
   const [span, setSpan] = useState<Span>(() => spanFor(data, settings)); const [tab, setTab] = useState<'lines' | 'groups'>('lines')
   useEffect(() => { setSpan(spanFor(data, settings)) }, [settings.periodType, settings.periodAnchor, settings.semimonthlyDays?.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const period = findPeriod(data, span); const isCur = span.start <= today() && span.end >= today()
-  const start = () => guarded(async () => { await repo!.startPeriod(span.type, span.start, span.end, span.type === 'month' ? null as unknown as string : span.label); await refresh() }, `${span.label} started`)
+  const spread = async (pid: string) => { const d = useStore.getState().data; const p = d.periods.find(x => x.id === pid); if (!p) return; const plan = cadencePlan(d, p); for (const u of plan.updates) await update('lines', u.id, { planned: u.planned }); for (const n of plan.inserts) await insert('lines', { period_id: pid, category_id: n.category_id, planned: n.planned, rollover_in: 0 }) }
+  const start = () => guarded(async () => { const pid = await repo!.startPeriod(span.type, span.start, span.end, span.type === 'month' ? null as unknown as string : span.label); await refresh(); await spread(pid) }, `${span.label} started`)
   const ps = useMemo(() => (period ? periodStat(data, settings, period) : null), [data, settings, period])
   const ins = ps ? insights(settings, ps) : []
   const setPlanned = (l: LineStat, v: number | null) => guarded(async () => { if (!period) return; const val = v ?? 0; if (l.lineId) await update('lines', l.lineId, { planned: val }); else await insert('lines', { period_id: period.id, category_id: l.cat.id, planned: val, rollover_in: 0 }) })
   const addLine = (c: Category) => guarded(async () => { if (!period) return; await insert('lines', { period_id: period.id, category_id: c.id, planned: c.default_budget, rollover_in: 0 }) })
   const close_ = () => guarded(async () => { if (!period) return; await update('periods', period.id, { status: period.status === 'closed' ? 'open' : 'closed' }) }, period?.status === 'closed' ? 'Period reopened' : 'Period closed')
-  const useAsDefaults = () => guarded(async () => { if (!ps) return; for (const l of [...ps.lines, ...ps.income]) if (l.planned !== l.cat.default_budget) await update('categories', l.cat.id, { default_budget: l.planned }) }, 'Saved as the defaults for new periods')
+  const useAsDefaults = () => guarded(async () => { if (!ps) return; for (const l of [...ps.lines, ...ps.income]) if (l.cat.budget_cadence === 'period' && l.planned !== l.cat.default_budget) await update('categories', l.cat.id, { default_budget: l.planned }) }, 'Saved as the defaults for new periods (monthly / yearly categories keep their own amounts)')
   const c = C(); const editable = canEdit && period?.status !== 'closed'
   const grpRows = useMemo(() => { if (!ps) return []; const g: Record<string, { planned: number; actual: number }> = {}; ps.lines.forEach(l => { const k = l.cat.group || 'Other'; g[k] = g[k] || { planned: 0, actual: 0 }; g[k].planned += l.available; g[k].actual += l.actual }); return Object.entries(g).map(([k, v]) => ({ k, ...v })).sort((a, b) => b.planned - a.planned) }, [ps])
   const missing = ps ? cats.filter(cat => cat.kind !== 'transfer' && !ps.lines.some(l => l.cat.id === cat.id) && !ps.income.some(l => l.cat.id === cat.id)) : []
@@ -68,7 +70,22 @@ export function BudgetPage() {
       <Note>Fixed {fmtMoney(P.fixed)} · variable {fmtMoney(P.variable)} · {P.days}-day period {fmtD(period.start_date)} – {fmtD(period.end_date)}{period.ref ? ` · ${period.ref}` : ''}</Note>
       {canEdit && <div className="btnrow" style={{ marginTop: 10 }}><Btn onClick={() => open(<AddTxn onDone={close} />, { wide: true })}>+ Log a transaction</Btn><Btn onClick={() => guarded(async () => { await saveSettings({ playbook: settings.playbook }); useStore.getState().toast('Tip: set each category\'s default budget in Settings → Categories so new periods start right') })}>Budget tips</Btn></div>}
     </Card>
+    <SinkingCard period={period} onSpread={period ? () => guarded(() => spread(period.id), 'Monthly and yearly budgets spread into this period') : undefined} />
     <Card span={12} title="All periods" hint="every budget period you have started"><div className="tblwrap"><table className="tbl"><thead><tr><th>Period</th><th>Type</th><th>Status</th><th className="num">Planned</th><th className="num">Spent</th><th className="num">Income</th><th className="num">Net</th><th></th></tr></thead><tbody>{data.periods.slice().sort((a, b) => b.start_date.localeCompare(a.start_date)).map((p: BudgetPeriod) => { const st = periodStat(data, settings, p); return <tr key={p.id} className={p.id === period.id ? 'st-info' : ''}><td><a href="#" onClick={e => { e.preventDefault(); setSpan({ start: p.start_date, end: p.end_date, type: p.period_type, label: periodLabel(p) }) }}>{periodLabel(p)}</a></td><td>{p.period_type}</td><td><Pill cls={p.status === 'closed' ? 'idle' : 'good'}>{p.status}</Pill></td><td className="num">{fmtMoney(st.spB)}</td><td className="num">{fmtMoney(st.spA)}</td><td className="num">{fmtMoney(st.incA)}</td><td className="num" style={{ color: `var(--${st.net >= 0 ? 'good' : 'crit'})` }}>{(st.net >= 0 ? '+' : '') + fmtMoney(st.net)}</td><td>{canEdit && data.periods.length > 1 && <button className="del" title="Delete this period (transactions are kept)" onClick={() => guarded(() => remove('periods', p.id), 'Period deleted')}>✕</button>}</td></tr> })}</tbody></table></div></Card>
   </div>
 }
 export const r2 = round2
+
+/** Sinking funds: categories budgeted per year (or per month) are spread over each period; this card shows what has been set aside year-to-date vs spent. */
+function SinkingCard({ period, onSpread }: { period: BudgetPeriod | null | undefined; onSpread?: () => void }) {
+  const { data, settings, canEdit } = useData(); const funds = useMemo(() => sinkingFunds(data, settings), [data, settings]); const t = sinkingTotals(funds)
+  const pending = period ? cadencePlan(data, period) : { updates: [], inserts: [] }; const stale = pending.updates.length + pending.inserts.length
+  if (!funds.length) return <Card span={12} title="Sinking funds" hint="yearly expenses saved for a little each period"><Note>Mark a category as budgeted <b>per year</b> (Settings → Categories → Cadence) — car registration, gifts, travel, home repairs — and its yearly amount is spread across every budget period, with the unspent part carried forward.</Note></Card>
+  return <Card span={12} title="Sinking funds" hint={`yearly amounts spread per period · year to date (${Math.round(funds[0].pctOfYear * 100)}% of the year)`} right={canEdit && stale && onSpread ? <Btn sm onClick={onSpread}>Update {stale} line{stale === 1 ? '' : 's'} in this period</Btn> : undefined}>
+    <div className="tblwrap"><table className="tbl"><thead><tr><th>Category</th><th className="num">Per year</th><th className="num">Per month</th><th className="num">Set aside so far</th><th className="num">Spent this year</th><th className="num">Fund balance</th><th>Status</th></tr></thead><tbody>
+      {funds.map(f => <tr key={f.cat.id}><td><b>{f.cat.name}</b> <span className="note" style={{ display: 'inline' }}>{f.cat.group}</span></td><td className="num">{fmtMoney(f.yearly)}</td><td className="num">{fmtMoney(f.perMonth)}</td><td className="num">{fmtMoney(f.accrued)}</td><td className="num">{fmtMoney(f.spent)}</td><td className="num" style={{ color: f.balance < 0 ? 'var(--crit)' : 'var(--good)' }}>{f.balance < 0 ? '−' : ''}{fmtMoney(Math.abs(f.balance))}</td><td><Pill cls={f.status === 'overdrawn' ? 'crit' : f.status === 'ahead' ? 'good' : 'info'}>{f.status}</Pill></td></tr>)}
+      <tr><td><b>Total</b></td><td className="num"><b>{fmtMoney(t.yearly)}</b></td><td className="num"><b>{fmtMoney(t.yearly / 12)}</b></td><td className="num"><b>{fmtMoney(t.accrued)}</b></td><td className="num"><b>{fmtMoney(t.spent)}</b></td><td className="num"><b>{fmtMoney(t.balance)}</b></td><td></td></tr>
+    </tbody></table></div>
+    <Note>"Set aside so far" assumes the per-period amount was saved every period since January 1. Turn on <b>rollover</b> for these categories so unspent money carries into the next period instead of disappearing.</Note>
+  </Card>
+}

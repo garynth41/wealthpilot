@@ -39,4 +39,8 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | Sample data | 50+ transactions, 5+ institutions, investment & retirement accounts | Offline demo: holdings added ✔ · tax sample with 0.7.0 | FE | 0.7.0 |
 | Navigation | 8 primary tabs | Rail grouped into the 8 sections (+ Overview) | ✔ | 0.8.0 |
 
+| — | Sinking-fund (yearly) budgets spread per period | `lib/sinking.ts` + Budget card + Cadence column | ✔ | 0.9.0 |
+| — | PWA / offline | manifest, icons, `sw.js` (shell only, never API data) | ✔ | 0.9.0 |
+| Visualization | Treemap, heat map | `lib/visuals.ts` SVG on Trends | ✔ | 0.9.0 |
+
 Not planned: MFA beyond TOTP, "API latency / uptime" dashboards, Plaid/Teller/MX until a backend exists.
