@@ -151,3 +151,11 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 
 .envtag{display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;background:var(--idle-soft);color:var(--ink-2)}
 .env-development{background:var(--blue-soft);color:var(--blue)} .env-staging{background:var(--warn-soft);color:var(--warn)} .env-production{background:var(--good-soft);color:var(--good)}
+
+/* table extras (0.4.0): column resize grip, column picker, pager */
+.tbl th{position:relative} .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none} .colgrip:hover{background:var(--accent-soft)}
+.colpicker{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px;min-width:200px;max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:4px;font-size:13px;text-transform:none;letter-spacing:0}
+.colpicker label{display:flex;gap:6px;align-items:center;white-space:nowrap}
+.pager{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px}
+/* segmented controls with many options wrap on narrow screens instead of overflowing sideways */
+.seg{flex-wrap:wrap;max-width:100%} .seg button{white-space:nowrap}

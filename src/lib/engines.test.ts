@@ -159,3 +159,41 @@ describe('intelligence: subscription last-charged', () => {
     expect(nf.lastCharged).toBe(newest)
   })
 })
+
+// ---------------- payee rules (0.4.0) ----------------
+import { ruleMatches, findRule, suggest, applySuggestion, planAutoCategorise, learnRule, upsertRule, type PayeeRule } from './rules'
+const R = (o: Partial<PayeeRule>): PayeeRule => ({ id: o.id || 'r1', pattern: 'kroger', match: 'contains', enabled: true, ...o })
+describe('rules: matching', () => {
+  it('contains / starts / exact / regex, case-insensitive, kind-scoped, invalid regex never matches', () => {
+    expect(ruleMatches(R({}), 'KROGER #123')).toBe(true); expect(ruleMatches(R({ match: 'starts', pattern: 'kro' }), 'Kroger')).toBe(true); expect(ruleMatches(R({ match: 'starts', pattern: 'ger' }), 'Kroger')).toBe(false)
+    expect(ruleMatches(R({ match: 'exact', pattern: 'Kroger' }), 'KROGER #123 COLUMBUS')).toBe(true); expect(ruleMatches(R({ match: 'exact', pattern: 'Kroger Fuel' }), 'Kroger')).toBe(false)
+    expect(ruleMatches(R({ match: 'regex', pattern: '^(shell|bp)\\b' }), 'BP #44')).toBe(true); expect(ruleMatches(R({ match: 'regex', pattern: '(' }), 'anything')).toBe(false)
+    expect(ruleMatches(R({ kind: 'income' }), 'Kroger', 'expense')).toBe(false); expect(ruleMatches(R({ enabled: false }), 'Kroger')).toBe(false)
+  })
+  it('the most specific (longest) enabled rule wins', () => {
+    const rules = [R({ id: 'a', pattern: 'kroger', category_id: 'groc' }), R({ id: 'b', pattern: 'kroger fuel', category_id: 'fuel' })]
+    expect(findRule(rules, 'KROGER FUEL #9')!.id).toBe('b'); expect(findRule(rules, 'Kroger')!.id).toBe('a'); expect(findRule(rules, 'Aldi')).toBeNull()
+  })
+})
+describe('rules: suggestions & bulk plan', () => {
+  it('rule → remembered email payee → history, in that order', () => {
+    const { data, household } = seed(); const groc = data.categories.find(c => c.name === 'Groceries')!, dine = data.categories.find(c => c.name === 'Dining out')!
+    const base = { ...SETTINGS_DEFAULTS, ...household.settings }
+    expect(suggest(data, { ...base, rules: [R({ pattern: 'kroger', category_id: dine.id })] }, { payee: 'Kroger', kind: 'expense' })).toMatchObject({ category_id: dine.id, how: 'rule' })
+    expect(suggest(data, { ...base, finmail: { rules: { kroger: { category: dine.id } } } }, { payee: 'Kroger', kind: 'expense' })).toMatchObject({ category_id: dine.id, how: 'remembered' })
+    expect(suggest(data, base, { payee: 'Kroger', kind: 'expense' })).toMatchObject({ category_id: groc.id, how: 'history' })   // demo has 2+ Kroger → Groceries
+    expect(suggest(data, base, { payee: 'Never Seen Before LLC', kind: 'expense' }).how).toBeNull()
+  })
+  it('applySuggestion only fills blanks unless forced; the bulk plan skips transfers, voids and categorised rows', () => {
+    expect(applySuggestion({ category_id: 'x' }, { category_id: 'y', how: 'rule' })).toBeNull(); expect(applySuggestion({ category_id: 'x' }, { category_id: 'y', how: 'rule' }, true)).toEqual({ category_id: 'y' })
+    expect(applySuggestion({}, { category_id: 'y', payee: 'Kroger', how: 'rule' })).toEqual({ category_id: 'y', payee: 'Kroger' })
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings, rules: [R({ pattern: 'mystery', category_id: data.categories[5].id })] }
+    const d = { ...data, transactions: [...data.transactions, mkTx({ id: 'u1', payee: 'MYSTERY SHOP', category_id: null }, 900), mkTx({ id: 'u2', payee: 'Mystery', category_id: null, status: 'void' }, 901), mkTx({ id: 'u3', payee: 'mystery', kind: 'transfer', category_id: null }, 902)] }
+    const plan = planAutoCategorise(d, s); expect(plan.map(p => p.t.id)).toContain('u1'); expect(plan.map(p => p.t.id)).not.toContain('u2'); expect(plan.map(p => p.t.id)).not.toContain('u3'); expect(plan.every(p => !p.t.category_id)).toBe(true)
+  })
+  it('learns a rule from a correction and upserts by pattern', () => {
+    const r = learnRule('KROGER #1234 COLUMBUS OH', { category_id: 'groc' }, 'expense')!; expect(r).toMatchObject({ pattern: 'kroger', match: 'contains', category_id: 'groc', source: 'learned' })
+    const once = upsertRule([], r); const twice = upsertRule(once, { ...r, id: 'other', category_id: 'dine' }); expect(twice).toHaveLength(1); expect(twice[0].category_id).toBe('dine'); expect(twice[0].id).toBe(r.id)
+    expect(learnRule('', { category_id: 'x' })).toBeNull()
+  })
+})

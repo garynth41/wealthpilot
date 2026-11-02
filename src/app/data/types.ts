@@ -113,7 +113,10 @@ export interface Settings {
   finmail?: { since?: string; auto?: boolean; rules?: Record<string, { account?: string; category?: string; recurring?: string; none?: boolean }> }
   playbook?: string[]
   imports?: ImportLog[]             // statement-import history (newest first, capped at 50)
+  rules?: PayeeRule[]               // payee auto-categorisation rules (see lib/rules.ts)
+  learnRules?: boolean              // create a rule when a category is set by hand (default true)
 }
+export interface PayeeRule { id: string; pattern: string; match: 'contains' | 'starts' | 'exact' | 'regex'; category_id?: string | null; account_id?: string | null; rename?: string | null; exclude_from_budget?: boolean; kind?: 'expense' | 'income' | null; enabled: boolean; hits?: number; created_at?: string; source?: 'manual' | 'learned' }
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 

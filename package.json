@@ -1,7 +1,7 @@
 {
   "name": "wealthpilot",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -24,6 +24,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.16"
   },
   "devDependencies": {

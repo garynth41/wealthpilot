@@ -105,7 +105,7 @@ export const sniffFormat = (name: string, text: string): 'ofx' | 'csv' => (/\.(o
 
 // ---------------- de-duplication ----------------
 export type DupReason = 'external_id' | 'same_day_amount_payee' | 'near_match' | 'in_file'
-export interface Proposed { row: ImportRow; dup: DupReason | null; match?: Transaction; txn: Partial<Transaction> }
+export interface Proposed { row: ImportRow; dup: DupReason | null; match?: Transaction; txn: Partial<Transaction>; how?: 'rule' | 'remembered' | 'history' | null }
 const norm = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 /** Mark rows that already exist: same external_id (exact), or same account + amount + payee within ±3 days (likely the same transaction logged by hand or from email). */
 export function dedupe(d: Data, account: Account, rows: ImportRow[]): Proposed[] {

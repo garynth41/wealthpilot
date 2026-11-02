@@ -5,6 +5,7 @@ import type { Account, ImportLog } from '../app/data/types'
 import { Card, KPI, Note, Btn, Field, Pill, Empty, Banner } from '../components/ui'
 import { parseCsv, detectMapping, mapRows, parseOfx, sniffFormat, dedupe, DUP_LABEL, type Mapping, type Proposed, type ImportRow } from '../lib/import'
 import { post } from '../lib/ledger'
+import { suggest, applySuggestion } from '../lib/rules'
 import { fm2, fmtMoney, round2 } from '../lib/money'
 import { fmtD, today, ago } from '../lib/dates'
 import { isLiability, acctLabel } from '../lib/accounts'
@@ -25,7 +26,8 @@ export function ConnectionsPage() {
       else { const rs = parseCsv(text); const m = detectMapping(rs); setRows(rs); setOfx(null); setMap(m ? { ...m, negativeIsOutflow: !(account && isLiability(account)) ? true : m.negativeIsOutflow } : null); setStage(m ? 'map' : 'map'); if (!m) setErr('Could not recognise the columns — pick them below.') } }).catch(ex => setErr(String(ex))) }
 
   const imported: ImportRow[] = useMemo(() => (ofx ? ofx.rows : map ? mapRows(rows, map, { card: !!account && isLiability(account), source: 'csv' }) : []), [ofx, map, rows, account])
-  const proposed: Proposed[] = useMemo(() => (account ? dedupe(data, account, imported) : []), [data, account, imported])
+  const proposed: Proposed[] = useMemo(() => (account ? dedupe(data, account, imported).map(p => { if (p.txn.kind === 'transfer') return p; const sg = suggest(data, settings, { payee: p.txn.payee, kind: p.txn.kind as 'expense' | 'income' }); const patch = applySuggestion(p.txn, sg); return patch ? { ...p, txn: { ...p.txn, ...patch }, how: sg.how } : p }) : []), [data, settings, account, imported])
+  const categorised = proposed.filter(p => p.txn.category_id).length
   const bad = proposed.filter(p => p.row.warn), dups = proposed.filter(p => p.dup), fresh = proposed.filter(p => !p.dup && !p.row.warn)
   const toAdd = skipDups ? fresh : proposed.filter(p => !p.row.warn && p.dup !== 'in_file')
   const inflow = toAdd.filter(p => p.row.kind === 'income').reduce((a, p) => a + p.row.amount, 0), outflow = toAdd.filter(p => p.row.kind === 'expense').reduce((a, p) => a + p.row.amount, 0)
@@ -72,7 +74,7 @@ export function ConnectionsPage() {
         {stage === 'review' && file && account && <>
           <p className="note" style={{ marginTop: 0 }}><b>{file.name}</b> · {format.toUpperCase()}{ofx?.org ? ` · ${ofx.org}` : ''}{ofx?.start ? ` · ${fmtD(ofx.start)} – ${fmtD(ofx.end || ofx.start)}` : ''} · into <b>{acctLabel(account, data.accounts)}</b> {format === 'csv' && <Btn sm onClick={() => setStage('map')}>← Columns</Btn>} <Btn sm onClick={reset}>Change file</Btn></p>
           {ofx && <Field label="Into account"><select className="inp" value={acctId} onChange={e => setAcctId(e.target.value)}>{accts.map(a => <option key={a.id} value={a.id}>{acctLabel(a, data.accounts)}{ofx.acctId && a.last4 && ofx.acctId.replace(/\D/g, '').endsWith(a.last4) ? ' ✓ matches file' : ''}</option>)}</select></Field>}
-          <div className="kpis" style={{ marginBottom: 12 }}><KPI l="New" v={String(fresh.length)} cls="good" s="will be added" /><KPI l="Duplicates" v={String(dups.length)} cls={dups.length ? 'warn' : 'idle'} s={skipDups ? 'will be skipped' : 'will be added anyway'} /><KPI l="Unreadable" v={String(bad.length)} cls={bad.length ? 'crit' : 'idle'} s="no date or amount — skipped" /><KPI l="Net effect" v={fmtMoney(inflow - outflow)} cls={inflow - outflow >= 0 ? 'good' : 'warn'} s={`+${fmtMoney(inflow)} in · −${fmtMoney(outflow)} out`} /></div>
+          <div className="kpis" style={{ marginBottom: 12 }}><KPI l="New" v={String(fresh.length)} cls="good" s="will be added" /><KPI l="Duplicates" v={String(dups.length)} cls={dups.length ? 'warn' : 'idle'} s={skipDups ? 'will be skipped' : 'will be added anyway'} /><KPI l="Unreadable" v={String(bad.length)} cls={bad.length ? 'crit' : 'idle'} s="no date or amount — skipped" /><KPI l="Auto-categorized" v={`${categorised} / ${proposed.length}`} cls={categorised ? 'good' : 'idle'} s="by your rules, remembered payees and history" /><KPI l="Net effect" v={fmtMoney(inflow - outflow)} cls={inflow - outflow >= 0 ? 'good' : 'warn'} s={`+${fmtMoney(inflow)} in · −${fmtMoney(outflow)} out`} /></div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', margin: '0 0 10px' }}>
             <label><input type="checkbox" checked={skipDups} onChange={e => setSkipDups(e.target.checked)} /> Skip duplicates</label>
             {ofx?.balance != null && <label><input type="checkbox" checked={setBalance} onChange={e => setSetBalance(e.target.checked)} /> Set the account balance to the statement's {fm2(Math.abs(ofx.balance))}{ofx.balanceAsOf ? ` as of ${fmtD(ofx.balanceAsOf)}` : ''}</label>}
@@ -101,8 +103,9 @@ export function ConnectionsPage() {
 }
 
 function PreviewTable({ rows }: { rows: Proposed[] }) {
+  const { catLabels } = useData()
   if (!rows.length) return <Empty>No rows to show.</Empty>
-  return <div className="tblwrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>#</th><th>Date</th><th>Payee</th><th>Memo</th><th className="num">Amount</th><th>Kind</th><th>Status</th></tr></thead><tbody>
-    {rows.map((p, i) => <tr key={i} style={{ opacity: p.row.warn || p.dup ? .6 : 1 }}><td>{p.row.line}</td><td>{p.row.date ? fmtD(p.row.date) : <span style={{ color: 'var(--crit)' }}>?</span>}</td><td>{p.row.payee || <i>—</i>}</td><td style={{ color: 'var(--ink-3)' }}>{p.row.memo}</td><td className="num">{p.row.amount ? fm2(p.row.amount) : '?'}</td><td>{p.txn.kind === 'transfer' ? <Pill cls="good">payment</Pill> : p.row.kind === 'income' ? <Pill cls="good">in</Pill> : <Pill cls="warn">out</Pill>}</td><td>{p.row.warn ? <Pill cls="crit">{p.row.warn}</Pill> : p.dup ? <Pill cls="idle">{DUP_LABEL[p.dup]}</Pill> : <Pill cls="good">new</Pill>}</td></tr>)}
+  return <div className="tblwrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>#</th><th>Date</th><th>Payee</th><th>Category</th><th className="num">Amount</th><th>Kind</th><th>Status</th></tr></thead><tbody>
+    {rows.map((p, i) => <tr key={i} style={{ opacity: p.row.warn || p.dup ? .6 : 1 }}><td>{p.row.line}</td><td>{p.row.date ? fmtD(p.row.date) : <span style={{ color: 'var(--crit)' }}>?</span>}</td><td>{p.row.payee || <i>—</i>}{p.row.memo && <div className="note" style={{ margin: 0 }}>{p.row.memo}</div>}</td><td style={{ color: p.txn.category_id ? undefined : 'var(--ink-3)' }}>{p.txn.category_id ? catLabels[p.txn.category_id] : '—'}</td><td className="num">{p.row.amount ? fm2(p.row.amount) : '?'}</td><td>{p.txn.kind === 'transfer' ? <Pill cls="good">payment</Pill> : p.row.kind === 'income' ? <Pill cls="good">in</Pill> : <Pill cls="warn">out</Pill>}</td><td>{p.row.warn ? <Pill cls="crit">{p.row.warn}</Pill> : p.dup ? <Pill cls="idle">{DUP_LABEL[p.dup]}</Pill> : <Pill cls="good">new</Pill>}</td></tr>)}
   </tbody></table></div>
 }

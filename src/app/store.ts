@@ -14,13 +14,14 @@ interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
   repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean
   households: Array<{ id: string; name: string; role: Role }>
-  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null
+  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean
   settings: () => Settings
   canEdit: () => boolean; isOwner: () => boolean
   boot: () => Promise<void>
   enterDemo: () => Promise<void>; exitDemo: () => void; resetDemo: () => void
   signIn: (email: string, password: string) => Promise<void>; signUp: (email: string, password: string) => Promise<string>; signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>; updatePassword: (pw: string) => Promise<void>
+  verifyMfa: (code: string) => Promise<void>
   openHousehold: (id: string) => Promise<void>; createHousehold: (name: string) => Promise<void>
   refresh: () => Promise<void>
   insert: <C extends Collection>(coll: C, row: Partial<RowOf<C>>) => Promise<RowOf<C>>
@@ -35,7 +36,7 @@ interface State {
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null, mfaPending: false,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   canEdit: () => { const s = get(); return s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly) },
   isOwner: () => get().mode === 'demo' || get().role === 'owner',
@@ -48,7 +49,7 @@ export const useStore = create<State>((set, get) => ({
       const { data: { session } } = await sb().auth.getSession()
       sb().auth.onAuthStateChange((_e, s) => { set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } })
       set({ session, user: session?.user || null })
-      if (session) await loadHouseholds(session.user)
+      if (session) { if (await needsMfa()) set({ mfaPending: true }); else await loadHouseholds(session.user) }
     } catch (e) { set({ loadError: (e as Error).message }) }
     finally { set({ booting: false }) }
   },
@@ -59,9 +60,10 @@ export const useStore = create<State>((set, get) => ({
   },
   exitDemo() { localStorage.removeItem(LS('mode')); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) },
   resetDemo() { const r = get().repo; if (r instanceof MemoryRepo) { r.reset(); get().refresh(); get().toast('Sample data restored') } },
-  async signIn(email, password) { const { error } = await sb().auth.signInWithPassword({ email, password }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
+  async signIn(email, password) { const { error } = await sb().auth.signInWithPassword({ email, password }); if (error) throw error; if (await needsMfa()) { set({ mfaPending: true }); return } const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
+  async verifyMfa(code) { const { data: f, error: e1 } = await sb().auth.mfa.listFactors(); if (e1) throw e1; const factor = f.totp.find(x => x.status === 'verified') || f.totp[0]; if (!factor) throw new Error('No authenticator is enrolled'); const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s+/g, '') }); if (error) throw error; set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
-  async signOut() { await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [] }) },
+  async signOut() { await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
   async resetPassword(email) { const { error } = await sb().auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error },
   async updatePassword(pw) { const { error } = await sb().auth.updateUser({ password: pw }); if (error) throw error },
   async openHousehold(id) {
@@ -99,6 +101,8 @@ export const useStore = create<State>((set, get) => ({
   },
 }))
 
+/** True when the user has a verified TOTP factor but this session is still at AAL1 — the app then asks for the code before opening any household. */
+async function needsMfa() { try { const { data } = await sb().auth.mfa.getAuthenticatorAssuranceLevel(); return !!data && data.nextLevel === 'aal2' && data.currentLevel !== 'aal2' } catch { return false } }
 const need = (get: () => State) => { const r = get().repo; if (!r) throw new Error('Not signed in'); return r }
 function attach(repo: Repo) { unsub?.(); unsub = repo.subscribe(() => { if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(() => useStore.getState().refresh(), repo.mode === 'demo' ? 0 : 700) }) }
 async function loadHouseholds(user: User) {

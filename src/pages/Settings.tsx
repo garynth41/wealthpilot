@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { Category, PeriodType, Role } from '../app/data/types'
@@ -7,18 +7,20 @@ import { APP_NAME, APP_VERSION, APP_BUILD } from '../app/config'
 import { Card, Btn, Pill, Note, Field, useConfirm, Seg } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { fmtMoney, parseNum } from '../lib/money'
-import { fmtDY, today } from '../lib/dates'
+import { fmtDY, today, ago } from '../lib/dates'
+import { hasSupabase, sb } from '../app/supabase'
+import { ruleHits, planAutoCategorise, type PayeeRule } from '../lib/rules'
 
 export function SettingsPage() {
   const { data, household, settings, saveSettings, insert, update, remove, guarded, canEdit, isOwner, repo, refresh, mode, user, groups } = useData(); const confirm = useConfirm()
-  const [tab, setTab] = useState<'general' | 'categories' | 'members' | 'data' | 'activity'>('general')
+  const [tab, setTab] = useState<'general' | 'categories' | 'rules' | 'members' | 'security' | 'data' | 'activity'>('general')
   const [name, setName] = useState(household?.name || ''); const [s, setS] = useState({ ...settings }); const [inviteEmail, setInviteEmail] = useState(''); const [inviteRole, setInviteRole] = useState<Role>('editor'); const fileRef = useRef<HTMLInputElement>(null)
   const saveGeneral = () => guarded(async () => { if (name !== household?.name) await repo!.renameHousehold(name); await saveSettings({ periodType: s.periodType, periodAnchor: s.periodAnchor || null, semimonthlyDays: s.semimonthlyDays, reserveFloor: +s.reserveFloor || 0, runwayGreen: +s.runwayGreen || 6, runwayYellow: +s.runwayYellow || 3, dueSoonDays: +s.dueSoonDays || 7, budgetCritPct: +s.budgetCritPct || 10, savingsTargetPct: +s.savingsTargetPct || 20, includeRetirementInCash: !!s.includeRetirementInCash, payFrequencyDefault: s.payFrequencyDefault }); await refresh() }, 'Settings saved')
   const catCols: Col<Category>[] = [{ k: 'group', label: 'Group', type: 'select', opts: [...groups, 'Income', 'Housing', 'Transport', 'Food', 'Health', 'Bills', 'Debt', 'Personal', 'Savings', 'Other'].filter((v, i, a) => a.indexOf(v) === i), w: 110 }, { k: 'name', label: 'Category', type: 'text', w: 160 }, { k: 'kind', label: 'Kind', type: 'select', opts: ['expense', 'income', 'transfer'], w: 100 }, { k: 'priority', label: 'Priority', type: 'select', opts: ['Essential', 'Important', 'Discretionary'], w: 120 }, { k: 'cost_type', label: 'Cost type', type: 'select', opts: ['Fixed', 'Variable', 'Irregular'], w: 100 }, { k: 'default_budget', label: 'Default budget', type: 'money', cls: 'num' }, { k: 'rollover', label: 'Rollover', type: 'bool' }, { k: 'sort_order', label: 'Order', type: 'int', w: 60 }, { k: 'archived', label: 'Archived', type: 'bool' }, { k: 'notes', label: 'Notes', type: 'text', w: 160 }, { k: 'ref', label: 'ID', type: 'ro', cls: 'id' }]
   const exportJson = () => guarded(async () => { const j = await repo!.exportJson(); const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `wealthpilot-backup-${today()}.json`; a.click() }, 'Backup downloaded')
   const exportCsv = () => { const rows = data.transactions.map(t => [t.date, t.kind, t.amount, t.payee || '', data.categories.find(c => c.id === t.category_id)?.name || '', data.accounts.find(a => a.id === t.account_id)?.name || '', data.accounts.find(a => a.id === t.to_account_id)?.name || '', t.status, t.source, (t.memo || '').replace(/"/g, '""')]); const csv = ['date,kind,amount,payee,category,account,to_account,status,source,memo', ...rows.map(r => r.map(v => `"${String(v)}"`).join(','))].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `wealthpilot-transactions-${today()}.csv`; a.click() }
   const importJson = (modeI: 'merge' | 'replace') => { const f = fileRef.current?.files?.[0]; if (!f) return useStore.getState().toast('Choose a backup file first', true); const r = new FileReader(); r.onload = () => guarded(async () => { const j = JSON.parse(String(r.result)); if (modeI === 'replace' && !(await confirm('Replace EVERYTHING in this household with the backup? This cannot be undone.', 'Replace'))) return; const n = await repo!.importJson(j, modeI); await refresh(); useStore.getState().toast(`${n} rows imported`) }); r.readAsText(f) }
-  const tabs: Array<[typeof tab, string]> = [['general', 'General'], ['categories', 'Categories'], ['members', 'Members'], ['data', 'Backup & data'], ['activity', 'Activity log']]
+  const tabs: Array<[typeof tab, string]> = [['general', 'General'], ['categories', 'Categories'], ['rules', 'Payee rules'], ['members', 'Members'], ['security', 'Security'], ['data', 'Backup & data'], ['activity', 'Activity log']]
   return <>
     <div style={{ marginBottom: 14 }}><Seg value={tab} options={tabs} onChange={setTab} /></div>
     {tab === 'general' && <div className="grid g12">
@@ -35,6 +37,8 @@ export function SettingsPage() {
     {tab === 'categories' && <Card title="Categories" hint="group · priority (Essential / Important / Discretionary) · fixed or variable · default budget copied into each new period · rollover carries unspent money forward" right={canEdit ? <Btn primary sm onClick={() => guarded(() => insert('categories', { name: 'New category', group: 'Other', kind: 'expense', priority: 'Important', cost_type: 'Variable', default_budget: 0, budget_cadence: 'period', rollover: false, sort_order: data.categories.length + 1, archived: false }), 'Added')}>+ Add category</Btn> : undefined}>
       <Table rows={data.categories.slice().sort((a, b) => a.sort_order - b.sort_order)} cols={catCols} editable={canEdit} onChange={(c, k, v) => guarded(() => update('categories', c.id, { [k]: v } as Partial<Category>))} onDelete={async c => { if (await confirm(`Delete ${c.name}? Transactions in it become uncategorized. Archive instead to keep history.`)) guarded(() => remove('categories', c.id), 'Deleted') }} rowCls={c => c.archived ? 'st-idle ex-off' : c.kind === 'income' ? 'st-good' : ''} />
       <Note>Total default budget: <b>{fmtMoney(data.categories.filter(c => !c.archived && c.kind === 'expense').reduce((n, c) => n + c.default_budget, 0))}</b>/period · income {fmtMoney(data.categories.filter(c => !c.archived && c.kind === 'income').reduce((n, c) => n + c.default_budget, 0))}</Note></Card>}
+    {tab === 'rules' && <RulesTab />}
+    {tab === 'security' && <SecurityTab />}
     {tab === 'members' && <div className="grid g12">
       <Card span={7} title="Members"><div className="tblwrap"><table className="tbl"><thead><tr><th>Email</th><th>Role</th><th>Read-only</th><th>Last seen</th><th></th></tr></thead><tbody>{data.members.map(m => <tr key={m.user_id}><td>{m.email}{m.user_id === user?.id ? ' (you)' : ''}</td><td>{isOwner && m.user_id !== user?.id ? <select value={m.role} onChange={e => guarded(() => repo!.setMemberRole(m.user_id, e.target.value as Role, m.read_only).then(refresh))}><option>owner</option><option>editor</option><option>viewer</option></select> : <Pill cls={m.role === 'owner' ? 'good' : 'info'}>{m.role}</Pill>}</td><td>{isOwner && m.user_id !== user?.id ? <input type="checkbox" checked={m.read_only} onChange={e => guarded(() => repo!.setMemberRole(m.user_id, m.role, e.target.checked).then(refresh))} /> : m.read_only ? 'yes' : ''}</td><td>{m.last_seen_at ? fmtDY(m.last_seen_at.slice(0, 10)) : '—'}{m.last_version ? ` · v${m.last_version}` : ''}</td><td>{isOwner && m.user_id !== user?.id && <button className="del" onClick={async () => { if (await confirm(`Remove ${m.email}?`, 'Remove')) guarded(() => repo!.removeMember(m.user_id).then(refresh)) }}>✕</button>}</td></tr>)}</tbody></table></div></Card>
       <Card span={5} title="Invite someone" hint="they sign up with this email and the household appears for them">{isOwner ? <><Field label="Email"><input className="inp" type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} /></Field><Field label="Role"><select className="inp" value={inviteRole} onChange={e => setInviteRole(e.target.value as Role)}><option value="editor">editor — can add and change</option><option value="viewer">viewer — read only</option><option value="owner">owner — full control</option></select></Field><Btn primary onClick={() => guarded(async () => { await repo!.invite(inviteEmail.trim(), inviteRole); setInviteEmail(''); await refresh() }, 'Invite saved')} disabled={!inviteEmail.includes('@')}>Invite</Btn>{data.invites.length > 0 && <Note>Pending: {data.invites.map(i => `${i.email} (${i.role})`).join(', ')}</Note>}</> : <Note>Only owners can invite.</Note>}</Card>
@@ -47,3 +51,82 @@ export function SettingsPage() {
     {tab === 'activity' && <Card title="Activity log" hint="who changed what · newest first">{data.activity.length ? <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Table</th><th>Summary</th></tr></thead><tbody>{data.activity.map(a => <tr key={a.id}><td>{new Date(a.created_at).toLocaleString()}</td><td>{a.user_email || '—'}</td><td><Pill cls={a.action === 'delete' ? 'crit' : a.action === 'insert' ? 'good' : 'info'}>{a.action}</Pill></td><td>{a.table_name}</td><td>{a.summary || a.record_id}</td></tr>)}</tbody></table></div> : <div className="empty">{mode === 'demo' ? 'The activity log is kept by the database and is not available in the offline demo.' : 'No activity yet.'}</div>}</Card>}
   </>
 }
+
+/** Payee rules: pattern → category / account / rename / exclude. Learned automatically when you categorise by hand; editable here. */
+function RulesTab() {
+  const { data, settings, saveSettings, update, guarded, canEdit, catOpts, catLabels, accts, acctLabels } = useData(); const confirm = useConfirm()
+  const rules = settings.rules || []; type Row = PayeeRule & { hitsNow: number }
+  const rows: Row[] = rules.map(r => ({ ...r, hitsNow: ruleHits(data, r) }))
+  const save = (next: PayeeRule[]) => guarded(() => saveSettings({ rules: next }))
+  const cols: Col<Row>[] = [
+    { k: 'enabled', label: 'On', type: 'bool', w: 40 },
+    { k: 'pattern', label: 'Payee pattern', type: 'text', w: 180, placeholder: 'kroger' },
+    { k: 'match', label: 'Match', type: 'select', opts: ['contains', 'starts', 'exact', 'regex'], labels: { contains: 'contains', starts: 'starts with', exact: 'is exactly', regex: 'regex' }, w: 110 },
+    { k: 'kind', label: 'Applies to', type: 'select', opts: ['', 'expense', 'income'], labels: { '': 'any', expense: 'expenses', income: 'income' }, w: 100 },
+    { k: 'category_id', label: 'Set category', type: 'select', opts: ['', ...catOpts(['expense', 'income']).map(c => c.id)], labels: { '': '—', ...catLabels }, w: 190 },
+    { k: 'account_id', label: 'Set account', type: 'select', opts: ['', ...accts.map(a => a.id)], labels: { '': '—', ...acctLabels }, w: 160 },
+    { k: 'rename', label: 'Rename payee to', type: 'text', w: 140, placeholder: 'Kroger' },
+    { k: 'exclude_from_budget', label: 'Not in budget', type: 'bool', w: 70 },
+    { k: 'hitsNow', label: 'Matches', type: 'ro', cls: 'num', fmt: r => String(r.hitsNow) },
+    { k: 'source', label: 'From', type: 'ro', fmt: r => <Pill cls={r.source === 'learned' ? 'info' : 'idle'}>{r.source === 'learned' ? 'learned' : 'manual'}</Pill> },
+  ]
+  const plan = planAutoCategorise(data, settings)
+  const runAll = () => { if (!plan.length) return; guarded(async () => { for (const p of plan) await update('transactions', p.t.id, p.patch) }, `${plan.length} transaction${plan.length === 1 ? '' : 's'} categorized`) }
+  return <div className="grid g12">
+    <Card span={12} title="Payee rules" hint="first matching rule wins (longest pattern first) · applied to manual entries, statement imports and email capture" right={canEdit ? <span className="btnrow"><Btn sm onClick={runAll} disabled={!plan.length}>Categorize {plan.length} uncategorized</Btn><Btn primary sm onClick={() => save([...rules, { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: '', match: 'contains', enabled: true, created_at: new Date().toISOString(), source: 'manual' }])}>+ Add rule</Btn></span> : undefined}>
+      <Table rows={rows} cols={cols} editable={canEdit} defaultSort={{ k: 'pattern', dir: 1 }} empty="No rules yet. Rules are learned when you set a category on a transaction, or add one here."
+        onChange={(r, k, v) => save(rules.map(x => x.id === r.id ? { ...x, [k]: v === '' ? null : v } : x))}
+        onDelete={async r => { if (await confirm(`Delete the rule "${r.pattern}"?`)) save(rules.filter(x => x.id !== r.id)) }} />
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+        <label><input type="checkbox" checked={settings.learnRules !== false} onChange={e => guarded(() => saveSettings({ learnRules: e.target.checked }))} disabled={!canEdit} /> Learn a rule whenever I set a category by hand</label>
+        <span className="note" style={{ margin: 0 }}>{Object.keys(settings.finmail?.rules || {}).length} remembered email payees are also used (Email → review).</span>
+      </div>
+      <Note>Order of precedence when a transaction has no category: your rules → payees remembered from email review → the category you used most for that merchant before (2+ times). Nothing already categorised is changed unless a rule is applied from this page.</Note>
+    </Card>
+  </div>
+}
+
+/** Security Center: two-factor (TOTP), sessions, password, what is stored, observability counters. */
+function SecurityTab() {
+  const { data, settings, mode, user, guarded, updatePassword, signOut } = useData(); const confirm = useConfirm(); const toast = useStore.getState().toast
+  type Factor = { id: string; friendly_name?: string; status: string; created_at: string; factor_type: string }
+  const [factors, setFactors] = useState<Factor[]>([]); const [enrol, setEnrol] = useState<{ id: string; qr: string; secret: string } | null>(null); const [code, setCode] = useState(''); const [aal, setAal] = useState<string>('')
+  const [pw1, setPw1] = useState(''); const [pw2, setPw2] = useState('')
+  const live = mode === 'db' && hasSupabase()
+  const load = async () => { if (!live) return; const { data: f } = await sb().auth.mfa.listFactors(); setFactors((f?.totp || []) as Factor[]); const { data: a } = await sb().auth.mfa.getAuthenticatorAssuranceLevel(); setAal(a?.currentLevel || '') }
+  useEffect(() => { load() /* eslint-disable-line */ }, [live])
+  const startEnrol = () => guarded(async () => { const { data: e, error } = await sb().auth.mfa.enroll({ factorType: 'totp', friendlyName: 'WealthPilot authenticator' }); if (error) throw error; setEnrol({ id: e.id, qr: e.totp.qr_code, secret: e.totp.secret }); setCode('') })
+  const finishEnrol = () => guarded(async () => { if (!enrol) return; const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: enrol.id, code: code.replace(/\s+/g, '') }); if (error) throw error; setEnrol(null); setCode(''); await load() }, 'Two-factor authentication is on')
+  const cancelEnrol = () => guarded(async () => { if (enrol) await sb().auth.mfa.unenroll({ factorId: enrol.id }); setEnrol(null); await load() })
+  const remove = (f: Factor) => guarded(async () => { if (!(await confirm('Turn off two-factor authentication? Anyone with your password could then sign in.'))) return; const { error } = await sb().auth.mfa.unenroll({ factorId: f.id }); if (error) throw error; await load() }, 'Two-factor authentication is off')
+  const signOutOthers = () => guarded(async () => { const { error } = await sb().auth.signOut({ scope: 'others' }); if (error) throw error }, 'Other devices were signed out')
+  const signOutAll = () => guarded(async () => { if (!(await confirm('Sign out everywhere, including here?'))) return; await sb().auth.signOut({ scope: 'global' }); await signOut() })
+  const changePw = () => { if (pw1.length < 8) return toast('Use at least 8 characters', true); if (pw1 !== pw2) return toast('The two passwords differ', true); guarded(async () => { await updatePassword(pw1); setPw1(''); setPw2('') }, 'Password changed') }
+  const verified = factors.filter(f => f.status === 'verified')
+  const imports = settings.imports || []; const actions = data.activity.length; const emailApplied = data.emailLedger.filter(e => e.decision === 'applied').length, emailIgnored = data.emailLedger.filter(e => e.decision === 'ignored').length
+  const stored: Array<[string, string]> = [['Account', user?.email || '—'], ['Gmail', settings.gmail?.clientId ? `client id ${settings.gmail.clientId.slice(0, 12)}… · account hint ${settings.gmail.account || '—'}` : 'not set up'], ['Outlook', settings.outlook?.clientId ? `application id ${settings.outlook.clientId.slice(0, 8)}… · tenant ${settings.outlook.tenant || 'consumers'}` : 'not set up'], ['Secrets', 'none — only OAuth client IDs (public by design); tokens live in this browser session only'], ['Account numbers', `last 4 digits only (${data.accounts.filter(a => a.last4).length} accounts)`], ['Email bodies', 'never stored — amounts, dates, payees and message ids only'], ['Transport & at rest', 'TLS to Supabase; database encrypted at rest; row-level security scopes every row to your household']]
+  if (!live) return <div className="grid g12"><Card span={12} title="Security"><Note>Security settings apply to a real account. The offline demo has no sign-in.</Note></Card></div>
+  return <div className="grid g12">
+    <Card span={6} title="Two-factor authentication (TOTP)" hint="an authenticator app code at every sign-in" right={verified.length ? <Pill cls="good">on · AAL {aal || '—'}</Pill> : <Pill cls="warn">off</Pill>}>
+      {verified.map(f => <div key={f.id} className="banner good" style={{ marginBottom: 8 }}><b>{f.friendly_name || 'Authenticator'}</b> · enrolled {fmtDY(f.created_at.slice(0, 10))} <Btn sm danger onClick={() => remove(f)}>Turn off</Btn></div>)}
+      {!enrol && !verified.length && <><Note>Works with Google Authenticator, Microsoft Authenticator, 1Password, Authy or any TOTP app. Once on, the app asks for the 6-digit code after your password.</Note><Btn primary onClick={startEnrol}>Set up two-factor</Btn></>}
+      {enrol && <div><p className="note" style={{ marginTop: 0 }}>Scan this with your authenticator app, then enter the code it shows.</p><img src={enrol.qr} alt="TOTP QR code" style={{ width: 180, height: 180, background: '#fff', borderRadius: 8, padding: 6 }} /><div className="note">Can't scan? Secret: <code style={{ userSelect: 'all' }}>{enrol.secret}</code></div>
+        <Field label="6-digit code"><input className="inp" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} style={{ maxWidth: 160 }} /></Field><div className="btnrow"><Btn primary onClick={finishEnrol} disabled={code.replace(/\D/g, '').length < 6}>Verify & turn on</Btn><Btn onClick={cancelEnrol}>Cancel</Btn></div></div>}
+    </Card>
+    <Card span={6} title="Sessions & password">
+      <div className="btnrow" style={{ marginBottom: 12 }}><Btn onClick={signOutOthers}>Sign out other devices</Btn><Btn danger onClick={signOutAll}>Sign out everywhere</Btn></div>
+      <Note>Supabase keeps one refresh token per device; "other devices" revokes every session except this one.</Note>
+      <h3 style={{ margin: '12px 0 6px' }}>Change password</h3>
+      <div className="grid2"><Field label="New password" hint="8+ characters"><input className="inp" type="password" autoComplete="new-password" value={pw1} onChange={e => setPw1(e.target.value)} /></Field><Field label="Repeat"><input className="inp" type="password" autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} /></Field></div>
+      <Btn primary onClick={changePw} disabled={!pw1}>Update password</Btn>
+    </Card>
+    <Card span={6} title="What is stored, and where" hint="there is no secret in this app that would need a vault">
+      <div className="tblwrap"><table className="tbl"><tbody>{stored.map(([k, v]) => <tr key={k}><td style={{ color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{k}</td><td>{v}</td></tr>)}</tbody></table></div>
+    </Card>
+    <Card span={6} title="Observability" hint="counts from the audit trail and sync logs">
+      <div className="kpis"><KPIs items={[['User actions logged', String(actions), 'activity log (immutable, server-side)'], ['Statement imports', String(imports.length), `${imports.reduce((a, i) => a + i.added, 0)} rows added · ${imports.reduce((a, i) => a + i.skipped, 0)} skipped`], ['Email items reviewed', String(emailApplied + emailIgnored), `${emailApplied} applied · ${emailIgnored} ignored`], ['Last successful sync', useStore.getState().lastRefresh ? ago(useStore.getState().lastRefresh!) : '—', 'data refresh from Supabase']]} /></div>
+      <Note>Every insert, update and delete on household data is written to the activity log by a database trigger — including balance edits, goal changes and import batches — and cannot be edited from the app.</Note>
+    </Card>
+  </div>
+}
+function KPIs({ items }: { items: Array<[string, string, string]> }) { return <>{items.map(([l, v, s]) => <div key={l} className="kpi info"><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>)}</> }

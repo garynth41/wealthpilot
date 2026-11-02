@@ -7,6 +7,7 @@ import { fmtDY, today, addDays, ago } from '../lib/dates'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
 import { Toasts, useModal, MHead, MBody, Btn } from './ui'
+import { sb } from '../app/supabase'
 
 export interface View { path: string; title: string; sub: string; zone: string; icon: string; tab?: string }
 export const VIEWS: View[] = [
@@ -83,7 +84,7 @@ export function applySavedTheme() { setThemeMode(themeMode()); try { window.matc
 export const envName = (): 'development' | 'staging' | 'production' => { const h = location.hostname; if (!h || h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local')) return 'development'; if (/github\.io$|wealthpilot/.test(h)) return 'production'; return 'staging' }
 export function StatusPanel() {
   const { mode, lastRefresh, latest, household } = useStore(); const [db, setDb] = useState<'checking' | 'ok' | 'down' | 'n/a'>(mode === 'db' ? 'checking' : 'n/a'); const [ms, setMs] = useState<number | null>(null)
-  useEffect(() => { if (mode !== 'db') return; let on = true; const t0 = performance.now(); import('../app/supabase').then(({ sb }) => sb().from('app_meta').select('key').limit(1)).then(r => { if (!on) return; setDb(r.error ? 'down' : 'ok'); setMs(Math.round(performance.now() - t0)) }).catch(() => on && setDb('down')); return () => { on = false } }, [mode])
+  useEffect(() => { if (mode !== 'db') return; let on = true; const t0 = performance.now(); Promise.resolve(sb().from('app_meta').select('key').limit(1)).then(r => { if (!on) return; setDb(r.error ? 'down' : 'ok'); setMs(Math.round(performance.now() - t0)) }).catch(() => on && setDb('down')); return () => { on = false } }, [mode])
   const row = (l: string, v: ReactNode) => <tr><td style={{ color: 'var(--ink-3)', paddingRight: 12 }}>{l}</td><td><b>{v}</b></td></tr>
   return <table className="tbl" style={{ marginTop: 10 }}><tbody>
     {row('Environment', <span className={`envtag env-${envName()}`}>{envName()}</span>)}

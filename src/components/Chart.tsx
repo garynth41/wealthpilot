@@ -1,6 +1,9 @@
 // Plotly wrapper with the readable-chart rules from CareerShift v1.26: bigger type, wrapped labels, legends above, dynamic height, ⤢ full-size view.
 import { useEffect, useRef, type ReactNode } from 'react'
-import Plotly from 'plotly.js-basic-dist-min'
+import type Plotly from 'plotly.js-basic-dist-min'
+// Plotly (~1 MB) is loaded on first chart render so the app shell stays small; charts render as soon as it arrives.
+let plotlyP: Promise<typeof Plotly> | null = null
+const loadPlotly = () => (plotlyP ||= import('plotly.js-basic-dist-min').then(m => (m as unknown as { default: typeof Plotly }).default || (m as unknown as typeof Plotly)))
 import { MHead, MBody, useModal } from './ui'
 
 type Data = Partial<Plotly.PlotData>[]; type Layout = Partial<Plotly.Layout>
@@ -28,14 +31,20 @@ function readable(el: HTMLElement, data: Data, layout: Layout, big: boolean): { 
 }
 export function Chart({ data, layout = {}, height = 260, title, expand = true, className = '' }: { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string }) {
   const ref = useRef<HTMLDivElement>(null); const { open } = useModal()
-  useEffect(() => { const el = ref.current; if (!el) return; const draw = () => { const r = readable(el, data, { height, ...layout }, false); el.style.minHeight = (r.layout.height as number) + 'px'; Plotly.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: true }) }; draw()
-    const ro = new ResizeObserver(() => draw()); ro.observe(el); return () => { ro.disconnect(); try { Plotly.purge(el) } catch { /* */ } } }, [data, layout, height])
+  // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
+  // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)
+  const latest = useRef({ data, layout, height }); latest.current = { data, layout, height }
+  const P = useRef<typeof Plotly | null>(null); const alive = useRef(true)
+  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current; const r = readable(el, data, { height, ...layout }, false); el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
+  useEffect(() => { const el = ref.current; if (!el) return; alive.current = true; loadPlotly().then(p => { P.current = p; draw() })
+    const ro = new ResizeObserver(() => draw()); ro.observe(el); return () => { alive.current = false; ro.disconnect(); try { P.current?.purge(el) } catch { /* */ } } }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { draw() }, [data, layout, height])   // eslint-disable-line react-hooks/exhaustive-deps
   const big = () => open(<BigChart data={data} layout={layout} title={title || ''} />, { xwide: true })
   return <div className={className}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}<div ref={ref} className="chart" style={{ minHeight: height }} /></div>
 }
 function BigChart({ data, layout, title }: { data: Data; layout: Layout; title: string }) {
   const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => { const el = ref.current; if (!el) return; const h = Math.round(Math.min(window.innerHeight * 0.72, 900)); const r = readable(el, data, { ...layout, height: h }, true); r.layout.height = Math.max(h, (r.layout.height as number) || 0); Plotly.newPlot(el, r.data as Plotly.Data[], r.layout, { displayModeBar: true, displaylogo: false, responsive: true, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'], toImageButtonOptions: { filename: 'wealthpilot-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40), scale: 2 } }); return () => { try { Plotly.purge(el) } catch { /* */ } } }, [data, layout, title])
+  useEffect(() => { const el = ref.current; if (!el) return; const h = Math.round(Math.min(window.innerHeight * 0.72, 900)); const r = readable(el, data, { ...layout, height: h }, true); r.layout.height = Math.max(h, (r.layout.height as number) || 0); loadPlotly().then(Plotly => Plotly.newPlot(el, r.data as Plotly.Data[], r.layout, { displayModeBar: true, displaylogo: false, responsive: true, modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'], toImageButtonOptions: { filename: 'wealthpilot-' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40), scale: 2 } })); return () => { loadPlotly().then(P => { try { P.purge(el) } catch { /* */ } }) } }, [data, layout, title])
   return <><MHead title={title} /><MBody><div ref={ref} className="chart-big" /><div className="note">Hover for exact values · drag to zoom, double-click to reset · the camera icon saves a picture.</div></MBody></>
 }
 export function Gauge({ value, max, color, steps, label, note }: { value: number; max: number; color: string; steps: Array<{ range: [number, number]; color: string }>; label: string; note?: ReactNode }) {
