@@ -2,9 +2,9 @@
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.11.2)
+## State as of this handoff (v0.11.3)
 
-- **Working, tested app** — see README for the feature list. 115 unit tests, 111 Playwright smoke checks (desktop + phone), 7 DB-mode checks all pass. The product roadmap (the finance-platform spec mapped onto the app) is `docs/ROADMAP.md`.
+- **Working, tested app** — see README for the feature list. 115 unit tests, 113 Playwright smoke checks (desktop + phone), 7 DB-mode checks all pass. The product roadmap (the finance-platform spec mapped onto the app) is `docs/ROADMAP.md`.
 - **Supabase project:** `pocketledger` — ref `dshswfcpovdpxcidolqb`, URL `https://dshswfcpovdpxcidolqb.supabase.co`, publishable key in `.env.example`. Schema applied as migrations `pocketledger_init`, `pocketledger_function_grants`, `pocketledger_helper_grants`, `pocketledger_fix_touch_and_log` (the combined, current schema is `supabase/migrations/0001_init.sql`). Email confirmation is ON (default) — new users must click the confirmation email before signing in.
 - **A throw-away e2e user exists** (`pl-e2e-1793508196267@gmail.com`, household "E2E household") — safe to delete from Supabase → Authentication.
 - **CareerShift's Supabase project (`jowuuzppfhqgusxqoqdk`) was PAUSED** to free the second free-tier slot. CareerShift is offline until it is restored (Supabase dashboard → project → Restore). Free tier allows 2 active projects.

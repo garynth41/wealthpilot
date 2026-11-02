@@ -123,6 +123,9 @@ for (const W of [1400, 390]) {
     ok((await p.locator('table.tbl tbody tr').count()) === members0 + 1 && /pat\.smoke@example\.com/.test(await p.locator('table.tbl').textContent()) && /Limited/.test(await p.locator('table.tbl').textContent()), 'new member is listed as Limited')
     await p.click('table.tbl tr:has-text("pat.smoke") button:has-text("Change")'); await p.waitForTimeout(300); await p.click('.modal .seg button:has-text("Full")'); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(500)
     ok(/Full access/.test(await p.locator('table.tbl tr:has-text("pat.smoke")').textContent()), 'changing access to Full updates the member row')
+    await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500); ok(!/as you last updated them/.test(await p.locator('main').textContent()), 'Dashboard overview no longer buries the account balances at the bottom')
+    await p.click('.seg button:has-text("Account balances")'); await p.waitForTimeout(300); ok(/Account balances/.test(await p.locator('main .card').first().textContent()) && /as you last updated them/.test(await p.locator('main').textContent()) && await p.locator('main .kpi').count() > 0, 'Dashboard has an Account balances tab at the top with every account')
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500)
     // 0.11.2: email-capture settings live in Settings → General, and dialogs/toasts stay readable in both themes
     await p.click('.seg button:has-text("General")'); await p.waitForTimeout(300)
     ok(/Email capture \(Gmail \/ Outlook\)/.test(await p.locator('main').textContent()), 'Settings → General has the Email capture card')

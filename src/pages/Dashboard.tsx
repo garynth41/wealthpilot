@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../app/hooks'
-import { Card, KPI, Btn, Pill, Note, AList, useModal } from '../components/ui'
+import { Card, KPI, Btn, Pill, Note, AList, Seg, useModal } from '../components/ui'
 import { Chart, C, Gauge } from '../components/Chart'
 import { spanFor, findPeriod } from '../lib/periods'
 import { periodStat, rangeStat } from '../lib/budget'
@@ -18,6 +18,7 @@ import { AddTxn } from './Transactions'
 
 export function DashboardPage() { return <Dashboard /> }
 export function Dashboard() {
+  const [view, setView] = useState<'overview' | 'balances'>('overview')
   const { data, settings, canEdit } = useData(); const { open, close } = useModal(); const t = today(); const c = C()
   const sp = spanFor(data, settings); const period = findPeriod(data, sp); const ps = useMemo(() => (period ? periodStat(data, settings, period) : null), [data, settings, period])
   const cash = cashOnHand(data, settings); const nw = netWorth(data); const b = useMemo(() => burn(data, settings), [data, settings]); const cal = useMemo(() => cashCalendar(data, settings, 30), [data, settings]); const proj = useMemo(() => runwayProjection(data, settings), [data, settings])
@@ -39,6 +40,11 @@ export function Dashboard() {
   const last30 = rangeStat(data, addDays(t, -29), t); const grpRows = Object.entries(last30.byGroup).sort((a, b) => b[1] - a[1]).slice(0, 7)
   const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Hardship: '/hardship' }
   return <>
+    <div style={{ marginBottom: 14 }}><Seg value={view} options={[['overview', 'Overview'], ['balances', 'Account balances']]} onChange={setView} /></div>
+    {view === 'balances' && <div className="grid g12">
+      <Card span={12} title="Account balances" hint="as you last updated them"><div className="kpis">{data.accounts.filter(a => a.status === 'Active').sort((a, b) => a.sort_order - b.sort_order).map(a => { const li = liabilities(data).includes(a); const st = li ? debtDueState(a) : null; return <div key={a.id} className={`kpi ${li ? (st!.cls === 'info' ? 'wait' : st!.cls) : 'good'}`}><div className="l">{acctLabel(a, data.accounts)}</div><div className="v" style={{ fontSize: 20 }}>{li ? '−' : ''}{fmtMoney(li ? debtBal(a) : a.balance)}</div><div className="s">{li ? `${st!.label}${a.minimum_payment ? ' · min ' + fmtMoney(a.minimum_payment) : ''}` : a.balance_as_of ? `as of ${fmtD(a.balance_as_of)}` : a.kind}</div></div> })}</div></Card>
+    </div>}
+    {view === 'overview' && <>
     <div className="kpis" style={{ marginBottom: 16 }}>
       <KPI l="Cash on hand" v={fmtMoney(cash)} cls="good" s={settings.reserveFloor ? `${cash >= settings.reserveFloor ? fmtMoney(cash - settings.reserveFloor) + ' above' : fmtMoney(settings.reserveFloor - cash) + ' below'} the ${fmtMoney(settings.reserveFloor)} floor` : 'checking + savings + cash'} />
       <KPI l={ps ? `Left to spend · ${sp.label}` : 'Budget'} v={ps ? fmtMoney(ps.left) : '—'} cls={!ps ? 'idle' : ps.left < 0 ? 'crit' : ps.pace != null && ps.pace > 1 ? 'warn' : 'good'} s={ps ? `${fmtMoney(ps.spA)} of ${fmtMoney(ps.spB)} spent · ${Math.round(ps.elapsed * 100)}% of period gone` : 'start a period on the Budget page'} />
@@ -57,7 +63,7 @@ export function Dashboard() {
       <Card span={4} title="Runway" hint="months to zero in the 24-month projection"><Gauge value={isFinite(pm) ? pm : 24} max={24} color={{ good: c.good, warn: c.warn, crit: c.crit }[cls]} steps={[{ range: [0, settings.runwayYellow], color: c.critSoft }, { range: [settings.runwayYellow, settings.runwayGreen], color: getComputedStyle(document.documentElement).getPropertyValue('--warn-soft').trim() }, { range: [settings.runwayGreen, 24], color: c.accentSoft }]} label={isFinite(pm) ? pm.toFixed(1) + ' mo' : '24+ mo'} /><Note>{proj.zeroAt ? `Cash out ${fmtDY(proj.zeroAt)} at the current pace` : 'Cash stays positive for the next 24 months'}</Note></Card>
       <Card span={4} title="Goals" hint="top priorities">{goals.length ? goals.map(({ g, p }) => <div key={g.id} style={{ marginBottom: 10 }}><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>{g.name}</span><span style={{ color: 'var(--ink-3)' }}>{fmtMoney(p.saved)} / {fmtMoney(g.target_amount)}</span></div><div className="mix" style={{ height: 8, marginTop: 4 }}><span style={{ width: Math.round(p.pct * 100) + '%', background: g.color || 'var(--accent)' }} /></div>{p.onTrack === false && <div className="note" style={{ marginTop: 2, color: 'var(--warn)' }}>behind — need {fmtMoney(p.needPerMonth || 0)}/mo</div>}</div>) : <div className="empty">No goals yet.</div>}<Note><Link to="/goals">All goals →</Link></Note></Card>
       <Card span={4} title="Spending · last 30 days" hint="by group">{grpRows.length ? <AList items={grpRows.map(([k, v]) => ({ c: 'info', t: k, d: fmtMoney(v) }))} /> : <div className="empty">No spending logged yet.</div>}<Note>Total {fmtMoney(last30.spend)} · debt payments {fmtMoney(last30.debt)} · <Link to="/trends">trends →</Link></Note></Card>
-      <Card span={12} title="Accounts" hint="balances as you last updated them"><div className="kpis">{data.accounts.filter(a => a.status === 'Active').sort((a, b) => a.sort_order - b.sort_order).map(a => { const li = liabilities(data).includes(a); const st = li ? debtDueState(a) : null; return <div key={a.id} className={`kpi ${li ? (st!.cls === 'info' ? 'wait' : st!.cls) : 'good'}`}><div className="l">{acctLabel(a, data.accounts)}</div><div className="v" style={{ fontSize: 20 }}>{li ? '−' : ''}{fmtMoney(li ? debtBal(a) : a.balance)}</div><div className="s">{li ? `${st!.label}${a.minimum_payment ? ' · min ' + fmtMoney(a.minimum_payment) : ''}` : a.balance_as_of ? `as of ${fmtD(a.balance_as_of)}` : a.kind}</div></div> })}</div></Card>
     </div>
+  </>}
   </>
 }
