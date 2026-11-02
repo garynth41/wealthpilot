@@ -62,6 +62,7 @@ begin
 end $$;
 drop trigger if exists trg_members_last_owner on public.household_members;
 create trigger trg_members_last_owner before update or delete on public.household_members for each row execute function public.guard_last_owner();
+revoke execute on function public.guard_last_owner() from public, anon, authenticated;   -- trigger-only
 
 -- Service-role helper for the invite-member edge function: find an existing account by email. Not callable by app users.
 create or replace function public.user_id_by_email(p_email text) returns uuid language sql stable security definer set search_path = public as $$
