@@ -23,6 +23,9 @@
 }
 *{box-sizing:border-box} html,body{margin:0;height:100%} body{font:14px/1.45 var(--sans);color:var(--ink);background:var(--ground);-webkit-font-smoothing:antialiased}
 a{color:var(--blue)} button{font:inherit} input,select,textarea{font:inherit;color:var(--ink)} h1,h2,h3,h4{margin:0}
+/* native dropdown lists: Windows Chrome/Edge paint the <option> popup from these, not from the select, so give them theme colours in both modes */
+select{background:var(--surface);color:var(--ink);color-scheme:inherit} option,optgroup{background:var(--surface);color:var(--ink);font:inherit} option:checked,option:hover{background:var(--accent-soft);color:var(--ink)} option:disabled{color:var(--ink-3)}
+select:disabled{color:var(--ink-3);background:var(--surface-2)}
 .app{display:grid;grid-template-columns:var(--rail-w) 1fr;min-height:100vh}
 .app.rail-collapsed{--rail-w:64px}
 /* ---- rail ---- */
