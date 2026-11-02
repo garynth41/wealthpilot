@@ -14,10 +14,10 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | | Merchant analysis, subscription analysis, recurring charges | **`lib/intelligence.ts`** + Insights page | FE | 0.3.0 |
 | | Waste detection: duplicates, rising subscriptions, fees, late fees, unused subscriptions, spikes, outliers | `lib/intelligence.ts` waste engine | FE | 0.3.0 |
 | | Health indicators: burn rate, savings rate, expense ratio, cash-flow score, efficiency score | `lib/intelligence.ts` health engine (Dashboard + Insights) | FE | 0.3.0 |
-| 2 Account Balances | Balances as last updated (institution, type, current, available, timestamp) | Accounts ✔ (`balance_as_of`); add available = limit − balance | FE | 0.3.0 |
+| 2 Account Balances | Balances as last updated (institution, type, current, available, timestamp) | Accounts: Available column (limit − owed) | ✔ | 0.5.0 |
 | | Net worth centre | Dashboard / Accounts / Trends ✔ | ✔ | — |
-| | Liquidity: emergency-fund coverage, months covered, cash reserve | Dashboard runway ✔ → liquidity card on Accounts | FE | 0.3.0 |
-| | Goal allocation engine | Goals ✔ → allocation view (balances vs goals) | FE | 0.5.0 |
+| | Liquidity: emergency-fund coverage, months covered, cash reserve | Accounts → Liquidity card (`lib/planning.ts`) | ✔ | 0.5.0 |
+| | Goal allocation engine | Accounts → Goal allocation card (`lib/planning.ts`) | ✔ | 0.5.0 |
 | | Manual overrides with audit log | Inline balance edit ✔ + `activity_log` ✔ | ✔ | — |
 | 3 Bank Connections | CSV / OFX / QFX import with de-dup | **`lib/import.ts`** + Connections page (`external_id` unique index ✔) | FE | 0.3.0 |
 | | Sync status, history, logs, "Sync now" | Connections page: import history (source, file, rows, dupes) | FE+DB | 0.3.0 (history in settings json) |
@@ -28,7 +28,7 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | | Monte Carlo 1k / 5k / 10k runs; safe-withdrawal 3/4/5/custom % | `lib/retirement.ts` (web worker for 10k) | FE | 0.6.0 |
 | 5 Tax Planning | Income aggregation (W-2, 1099, dividends, interest, gains, business, rental) | **new `tax_profile` + `tax_items`** tables | DB | 0.7.0 |
 | | Federal / state (Ohio) / local / SE tax engine; underpayment risk; withholding sliders; filing projection; tax calendar | `lib/tax.ts` with dated bracket tables + sources | FE | 0.7.0 |
-| 6 Goals & Planning | Emergency fund, debt payoff, retirement, home, education, purchases; progress, forecast, milestones, what-if | Goals ✔ + Forecast what-ifs ✔ → milestones + what-if per goal | FE | 0.5.0 |
+| 6 Goals & Planning | Emergency fund, debt payoff, retirement, home, education, purchases; progress, forecast, milestones, what-if | Goals: milestones + What-if per goal (`lib/planning.ts`) | ✔ | 0.5.0 |
 | 7 Reports | Monthly / quarterly / annual; spending, investment, tax, net worth; PDF / Excel / CSV | Reports page: print-to-PDF stylesheet, CSV ✔, Excel via SheetJS | FE | 0.8.0 |
 | 8 Security & Settings | MFA / 2FA | Settings → Security: TOTP enrol/verify/unenrol + code step at sign-in | ✔ | 0.4.0 |
 | | Session / device management, password | sign out other devices / everywhere, change password | ✔ | 0.4.0 |

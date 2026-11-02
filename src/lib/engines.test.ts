@@ -197,3 +197,46 @@ describe('rules: suggestions & bulk plan', () => {
     expect(learnRule('', { category_id: 'x' })).toBeNull()
   })
 })
+
+// ---------------- planning (0.5.0) ----------------
+import { availableBalance, liquidity, goalAllocation, goalMilestones, goalWhatIf } from './planning'
+describe('planning: available balance & liquidity', () => {
+  it('available = balance for assets, limit − owed for revolving debt, none for instalment loans', () => {
+    const { data } = seed(); const chk = data.accounts.find(a => a.name === 'Huntington Checking')!, card = data.accounts.find(a => a.name === 'Chase Freedom')!, loan = data.accounts.find(a => a.kind === 'auto_loan')!
+    expect(availableBalance(chk)).toBe(chk.balance); expect(availableBalance(card)).toBeCloseTo(+card.credit_limit! - card.balance, 2); expect(availableBalance(loan)).toBeNull()
+  })
+  it('months covered use essentials and the full burn rate; tiers scale with the thresholds', () => {
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings }; const l = liquidity(data, s, T0)
+    expect(l.essentialsPerMonth).toBeLessThanOrEqual(l.burnRate); expect(l.monthsEssentials!).toBeGreaterThanOrEqual(l.monthsAll!); expect(l.monthsAll).toBeCloseTo(l.cash / l.burnRate, 2)
+    expect(l.tiers[2].amount).toBeCloseTo(l.essentialsPerMonth * s.runwayGreen, 1); expect(['good', 'warn', 'crit']).toContain(l.band)
+  })
+})
+describe('planning: goal allocation', () => {
+  it('linked goals share their account by priority; unlinked goals draw on the pool above the reserve floor; debt goals are tracked only', () => {
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings, reserveFloor: 0 }
+    const sav = data.accounts.find(a => a.kind === 'savings')!; const bal = +sav.balance
+    const goals: typeof data.goals = [
+      { ...data.goals[0], id: 'g1', name: 'A', kind: 'savings', status: 'Active', priority: 1, sort_order: 1, account_id: sav.id, target_amount: bal * 0.6, starting_amount: 0, monthly_contribution: 0, target_date: null },
+      { ...data.goals[0], id: 'g2', name: 'B', kind: 'savings', status: 'Active', priority: 2, sort_order: 2, account_id: sav.id, target_amount: bal, starting_amount: 0, monthly_contribution: 0, target_date: null },
+      { ...data.goals[0], id: 'g3', name: 'C', kind: 'purchase', status: 'Active', priority: 3, sort_order: 3, account_id: null, target_amount: 100, starting_amount: 0, monthly_contribution: 0, target_date: null },
+      { ...data.goals[0], id: 'g4', name: 'D', kind: 'debt_payoff', status: 'Active', priority: 4, sort_order: 4, account_id: data.accounts.find(a => a.kind === 'credit_card')!.id, target_amount: 1000, starting_amount: 0, monthly_contribution: 0, target_date: null },
+    ]
+    const r = goalAllocation({ ...data, goals, contributions: [] }, s); const by = Object.fromEntries(r.rows.map(x => [x.goal.id, x]))
+    expect(by.g1.covered).toBe('full'); expect(by.g1.allocated).toBeCloseTo(bal * 0.6, 2); expect(by.g2.covered).toBe('partial'); expect(by.g2.allocated).toBeCloseTo(bal * 0.4, 2)
+    expect(by.g3.covered).toBe('full'); expect(by.g4.covered).toBe('tracked'); expect(r.shortfall).toBeCloseTo(bal * 0.6, 2)
+  })
+})
+describe('planning: milestones & what-if', () => {
+  it('milestones mark what is reached and date the rest from the contribution rate', () => {
+    const { data } = seed(); const g = { ...data.goals[0], id: 'm', kind: 'savings' as const, account_id: null, target_amount: 1000, starting_amount: 300, monthly_contribution: 100, target_date: null }
+    const d = { ...data, contributions: [{ id: 'c1', household_id: 'h', goal_id: 'm', date: '2026-09-01', amount: 250 }] }
+    const m = goalMilestones(d, g, T0); expect(m.map(x => x.reached)).toEqual([true, true, false, false]); expect(m[1].reachedOn).toBe('2026-09-01'); expect(m[0].reachedOn).toBeNull()   // 25% was covered by the starting amount — no contribution date
+    expect(m[2].date).toBe(addDays(T0, Math.round(2 * 30.44))); expect(m[3].date).toBe(addDays(T0, Math.round(4.5 * 30.44)))
+  })
+  it('what-if: more per month lands sooner; a lump sum shortens it; needed-for-target is the gap over the months left', () => {
+    const { data } = seed(); const g = { ...data.goals[0], id: 'w', kind: 'savings' as const, account_id: null, target_amount: 1200, starting_amount: 0, monthly_contribution: 100, target_date: addDays(T0, 183) }
+    const d = { ...data, contributions: [] }; const base = goalWhatIf(d, g, { asOf: T0 }), more = goalWhatIf(d, g, { monthly: 300, asOf: T0 }), lump = goalWhatIf(d, g, { lump: 600, asOf: T0 })
+    expect(base.months).toBe(12); expect(base.onTime).toBe(false); expect(more.months).toBe(4); expect(more.onTime).toBe(true); expect(lump.months).toBe(6)
+    expect(base.neededForTarget).toBeCloseTo(1200 / (183 / 30.44), 0); expect(base.byTarget).toBeCloseTo(100 * 183 / 30.44, 0)
+  })
+})

@@ -4,6 +4,7 @@ import type { Goal } from '../app/data/types'
 import { Card, KPI, Btn, Pill, Note, useConfirm, useModal, MHead, MBody, MFoot, Field } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { goalProgress } from '../lib/goals'
+import { goalMilestones, goalWhatIf } from '../lib/planning'
 import { fmtMoney, fm2, parseNum, sum } from '../lib/money'
 import { addDays, fmtDY, today } from '../lib/dates'
 import { post } from '../lib/ledger'
@@ -22,7 +23,7 @@ export function GoalsPage() {
   return <>
     <div className="kpis" style={{ marginBottom: 16 }}><KPI l="Active goals" v={String(act.length)} cls="info" s={`${fmtMoney(totalTarget)} in targets`} /><KPI l="Saved toward goals" v={fmtMoney(totalSaved)} cls="good" s={totalTarget ? `${Math.round(totalSaved / totalTarget * 100)}% of all targets` : ''} /><KPI l="Contributing" v={fmtMoney(monthly) + '/mo'} cls={monthly >= need ? 'good' : 'warn'} s={`${fmtMoney(need)}/mo needed to hit every date`} /><KPI l="Gap" v={fmtMoney(Math.max(0, need - monthly)) + '/mo'} cls={need - monthly > 0 ? 'warn' : 'good'} s={need - monthly > 0 ? 'raise contributions or move a date' : 'every goal is funded'} /></div>
     <div className="grid g12">
-      {act.map(g => { const p = prog[g.id]; return <Card key={g.id} span={4} title={g.name} hint={KIND[g.kind]}><div style={{ fontSize: 26, fontWeight: 600 }}>{fmtMoney(p.saved)} <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>of {fmtMoney(g.target_amount)}</span></div><div className="mix" style={{ margin: '8px 0' }}><span style={{ width: Math.round(p.pct * 100) + '%', background: g.color || 'var(--accent)' }} /></div><div className="note" style={{ marginTop: 0 }}>{p.reached ? 'Reached 🎉' : <>{fmtMoney(p.left)} to go{g.target_date ? ` by ${fmtDY(g.target_date)}` : ''} · {fmtMoney(g.monthly_contribution)}/mo{p.needPerMonth != null ? ` · need ${fmtMoney(p.needPerMonth)}/mo` : ''}{p.eta ? ` · at this pace ${fmtDY(p.eta)}` : ''}</>}</div>{canEdit && g.kind !== 'debt_payoff' && <div className="btnrow" style={{ marginTop: 8 }}><Btn sm primary onClick={() => open(<Contribute g={g} onDone={close} />)}>+ Contribute</Btn></div>}</Card> })}
+      {act.map(g => { const p = prog[g.id]; return <Card key={g.id} span={4} title={g.name} hint={KIND[g.kind]}><div style={{ fontSize: 26, fontWeight: 600 }}>{fmtMoney(p.saved)} <span style={{ fontSize: 13, color: 'var(--ink-3)', fontWeight: 400 }}>of {fmtMoney(g.target_amount)}</span></div><div className="mix" style={{ margin: '8px 0' }}><span style={{ width: Math.round(p.pct * 100) + '%', background: g.color || 'var(--accent)' }} /></div><div className="note" style={{ marginTop: 0 }}>{p.reached ? 'Reached 🎉' : <>{fmtMoney(p.left)} to go{g.target_date ? ` by ${fmtDY(g.target_date)}` : ''} · {fmtMoney(g.monthly_contribution)}/mo{p.needPerMonth != null ? ` · need ${fmtMoney(p.needPerMonth)}/mo` : ''}{p.eta ? ` · at this pace ${fmtDY(p.eta)}` : ''}</>}</div><Milestones g={g} />{canEdit && g.kind !== 'debt_payoff' && <div className="btnrow" style={{ marginTop: 8 }}><Btn sm primary onClick={() => open(<Contribute g={g} onDone={close} />)}>+ Contribute</Btn><Btn sm onClick={() => open(<WhatIf g={g} onDone={close} />)}>What if…</Btn></div>}</Card> })}
       <Card span={12} title="All goals" hint="debt-payoff goals track the linked account's balance; the rest track contributions" right={canEdit ? <Btn primary sm onClick={() => guarded(() => insert('goals', { name: 'New goal', kind: 'savings', target_amount: 1000, target_date: addDays(today(), 365), account_id: accts.find(a => a.kind === 'savings')?.id || null, starting_amount: 0, monthly_contribution: 100, priority: 2, status: 'Active', sort_order: data.goals.length + 1 }), 'Added — fill in the row')}>+ Add goal</Btn> : undefined}>
         <Table rows={data.goals} cols={cols} editable={canEdit} onChange={(g, k, v) => guarded(() => update('goals', g.id, { [k]: v } as Partial<Goal>))} onDelete={async g => { if (await confirm(`Delete ${g.name} and its contribution history?`)) guarded(() => remove('goals', g.id), 'Deleted') }} rowCls={g => g.status !== 'Active' ? 'st-idle ex-off' : prog[g.id].reached ? 'st-good' : prog[g.id].onTrack === false ? 'st-warn' : 'st-good'} search={false} />
         <Note>A contribution is a transfer from checking to the goal's account (the savings balance goes up and the budget line, if you pick one, counts it). Set <b>Starting amount</b> to what was already saved when you created the goal.</Note></Card>
@@ -42,4 +43,25 @@ function Contribute({ g, onDone }: { g: Goal; onDone: () => void }) {
   return <><MHead title={`Contribute — ${g.name}`} /><MBody><div className="grid2"><Field label="Date"><input className="inp" type="date" value={date} onChange={e => setDate(e.target.value)} /></Field><Field label="Amount"><input className="inp" inputMode="decimal" value={amt} onChange={e => setAmt(e.target.value)} autoFocus /></Field></div>
     {target && !isLiability(target) && <><label className="gm-ign" style={{ fontSize: 13 }}><input type="checkbox" checked={log} onChange={e => setLog(e.target.checked)} /> also log the transfer into {acctLabels[target.id]}</label>{log && <Field label="From account"><select className="inp" value={from} onChange={e => setFrom(e.target.value)}>{accts.filter(a => a.id !== target.id && !isLiability(a)).map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select></Field>}</>}
   </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn primary onClick={save}>Save</Btn></MFoot></>
+}
+
+/** 25 / 50 / 75 / 100 % markers with the date each was or will be reached at the current pace. */
+function Milestones({ g }: { g: Goal }) {
+  const { data } = useData(); const ms = goalMilestones(data, g)
+  return <div className="milestones" title="Milestones at the current contribution rate">{ms.map(m => <span key={m.pct} className={m.reached ? 'done' : ''}><b>{Math.round(m.pct * 100)}%</b><small>{m.reached ? (m.reachedOn ? fmtDY(m.reachedOn) : 'at start') : m.date ? fmtDY(m.date) : '—'}</small></span>)}</div>
+}
+/** What-if: slide the monthly contribution or add a lump sum and see the landing date vs the target. Nothing is saved unless you click Apply. */
+function WhatIf({ g, onDone }: { g: Goal; onDone: () => void }) {
+  const { data, update, guarded, canEdit } = useData(); const [monthly, setMonthly] = useState(g.monthly_contribution); const [lump, setLump] = useState(0)
+  const base = goalWhatIf(data, g); const w = goalWhatIf(data, g, { monthly, lump }); const max = Math.max(500, Math.ceil((base.neededForTarget || g.monthly_contribution || 100) * 2.5 / 50) * 50)
+  return <><MHead title={`What if — ${g.name}`} /><MBody>
+    <Field label={`Monthly contribution: ${fmtMoney(monthly)}`}><input type="range" min={0} max={max} step={10} value={monthly} onChange={e => setMonthly(+e.target.value)} style={{ width: '100%' }} /></Field>
+    <Field label={`One-off lump sum: ${fmtMoney(lump)}`}><input type="range" min={0} max={Math.max(100, Math.ceil(base.months ? g.target_amount : g.target_amount)) } step={50} value={lump} onChange={e => setLump(+e.target.value)} style={{ width: '100%' }} /></Field>
+    <div className="kpis" style={{ margin: '10px 0' }}>
+      <KPI l="Reached" v={w.months === 0 ? 'now' : w.date ? fmtDY(w.date) : 'never'} cls={w.months === 0 ? 'good' : w.onTime == null ? 'info' : w.onTime ? 'good' : 'crit'} s={w.months == null ? 'no contribution' : `${w.months} month${w.months === 1 ? '' : 's'}${g.target_date ? ` · target ${fmtDY(g.target_date)}` : ''}`} />
+      <KPI l="Today's plan" v={base.date ? fmtDY(base.date) : '—'} cls="idle" s={`${fmtMoney(g.monthly_contribution)}/mo`} />
+      {base.neededForTarget != null && <KPI l="Needed to hit the date" v={fmtMoney(base.neededForTarget) + '/mo'} cls={monthly >= base.neededForTarget ? 'good' : 'warn'} s={w.byTarget != null ? `${fmtMoney(w.byTarget)} saved by then at ${fmtMoney(monthly)}/mo` : ''} />}
+    </div>
+    <Note>Moving the slider changes nothing until you apply it. The lump sum is a preview only — log it with "Contribute" when the money moves.</Note>
+  </MBody><MFoot><Btn onClick={onDone}>Close</Btn>{canEdit && <Btn primary disabled={monthly === g.monthly_contribution} onClick={() => guarded(async () => { await update('goals', g.id, { monthly_contribution: monthly }); onDone() }, 'Monthly contribution updated')}>Apply {fmtMoney(monthly)}/mo</Btn>}</MFoot></>
 }
