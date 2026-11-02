@@ -15,7 +15,7 @@ for (const W of [1400, 390]) {
   await p.goto('http://localhost:4173/'); await p.waitForTimeout(800); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(600)
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
-  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/goals', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
+  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
   for (const path of pages) { await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(900); const h = await p.locator('h1').first().textContent(); const sw = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth); ok(h && sw <= 1, `${W}: ${path} renders "${h}" (sideways overflow ${sw}px)`); await p.screenshot({ path: `e2e/shots/${W}_${path.replace('/', '') || 'home'}.png`, fullPage: true }) }
   if (W === 1400) {
     // add a transaction
@@ -74,6 +74,11 @@ for (const W of [1400, 390]) {
     await p.click('.tblhead button:has-text("Columns")'); await p.waitForTimeout(200); ok((await p.locator('.colpicker input[type=checkbox]').count()) > 3, 'column picker opens'); await p.click('.colpicker label:has-text("Memo") input'); await p.waitForTimeout(200); ok(!(await p.locator('table.tbl thead').textContent()).includes('Memo'), 'hiding a column removes it from the header'); await p.click('.tblhead button:has-text("Columns")')
     const [dlCsv] = await Promise.all([p.waitForEvent('download'), p.click('.tblhead button:has-text("CSV")')]); ok(/\.csv$/.test(dlCsv.suggestedFilename()), 'CSV export downloads a .csv')
     const [dlX] = await Promise.all([p.waitForEvent('download'), p.click('.tblhead button:has-text("Excel")')]); ok(/\.xlsx$/.test(dlX.suggestedFilename()), 'Excel export downloads a .xlsx')
+    // 0.6.0: investments — holdings table, allocation pies, planner, Monte Carlo in a worker
+    await p.goto('http://localhost:4173/#/investments'); await p.waitForTimeout(1500); const inv = await p.locator('main').textContent()
+    ok(/Portfolio value/.test(inv) && /Retirement planner/.test(inv) && /Safe withdrawal/.test(inv), 'investments page renders portfolio, planner and SWR'); ok((await p.locator('.js-plotly-plot').count()) >= 4, 'allocation pies and projection chart render')
+    ok((await p.locator('table.tbl input').evaluateAll(els => els.map(e => e.value))).some(v => /^(VTI|AAPL|FFFHX)$/.test(v)), 'holdings table lists demo positions')
+    await p.click('button:has-text("Run simulation")'); await p.waitForFunction(() => /Success rate/.test(document.querySelector('main').textContent), null, { timeout: 20000 }); ok(/Success rate/.test(await p.locator('main').textContent()), 'Monte Carlo runs in a worker and reports a success rate')
     // 0.5.0: liquidity + allocation on Accounts; milestones + what-if on Goals
     await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900); const acctText = await p.locator('main').textContent(); ok(/Months of essentials/.test(acctText) && /Goal allocation/i.test(acctText), 'Accounts shows liquidity and goal allocation'); ok(/Available/.test(await p.locator('table.tbl thead').nth(1).textContent()), 'cards table has an Available column')
     await p.goto('http://localhost:4173/#/goals'); await p.waitForTimeout(900); ok((await p.locator('.milestones').count()) >= 1, 'goal cards show milestones'); await p.click('button:has-text("What if")'); await p.waitForTimeout(300); ok((await p.locator('.modal input[type=range]').count()) === 2, 'what-if opens with two sliders'); await p.keyboard.press('Escape'); await p.waitForTimeout(200); const m = p.locator('.modal button:has-text("Close")'); if (await m.count()) await m.click()

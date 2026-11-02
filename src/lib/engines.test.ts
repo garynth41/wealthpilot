@@ -76,7 +76,7 @@ describe('debts', () => {
 })
 
 describe('forecast', () => {
-  it('cash on hand excludes retirement', () => { const { data, household } = seed(); expect(cashOnHand(data, household.settings)).toBeCloseTo(3184.22 + 8650, 2); expect(netWorth(data).net).toBeCloseTo(3184.22 + 8650 + 42300 - 13622.75, 1) })
+  it('cash on hand excludes retirement', () => { const { data, household } = seed(); expect(cashOnHand(data, household.settings)).toBeCloseTo(3184.22 + 8650, 2); expect(netWorth(data).net).toBeCloseTo(3184.22 + 8650 + 42300 + 11860 - 13622.75, 1) })   // net worth incl. the Schwab brokerage account (0.6.0)
   it('calendar runs day by day with pay and bills', () => { const { data, household } = seed(); const c = cashCalendar(data, household.settings, 60); expect(c.items.filter(x => x.src === 'pay').length).toBeGreaterThanOrEqual(4); expect(c.items.some(x => x.label.startsWith('Rent'))).toBe(true); expect(c.daily.length).toBe(61); expect(c.low.bal).toBeLessThan(c.start + 1); expect(c.items.every(x => x.bal != null)).toBe(true) })
   it('burn and 24-month runway', () => { const { data, household } = seed(); const b = burn(data, household.settings); expect(b.income).toBeGreaterThan(4000); expect(b.expenses).toBeGreaterThan(3000); const r = runwayProjection(data, household.settings); expect(r.xs.length).toBe(25); expect(r.ys[0]).toBeCloseTo(b.cash, 0); const lean = runwayProjection(data, household.settings, { leanOnly: true }); expect(lean.ys[24]).toBeGreaterThanOrEqual(r.ys[24] - 1) })
   it('net worth series ends today', () => { const { data } = seed(); const s = netWorthSeries(data); expect(s[s.length - 1].date).toBe(T0); expect(s.length).toBe(4) })
@@ -238,5 +238,48 @@ describe('planning: milestones & what-if', () => {
     const d = { ...data, contributions: [] }; const base = goalWhatIf(d, g, { asOf: T0 }), more = goalWhatIf(d, g, { monthly: 300, asOf: T0 }), lump = goalWhatIf(d, g, { lump: 600, asOf: T0 })
     expect(base.months).toBe(12); expect(base.onTime).toBe(false); expect(more.months).toBe(4); expect(more.onTime).toBe(true); expect(lump.months).toBe(6)
     expect(base.neededForTarget).toBeCloseTo(1200 / (183 / 30.44), 0); expect(base.byTarget).toBeCloseTo(100 * 183 / 30.44, 0)
+  })
+})
+
+// ---------------- portfolio & retirement (0.6.0) ----------------
+import { portfolio, holdingValue, holdingGain, retirementAssets } from './portfolio'
+import { sum } from './money'
+import { projectRetirement, monteCarlo, safeWithdrawal, rng, RETIREMENT_DEFAULTS } from './retirement'
+describe('portfolio', () => {
+  it('values, gains and allocation slices sum to the whole; concentration is flagged above 20% in one non-diversified position', () => {
+    const { data } = seed(); const p = portfolio(data)
+    expect(p.value).toBeCloseTo(sum(data.holdings.map(holdingValue)), 2); expect(p.gain).toBeCloseTo(sum(data.holdings.map(holdingGain)), 2)
+    for (const slices of [p.byClass, p.bySector, p.byRisk, p.byAccount]) { expect(sum(slices.map(s => s.value))).toBeCloseTo(p.value, 1); expect(sum(slices.map(s => s.pct))).toBeCloseTo(1, 1) }
+    expect(p.byClass[0].key).toBe('mutual_fund'); expect(p.growthShare).toBeGreaterThan(0.5); expect(p.growthShare).toBeLessThan(1); expect(p.concentrationWarning).toBeNull()   // the big position is a diversified fund
+    const conc = portfolio({ ...data, holdings: data.holdings.map(h => h.symbol === 'AAPL' ? { ...h, quantity: 200 } : h) }); expect(conc.concentrationWarning).toMatch(/AAPL/)
+    const brok = portfolio(data, data.accounts.find(a => a.name === 'Schwab brokerage')!.id); expect(brok.holdings).toHaveLength(5); expect(brok.value).toBeLessThan(p.value)
+  })
+  it('retirement vs taxable assets use the larger of account balance and itemised holdings', () => { const { data } = seed(); const r = retirementAssets(data); expect(r.retirement).toBeGreaterThanOrEqual(42300); expect(r.taxable).toBeGreaterThanOrEqual(11860); expect(r.total).toBeCloseTo(r.retirement + r.taxable, 2) })
+})
+describe('retirement: projection', () => {
+  it('compounds with growing contributions, converts to today\'s dollars, and scores readiness', () => {
+    const i = { ...RETIREMENT_DEFAULTS, currentAge: 40, retireAge: 42, annualContribution: 1000, expectedReturn: 0.1, inflation: 0, desiredIncome: 40000, socialSecurity: 0, currentIncome: 100000 }
+    const p = projectRetirement(10000, i); expect(p.years).toBe(2); expect(p.nominal).toBeCloseTo(10000 * 1.21 + 1000 * 1.1 + 1000, 2); expect(p.real).toBe(p.nominal)
+    expect(p.needed).toBe(1000000); expect(p.readiness).toBe(Math.round(p.real / 1000000 * 100)); expect(p.sustainableIncome).toBeCloseTo(p.real * 0.04, 2); expect(p.replacementRatio).toBeCloseTo(p.sustainableIncome / 100000, 2)
+    expect(p.contributionForTarget).toBeGreaterThan(0); const closed = projectRetirement(10000, { ...i, annualContribution: p.contributionForTarget! }); expect(closed.real).toBeCloseTo(1000000, -2)
+  })
+  it('inflation shrinks real value; zero years means no growth', () => { const a = projectRetirement(50000, { ...RETIREMENT_DEFAULTS, inflation: 0 }), b = projectRetirement(50000, { ...RETIREMENT_DEFAULTS, inflation: 0.03 }); expect(b.real).toBeLessThan(a.real); expect(b.nominal).toBeGreaterThan(a.nominal); const z = projectRetirement(50000, { ...RETIREMENT_DEFAULTS, currentAge: 65, retireAge: 65 }); expect(z.real).toBe(50000) })
+})
+describe('retirement: monte carlo & safe withdrawal', () => {
+  it('is reproducible for a seed, bands are ordered, and zero volatility matches the deterministic path', () => {
+    const i = { ...RETIREMENT_DEFAULTS }; const a = monteCarlo(50000, i, 500, 7), b = monteCarlo(50000, i, 500, 7); expect(a.median).toBe(b.median); expect(a.successRate).toBe(b.successRate)
+    for (const band of a.bands) { expect(band.p10).toBeLessThanOrEqual(band.p50); expect(band.p50).toBeLessThanOrEqual(band.p90) }
+    const flat = monteCarlo(50000, { ...i, returnStdDev: 0 }, 50, 1); const det = projectRetirement(50000, i); expect(flat.medianAtRetirement).toBeCloseTo(det.real, 0)
+    expect(a.successRate).toBeGreaterThanOrEqual(0); expect(a.successRate).toBeLessThanOrEqual(1); expect(a.runs).toBe(500)
+    const u = rng(3); const x = u(); expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThan(1); expect(rng(3)()).toBe(x)
+  })
+  it('more volatility or a bigger draw lowers the success rate', () => {
+    const i = { ...RETIREMENT_DEFAULTS, desiredIncome: 80000 }; const calm = monteCarlo(300000, { ...i, returnStdDev: 0.05 }, 400, 9), wild = monteCarlo(300000, { ...i, returnStdDev: 0.25 }, 400, 9), greedy = monteCarlo(300000, { ...i, returnStdDev: 0.05, desiredIncome: 140000 }, 400, 9)
+    expect(wild.successRate).toBeLessThanOrEqual(calm.successRate); expect(greedy.successRate).toBeLessThan(calm.successRate)
+  })
+  it('safe withdrawal: 3% lasts longer than 5%; income = rate × balance + social security', () => {
+    const r = safeWithdrawal(1000000, { ...RETIREMENT_DEFAULTS, expectedReturn: 0.05, inflation: 0.025 }); expect(r.map(x => x.rate)).toEqual([0.03, 0.04, 0.05]); expect(r[0].annualIncome).toBe(30000 + 24000)
+    const life = (x: typeof r[number]) => x.yearsLast ?? 999; expect(life(r[0])).toBeGreaterThanOrEqual(life(r[1])); expect(life(r[1])).toBeGreaterThanOrEqual(life(r[2])); expect(r[0].lastsToLifeExpectancy).toBe(true)
+    const tight = safeWithdrawal(1000000, { ...RETIREMENT_DEFAULTS, expectedReturn: 0.02, inflation: 0.03 }, [0.08]); expect(tight[0].yearsLast).not.toBeNull(); expect(tight[0].lastsToLifeExpectancy).toBe(false)
   })
 })

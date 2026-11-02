@@ -6,7 +6,7 @@ import { LS } from '../config'
 import { monthKey, today } from '../../lib/dates'
 
 const KEY = LS('demo')
-const PREFIX: Partial<Record<Collection, string>> = { transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B' }
+const PREFIX: Partial<Record<Collection, string>> = { transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I' }
 
 export class MemoryRepo implements Repo {
   readonly mode = 'demo' as const
@@ -28,12 +28,15 @@ export class MemoryRepo implements Repo {
   async insert<C extends Collection>(coll: C, row: Partial<RowOf<C>>) {
     const r = { ...row, id: (row as { id?: string }).id || demoId(), household_id: this.household.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as RowOf<C> & { ref?: string | null }
     if ('ref' in r || PREFIX[coll]) { if (!r.ref) r.ref = this.nextRef(coll) }
+    if (coll === 'holdings') { const h = r as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }   // mirrors the DB's generated column
     ;(this.data[coll] as unknown as RowOf<C>[]).push(r); this.persist(); this.emit(); return r
   }
   async insertMany<C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]) { const out: RowOf<C>[] = []; for (const r of rows) out.push(await this.insert(coll, r)); return out }
   async update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) {
     const arr = this.data[coll] as unknown as RowOf<C>[]; const i = arr.findIndex(x => (x as { id: string }).id === id); if (i < 0) throw new Error('Row not found')
-    arr[i] = { ...arr[i], ...patch, updated_at: new Date().toISOString() }; this.persist(); this.emit(); return arr[i]
+    arr[i] = { ...arr[i], ...patch, updated_at: new Date().toISOString() }
+    if (coll === 'holdings') { const h = arr[i] as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }
+    this.persist(); this.emit(); return arr[i]
   }
   async remove(coll: Collection, id: string) {
     const arr = this.data[coll] as Array<{ id: string }>; const i = arr.findIndex(x => x.id === id); if (i < 0) return; arr.splice(i, 1)

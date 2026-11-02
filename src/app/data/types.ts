@@ -73,6 +73,12 @@ export interface Goal extends Stamped {
 }
 export interface GoalContribution extends Stamped { goal_id: UUID; date: ISODate; amount: number; transaction_id?: UUID | null; notes?: string | null }
 
+export type AssetClass = 'stock' | 'etf' | 'mutual_fund' | 'bond' | 'real_estate' | 'cash' | 'crypto' | 'alternative' | 'other'
+export const ASSET_CLASS_LABEL: Record<AssetClass, string> = { stock: 'Stocks', etf: 'ETFs', mutual_fund: 'Mutual funds', bond: 'Bonds', real_estate: 'Real estate', cash: 'Cash', crypto: 'Crypto', alternative: 'Alternatives', other: 'Other' }
+export interface Holding extends Stamped {
+  ref?: string | null; account_id?: UUID | null; symbol?: string | null; name: string; asset_class: AssetClass; sector?: string | null; risk: 'low' | 'medium' | 'high'
+  quantity: number; cost_basis: number; price: number; price_as_of?: ISODate | null; value?: number; expense_ratio?: number | null; yield_pct?: number | null; notes?: string | null; sort_order: number
+}
 export interface PlannedItem extends Stamped { ref?: string | null; date: ISODate; label: string; category: string; amount: number; status: 'Planned' | 'Done' | 'Cancelled'; transaction_id?: UUID | null; notes?: string | null }
 export interface NetWorthSnapshot extends Stamped { date: ISODate; cash: number; assets: number; liabilities: number; by_account: Record<string, number>; notes?: string | null }
 export interface Hardship extends Stamped {
@@ -114,19 +120,21 @@ export interface Settings {
   playbook?: string[]
   imports?: ImportLog[]             // statement-import history (newest first, capped at 50)
   rules?: PayeeRule[]               // payee auto-categorisation rules (see lib/rules.ts)
+  retirement?: RetirementInputs     // planner inputs (see lib/retirement.ts)
   learnRules?: boolean              // create a rule when a category is set by hand (default true)
 }
+export interface RetirementInputs { currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number; socialSecurity: number; currentIncome: number }
 export interface PayeeRule { id: string; pattern: string; match: 'contains' | 'starts' | 'exact' | 'regex'; category_id?: string | null; account_id?: string | null; rename?: string | null; exclude_from_budget?: boolean; kind?: 'expense' | 'income' | null; enabled: boolean; hits?: number; created_at?: string; source?: 'manual' | 'learned' }
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems'
-export const TABLE: Record<Collection, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items' }
+export type Collection = 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings'
+export const TABLE: Record<Collection, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
   transactions: Transaction[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
-  planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]
+  planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]
   emailLedger: EmailLedgerRow[]; members: Member[]; invites: Invite[]; activity: ActivityRow[]
 }
-export const emptyData = (): Data => ({ accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

@@ -2,9 +2,9 @@
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.5.0)
+## State as of this handoff (v0.6.0)
 
-- **Working, tested app** — see README for the feature list. 64 unit tests, 69 Playwright smoke checks (desktop + phone), 7 DB-mode checks all pass. The product roadmap (the finance-platform spec mapped onto the app) is `docs/ROADMAP.md`.
+- **Working, tested app** — see README for the feature list. 71 unit tests, 74 Playwright smoke checks (desktop + phone), 7 DB-mode checks all pass. The product roadmap (the finance-platform spec mapped onto the app) is `docs/ROADMAP.md`.
 - **Supabase project:** `pocketledger` — ref `dshswfcpovdpxcidolqb`, URL `https://dshswfcpovdpxcidolqb.supabase.co`, publishable key in `.env.example`. Schema applied as migrations `pocketledger_init`, `pocketledger_function_grants`, `pocketledger_helper_grants`, `pocketledger_fix_touch_and_log` (the combined, current schema is `supabase/migrations/0001_init.sql`). Email confirmation is ON (default) — new users must click the confirmation email before signing in.
 - **A throw-away e2e user exists** (`pl-e2e-1793508196267@gmail.com`, household "E2E household") — safe to delete from Supabase → Authentication.
 - **CareerShift's Supabase project (`jowuuzppfhqgusxqoqdk`) was PAUSED** to free the second free-tier slot. CareerShift is offline until it is restored (Supabase dashboard → project → Restore). Free tier allows 2 active projects.
@@ -15,9 +15,9 @@
 
 `pages/*` render from the zustand store (`app/store.ts`) which holds the whole household in memory (`Data`) and writes through a `Repo` (`SupabaseRepo` or `MemoryRepo` for the offline demo/tests). Realtime changes trigger a debounced `refresh()`. All math lives in pure functions under `lib/` (unit-tested) — pages only format. Email capture: `lib/email/extract.ts` (email → fact, never invents numbers) → `propose.ts` (match to accounts / recurring / categories, describe changes) → `apply.ts` (writes). Charts go through `components/Chart.tsx` (readable-layout rules from CareerShift v1.26).
 
-## Data model (18 tables)
+## Data model (19 tables)
 
-households, household_members, household_invites · accounts (assets and liabilities in one table, `kind` decides) · statements · categories (group, priority Essential/Important/Discretionary, Fixed/Variable/Irregular, default_budget, rollover) · pay_schedules (frequency + anchor date) · budget_periods + budget_lines (plan only; actuals derived) · transactions (positive amount; kind expense/income/transfer; transfer to a liability = debt payment) · recurring + bill_occurrences · goals + goal_contributions · planned_items · net_worth_snapshots · hardship_outreach · email_items + email_ledger · activity_log, ref_counters, app_meta.
+households, household_members, household_invites · accounts (assets and liabilities in one table, `kind` decides) · statements · categories (group, priority Essential/Important/Discretionary, Fixed/Variable/Irregular, default_budget, rollover) · pay_schedules (frequency + anchor date) · budget_periods + budget_lines (plan only; actuals derived) · transactions (positive amount; kind expense/income/transfer; transfer to a liability = debt payment) · recurring + bill_occurrences · goals + goal_contributions · planned_items · net_worth_snapshots · hardship_outreach · holdings (0.6.0) · email_items + email_ledger · activity_log, ref_counters, app_meta.
 
 ## Conventions to keep
 

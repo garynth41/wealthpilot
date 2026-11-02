@@ -22,10 +22,10 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | 3 Bank Connections | CSV / OFX / QFX import with de-dup | **`lib/import.ts`** + Connections page (`external_id` unique index ✔) | FE | 0.3.0 |
 | | Sync status, history, logs, "Sync now" | Connections page: import history (source, file, rows, dupes) | FE+DB | 0.3.0 (history in settings json) |
 | | Plaid / Teller / MX | Needs a server to hold secrets + webhooks | EF + 3P | evaluate (step 7h) |
-| 4 Investments & Retirement | Holdings: stocks, ETFs, funds, bonds, real estate, cash, alternatives | **new `holdings` table** + Investments page | DB | 0.6.0 |
-| | Asset / sector / risk allocation | `lib/portfolio.ts` | FE | 0.6.0 |
-| | Retirement planner (age, contributions, return, inflation → value, readiness, replacement ratio) | `lib/retirement.ts` | FE | 0.6.0 |
-| | Monte Carlo 1k / 5k / 10k runs; safe-withdrawal 3/4/5/custom % | `lib/retirement.ts` (web worker for 10k) | FE | 0.6.0 |
+| 4 Investments & Retirement | Holdings: stocks, ETFs, funds, bonds, real estate, cash, alternatives | `holdings` table + Investments page | ✔ | 0.6.0 |
+| | Asset / sector / risk allocation | `lib/portfolio.ts` | ✔ | 0.6.0 |
+| | Retirement planner (age, contributions, return, inflation → value, readiness, replacement ratio) | `lib/retirement.ts` | ✔ | 0.6.0 |
+| | Monte Carlo 1k / 5k / 10k runs; safe-withdrawal 3/4/5/custom % | `lib/retirement.ts` + `mc.worker.ts` | ✔ | 0.6.0 |
 | 5 Tax Planning | Income aggregation (W-2, 1099, dividends, interest, gains, business, rental) | **new `tax_profile` + `tax_items`** tables | DB | 0.7.0 |
 | | Federal / state (Ohio) / local / SE tax engine; underpayment risk; withholding sliders; filing projection; tax calendar | `lib/tax.ts` with dated bracket tables + sources | FE | 0.7.0 |
 | 6 Goals & Planning | Emergency fund, debt payoff, retirement, home, education, purchases; progress, forecast, milestones, what-if | Goals: milestones + What-if per goal (`lib/planning.ts`) | ✔ | 0.5.0 |
@@ -36,7 +36,7 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | | Observability: API calls, sync events, user actions, audit, failed imports | `activity_log` ✔ + import/sync log | FE | 0.3.0 / 0.4.0 |
 | | Latency / error rate / uptime | Not meaningful for a static app + Supabase; show Supabase status + last refresh instead | — | — |
 | Data tables | Sort, filter, search, pagination, column visibility, resize, CSV/Excel export | `Table.tsx` — all of it, prefs remembered per table | ✔ | 0.4.0 |
-| Sample data | 50+ transactions, 5+ institutions, investment & retirement accounts | Offline demo ✔ → extend with holdings + tax sample | FE | 0.6.0 |
+| Sample data | 50+ transactions, 5+ institutions, investment & retirement accounts | Offline demo: holdings added ✔ · tax sample with 0.7.0 | FE | 0.7.0 |
 | Navigation | 8 primary tabs | Regroup the rail zones to the spec's 8 once Investments / Tax / Reports exist | FE | 0.8.0 |
 
 Not planned: MFA beyond TOTP, "API latency / uptime" dashboards, Plaid/Teller/MX until a backend exists.

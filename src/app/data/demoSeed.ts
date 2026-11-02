@@ -1,6 +1,6 @@
 // Offline demo data — a believable household, dated relative to today. Also used by the test suites.
 import { addDays, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
-import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType, type Holding } from './types'
 
 export const STARTER_CATEGORIES: Array<[string, string, 'expense' | 'income' | 'transfer', Priority, CostType, number]> = [
   ['Income', 'Paycheck', 'income', 'Essential', 'Fixed', 1], ['Income', 'Benefits', 'income', 'Essential', 'Fixed', 2], ['Income', 'Side income', 'income', 'Important', 'Variable', 3], ['Income', 'Other income', 'income', 'Important', 'Irregular', 4],
@@ -107,6 +107,18 @@ export function demoSeed(): { household: Household; data: Data } {
   d.goals.push({ id: demoId(), household_id: hh, ref: 'G-002', name: 'Pay off Amex', kind: 'debt_payoff', target_amount: 2840.2, target_date: addDays(t, 300), account_id: amex.id, starting_amount: 0, monthly_contribution: 300, priority: 2, status: 'Active', color: '#d99000', sort_order: 2 })
   d.goals.push({ id: demoId(), household_id: hh, ref: 'G-003', name: 'Spring break trip', kind: 'purchase', target_amount: 2400, target_date: addDays(t, 150), account_id: sav.id, starting_amount: 600, monthly_contribution: 200, priority: 3, status: 'Active', color: '#2a78d6', sort_order: 3 })
   d.transactions.filter(x => x.kind === 'transfer' && x.to_account_id === sav.id).forEach(x => d.contributions.push({ id: demoId(), household_id: hh, goal_id: d.goals[0].id, date: x.date, amount: x.amount, transaction_id: x.id }))
+
+  // holdings: the 401(k) is a target-date fund + bond fund; add a small brokerage account with a few positions
+  const k401 = d.accounts.find(a => a.name === 'Fidelity 401(k)')!
+  const brok = acc({ name: 'Schwab brokerage', kind: 'investment', institution: 'Schwab', last4: '7730', balance: 11860, include_in_cash: false, color: '#2a78d6' })
+  const hold = (o: Partial<Holding> & { name: string; quantity: number; price: number; cost_basis: number }) => d.holdings.push({ id: demoId(), household_id: hh, ref: `I-${String(d.holdings.length + 1).padStart(3, '0')}`, asset_class: 'etf', risk: 'medium', sort_order: d.holdings.length + 1, price_as_of: t, value: Math.round(o.quantity * o.price * 100) / 100, ...o })
+  hold({ account_id: k401.id, symbol: 'FFFHX', name: 'Fidelity Freedom 2050', asset_class: 'mutual_fund', sector: 'Diversified', risk: 'medium', quantity: 1210.5, price: 28.4, cost_basis: 29800, expense_ratio: 0.75 })
+  hold({ account_id: k401.id, symbol: 'FXNAX', name: 'Fidelity US Bond Index', asset_class: 'bond', sector: 'Fixed income', risk: 'low', quantity: 760.2, price: 10.4, cost_basis: 8100, expense_ratio: 0.025, yield_pct: 4.1 })
+  hold({ account_id: brok.id, symbol: 'VTI', name: 'Vanguard Total Stock Market ETF', asset_class: 'etf', sector: 'Diversified', risk: 'medium', quantity: 22, price: 268.5, cost_basis: 5100, expense_ratio: 0.03, yield_pct: 1.3 })
+  hold({ account_id: brok.id, symbol: 'AAPL', name: 'Apple', asset_class: 'stock', sector: 'Technology', risk: 'high', quantity: 12, price: 231.2, cost_basis: 2150 })
+  hold({ account_id: brok.id, symbol: 'JNJ', name: 'Johnson & Johnson', asset_class: 'stock', sector: 'Healthcare', risk: 'low', quantity: 9, price: 162.8, cost_basis: 1420, yield_pct: 3.1 })
+  hold({ account_id: brok.id, symbol: 'BTC', name: 'Bitcoin', asset_class: 'crypto', sector: 'Crypto', risk: 'high', quantity: 0.012, price: 67200, cost_basis: 650 })
+  hold({ account_id: brok.id, name: 'Settlement cash', asset_class: 'cash', sector: 'Cash', risk: 'low', quantity: 1, price: 433.2, cost_basis: 433.2 })
 
   // planned items, snapshots, hardship
   d.planned.push({ id: demoId(), household_id: hh, ref: 'X-001', date: addDays(t, 20), label: 'Tax refund', category: 'Tax refund', amount: 1240, status: 'Planned' })
