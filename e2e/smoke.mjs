@@ -15,7 +15,7 @@ for (const W of [1400, 390]) {
   await p.goto('http://localhost:4173/'); await p.waitForTimeout(800); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(600)
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
-  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
+  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/tax', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
   for (const path of pages) { await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(900); const h = await p.locator('h1').first().textContent(); const sw = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth); ok(h && sw <= 1, `${W}: ${path} renders "${h}" (sideways overflow ${sw}px)`); await p.screenshot({ path: `e2e/shots/${W}_${path.replace('/', '') || 'home'}.png`, fullPage: true }) }
   if (W === 1400) {
     // add a transaction
@@ -82,6 +82,11 @@ for (const W of [1400, 390]) {
     // 0.5.0: liquidity + allocation on Accounts; milestones + what-if on Goals
     await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900); const acctText = await p.locator('main').textContent(); ok(/Months of essentials/.test(acctText) && /Goal allocation/i.test(acctText), 'Accounts shows liquidity and goal allocation'); ok(/Available/.test(await p.locator('table.tbl thead').nth(1).textContent()), 'cards table has an Available column')
     await p.goto('http://localhost:4173/#/goals'); await p.waitForTimeout(900); ok((await p.locator('.milestones').count()) >= 1, 'goal cards show milestones'); await p.click('button:has-text("What if")'); await p.waitForTimeout(300); ok((await p.locator('.modal input[type=range]').count()) === 2, 'what-if opens with two sliders'); await p.keyboard.press('Escape'); await p.waitForTimeout(200); const m = p.locator('.modal button:has-text("Close")'); if (await m.count()) await m.click()
+    // 0.7.0 tax: estimate renders from the demo pay schedule; provisioning slider changes the projection
+    await p.goto('http://localhost:4173/#/tax'); await p.waitForTimeout(900); const tx0 = await p.locator('.kpis').first().textContent(); ok(/Totaltax20\d\d\$[\d,]+/i.test(tx0.replace(/\s+/g, '')), 'tax page shows a total tax estimate')
+    ok((await p.locator('main').textContent()).includes('Underpayment risk monitor'), 'tax page shows the risk monitor'); const after0 = await p.locator('.kpi:has-text("After changes") .v').textContent()
+    const sl = p.locator('input[type=range]').nth(1); await sl.evaluate(el => { const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; s.call(el, '600'); el.dispatchEvent(new Event('input', { bubbles: true })) }); await p.locator('input[type=range]').nth(0).evaluate(el => { const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; s.call(el, '10'); el.dispatchEvent(new Event('input', { bubbles: true })) }); await p.waitForTimeout(300)
+    ok((await p.locator('.kpi:has-text("After changes") .v').textContent()) !== after0, 'withholding slider changes the projected balance')
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.click('button:has-text("Security")'); await p.waitForTimeout(300); ok((await p.locator('.card').first().textContent()).includes('offline demo'), 'Security tab renders (demo notice)')
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
     await p.click('.asof button.btn'); await p.waitForTimeout(300); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })

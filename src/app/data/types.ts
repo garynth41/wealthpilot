@@ -121,6 +121,7 @@ export interface Settings {
   imports?: ImportLog[]             // statement-import history (newest first, capped at 50)
   rules?: PayeeRule[]               // payee auto-categorisation rules (see lib/rules.ts)
   retirement?: RetirementInputs     // planner inputs (see lib/retirement.ts)
+  tax?: Partial<import('../../lib/tax').TaxProfile>   // tax planner profile and manual items (see lib/tax.ts)
   learnRules?: boolean              // create a rule when a category is set by hand (default true)
 }
 export interface RetirementInputs { currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number; socialSecurity: number; currentIncome: number }

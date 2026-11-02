@@ -127,7 +127,10 @@ export function demoSeed(): { household: Household; data: Data } {
   ;[-60, -30, 0].forEach((k, i) => d.snapshots.push({ id: demoId(), household_id: hh, date: addDays(t, k), cash: [10900, 11420, 11834][i], assets: [52300, 53100, 54134][i], liabilities: [14650, 14020, 13622][i], by_account: {} }))
   d.hardship.push({ id: demoId(), household_id: hh, ref: 'H-001', entity: 'American Express', type: 'Credit card', account_id: amex.id, monthly_obligation: null, phone: '800-555-0199', contact_name: '', status: 'Called — waiting', program: 'Interest / APR reduction', relief_monthly: 0, last_contact: addDays(t, -3), next_followup: addDays(t, 1), reference: '', outcome: 'Hardship team to call back within 3 business days', notes: 'Ask for 12-month reduced APR program', sort_order: 1 })
 
-  const household: Household = { id: hh, name: 'Thomas household (demo)', currency: 'USD', settings: { ...SETTINGS_DEFAULTS, periodType: 'month', reserveFloor: 3000, runwayGreen: 6, runwayYellow: 3 } }
+  const household: Household = { id: hh, name: 'Thomas household (demo)', currency: 'USD', settings: { ...SETTINGS_DEFAULTS, periodType: 'month', reserveFloor: 3000, runwayGreen: 6, runwayYellow: 3,
+    // sample tax data (demo only): year-to-date federal withholding from the W-2 pay stubs, last year's return, Lewis Center-style local rates
+    tax: { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, priorYearTax: 10200, priorYearAgi: 84000, autoAggregate: true, paychecksLeft: null, extraWithholdingPerCheck: 0, plannedEstimates: 0, seSetAsidePct: 25,
+      items: [{ id: 'dt1', kind: 'withholding', label: 'Federal withholding to date (pay stub, Oct 31)', amount: 8560, source: 'manual' }, { id: 'dt2', kind: 'pretax_deduction', label: '401(k) deferrals + health premiums', amount: 7800, source: 'manual' }, { id: 'dt3', kind: 'estimated_payment', label: 'Q2 estimated payment (consulting)', amount: 600, source: 'manual' }] } } }
   d.members = [{ household_id: hh, user_id: 'demo-user', email: 'demo@example.com', role: 'owner', read_only: false }]
   return { household, data: d }
 }

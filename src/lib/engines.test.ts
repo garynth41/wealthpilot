@@ -283,3 +283,72 @@ describe('retirement: monte carlo & safe withdrawal', () => {
     const tight = safeWithdrawal(1000000, { ...RETIREMENT_DEFAULTS, expectedReturn: 0.02, inflation: 0.03 }, [0.08]); expect(tight[0].yearsLast).not.toBeNull(); expect(tight[0].lastsToLifeExpectancy).toBe(false)
   })
 })
+
+// ---------------- tax (0.7.0) ----------------
+import { estimateTax, autoItems, withholdingToBreakEven, paychecksRemaining, TAX_DEFAULTS as TAX_D, type TaxItem } from './tax'
+import { FEDERAL } from './taxTables'
+const TI = (kind: TaxItem['kind'], amount: number, extra: Partial<TaxItem> = {}): TaxItem => ({ id: kind + amount, kind, label: kind, amount, source: 'manual', ...extra })
+const blank = () => { const { data } = seed(); return { ...data, paySchedules: [], holdings: [], transactions: [], recurring: [] } }
+describe('tax: federal brackets & deduction (2026)', () => {
+  it('single, $100k wages, standard deduction: 10/12/22% stacking', () => {
+    const e = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'NONE', autoAggregate: false, items: [TI('w2', 100000)] })
+    expect(e.agi).toBe(100000); expect(e.deduction).toBe(16100); expect(e.taxableIncome).toBe(83900)
+    const expected = 12400 * 0.10 + (50400 - 12400) * 0.12 + (83900 - 50400) * 0.22   // 1240 + 4560 + 7370 = 13170
+    expect(e.federal.ordinary).toBeCloseTo(expected, 2); expect(e.federal.marginal).toBe(0.22); expect(e.federal.total).toBeCloseTo(expected, 2); expect(e.state.tax).toBe(0)
+  })
+  it('married filing jointly uses the wider brackets and doubles the standard deduction; itemized wins when larger', () => {
+    const e = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'mfj', state: 'NONE', autoAggregate: false, items: [TI('w2', 150000), TI('itemized', 40000)] })
+    expect(e.deduction).toBe(40000); expect(e.taxableIncome).toBe(110000); expect(e.federal.ordinary).toBeCloseTo(24800 * 0.1 + (100800 - 24800) * 0.12 + (110000 - 100800) * 0.22, 2)
+  })
+  it('long-term gains stack on ordinary income at 0 / 15 %', () => {
+    const e = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'NONE', autoAggregate: false, items: [TI('w2', 46100), TI('capital_gains', 30000)] })
+    // taxable 60,000: ordinary 30,000; gains 30,000 of which 49,450−30,000 = 19,450 at 0 % and 10,550 at 15 %
+    expect(e.taxableIncome).toBe(60000); expect(e.federal.ltcg).toBeCloseTo(10550 * 0.15, 2)
+  })
+})
+describe('tax: self-employment, Ohio, local, credits', () => {
+  it('SE tax on 92.35 % of net profit, half deductible; Ohio flat 2.75 % above $26,050 after exemptions; municipal on earned income', () => {
+    const e = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, autoAggregate: false, items: [TI('business', 80000)] })
+    const seTax = 80000 * 0.9235 * 0.153; expect(e.federal.se).toBeCloseTo(seTax, 2); expect(e.seDeduction).toBeCloseTo(seTax / 2, 2); expect(e.agi).toBeCloseTo(80000 - seTax / 2, 2)
+    const oagi = e.agi; const exempt = 2150   // Ohio MAGI ≈ $74k → $40,001–$80,000 tier
+    expect(e.state.taxable).toBeCloseTo(oagi - exempt, 2); expect(e.state.tax).toBeCloseTo((oagi - exempt - 26050) * 0.0275, 2)
+    expect(e.local.municipal).toBeCloseTo(80000 * 0.025, 2); expect(e.seSetAside).toBe(80000 * 0.25)
+  })
+  it('child tax credit reduces federal tax; SS wage base caps the 12.4 % part', () => {
+    const e = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'mfj', state: 'NONE', dependentsUnder17: 2, autoAggregate: false, items: [TI('w2', 120000)] })
+    const noKids = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'mfj', state: 'NONE', autoAggregate: false, items: [TI('w2', 120000)] })
+    expect(noKids.federal.total - e.federal.total).toBeCloseTo(4400, 2)
+    const hi = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'NONE', autoAggregate: false, items: [TI('business', 300000)] })
+    expect(hi.federal.se).toBeCloseTo(FEDERAL[2026].ssWageBase * 0.124 + 300000 * 0.9235 * 0.029, 0)
+  })
+  it('head of household brackets (24 % tops out at $201,750) and the Ohio exemption cap above $500k', () => {
+    const h = FEDERAL[2026].brackets.hoh; expect(h.map(b => b.upTo)).toEqual([17700, 67450, 105700, 201750, 256200, 640600, null])
+    const rich = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'OH', autoAggregate: false, items: [TI('w2', 600000)] })
+    expect(rich.state.taxable).toBe(600000); expect(rich.state.tax).toBeCloseTo((600000 - 26050) * 0.0275, 2)
+  })
+})
+describe('tax: payments, safe harbor, provisioning', () => {
+  it('refund / due, safe-harbor basis and the per-paycheck change that breaks even', () => {
+    const base = { year: 2026, filingStatus: 'single' as const, state: 'NONE', autoAggregate: false, paychecksLeft: 10, priorYearTax: 9000, priorYearAgi: 90000 }
+    const e = estimateTax(blank(), SETTINGS_DEFAULTS, { ...base, items: [TI('w2', 100000), TI('withholding', 8000)] })
+    expect(e.federal.total).toBeCloseTo(13170, 0); expect(e.paid.withheld).toBe(8000); expect(e.due).toBeCloseTo(13170 - 8000, 0)
+    expect(e.safeHarbor.basis).toBe('100% of last year'); expect(e.safeHarbor.required).toBe(9000); expect(e.safeHarbor.met).toBe(false); expect(e.safeHarbor.shortfall).toBe(1000)
+    const w = withholdingToBreakEven(blank(), SETTINGS_DEFAULTS, { ...TAX_D, ...base, items: [TI('w2', 100000), TI('withholding', 8000)] }); expect(w).toBeCloseTo((13170 - 8000) / 10, 0)
+    const ok = estimateTax(blank(), SETTINGS_DEFAULTS, { ...base, items: [TI('w2', 100000), TI('withholding', 8000)], extraWithholdingPerCheck: 100 }); expect(ok.safeHarbor.met).toBe(true); expect(ok.paid.extraWithholding).toBe(1000)
+  })
+  it('auto-aggregation turns pay schedules into W-2 / 1099 items and holdings yields into dividends', () => {
+    const { data } = seed(); const items = autoItems(data, 2026); const w2 = items.filter(i => i.kind === 'w2'); expect(w2.length).toBeGreaterThanOrEqual(1)
+    const ps = data.paySchedules.find(p => p.kind === 'salary')!; const per = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 } as Record<string, number>
+    expect(w2[0].amount).toBeCloseTo((ps.gross_amount || ps.net_amount) * per[ps.frequency], 2)
+  })
+})
+describe('tax: remaining deadlines and paydays', () => {
+  it('quarterly amount divides the shortfall over the estimate deadlines still ahead; paychecks left come from the pay schedule', () => {
+    const items = [TI('business', 60000)]; const p = { year: 2026, filingStatus: 'single' as const, state: 'NONE', autoAggregate: false, items }
+    const nov = estimateTax(blank(), SETTINGS_DEFAULTS, p, '2026-11-01'), may = estimateTax(blank(), SETTINGS_DEFAULTS, p, '2026-05-01')
+    expect(nov.safeHarbor.estimatesLeft).toBe(1); expect(nov.safeHarbor.quarterlyNeeded).toBeCloseTo(nov.safeHarbor.shortfall, 2)
+    expect(may.safeHarbor.estimatesLeft).toBe(3); expect(may.safeHarbor.quarterlyNeeded).toBeCloseTo(may.safeHarbor.shortfall / 3, 2)
+    const { data } = seed(); const ps = data.paySchedules.find(x => x.kind === 'salary')!; const left = paychecksRemaining(data, 2026, '2026-11-01')
+    expect(left).toBe(payDates(ps, '2026-11-02', '2026-12-31').length); expect(left).toBeGreaterThan(0); expect(paychecksRemaining(data, 2026, '2027-01-02')).toBe(0)
+  })
+})

@@ -26,8 +26,8 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | | Asset / sector / risk allocation | `lib/portfolio.ts` | ✔ | 0.6.0 |
 | | Retirement planner (age, contributions, return, inflation → value, readiness, replacement ratio) | `lib/retirement.ts` | ✔ | 0.6.0 |
 | | Monte Carlo 1k / 5k / 10k runs; safe-withdrawal 3/4/5/custom % | `lib/retirement.ts` + `mc.worker.ts` | ✔ | 0.6.0 |
-| 5 Tax Planning | Income aggregation (W-2, 1099, dividends, interest, gains, business, rental) | **new `tax_profile` + `tax_items`** tables | DB | 0.7.0 |
-| | Federal / state (Ohio) / local / SE tax engine; underpayment risk; withholding sliders; filing projection; tax calendar | `lib/tax.ts` with dated bracket tables + sources | FE | 0.7.0 |
+| 5 Tax Planning | Income aggregation (W-2, 1099, dividends, interest, gains, business, rental) | auto from pay schedules / holdings / rental + manual items (stored in household settings — no migration needed) | ✔ | 0.7.0 |
+| | Federal / state (Ohio) / local / SE tax engine; underpayment risk; withholding sliders; filing projection; tax calendar | `lib/tax.ts` + `lib/taxTables.ts` (sourced, by year) | ✔ | 0.7.0 |
 | 6 Goals & Planning | Emergency fund, debt payoff, retirement, home, education, purchases; progress, forecast, milestones, what-if | Goals: milestones + What-if per goal (`lib/planning.ts`) | ✔ | 0.5.0 |
 | 7 Reports | Monthly / quarterly / annual; spending, investment, tax, net worth; PDF / Excel / CSV | Reports page: print-to-PDF stylesheet, CSV ✔, Excel via SheetJS | FE | 0.8.0 |
 | 8 Security & Settings | MFA / 2FA | Settings → Security: TOTP enrol/verify/unenrol + code step at sign-in | ✔ | 0.4.0 |

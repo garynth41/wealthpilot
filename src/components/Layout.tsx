@@ -23,6 +23,7 @@ export const VIEWS: View[] = [
   { path: '/goals', title: 'Savings Goals', sub: 'Emergency fund, sinking funds, purchases — progress and pace', zone: 'Accounts & debt', icon: 'goal' },
   { path: '/insights', title: 'Spending Intelligence', sub: 'Merchants, subscriptions, waste detection and financial-health scores', zone: 'Money in & out', icon: 'spark' },
   { path: '/connections', title: 'Bank Connections', sub: 'Import CSV / OFX / QFX statements with de-duplication; sync status and history', zone: 'Accounts & debt', icon: 'plug' },
+  { path: '/tax', title: 'Tax Planning', sub: 'Federal, Ohio and local estimate, withholding and estimated-payment planning, underpayment risk and deadlines', zone: 'Planning', icon: 'tax' },
   { path: '/trends', title: 'Trends & Analysis', sub: 'Week / month / year spending, categories, net worth', zone: 'Planning', icon: 'trend' },
   { path: '/hardship', title: 'Hardship & Creditor Outreach', sub: 'Call every lender and provider before a payment is missed', zone: 'Planning', icon: 'phone' },
   { path: '/email', title: 'Email Money Capture', sub: 'Bills, statements, payments and deposits read from Gmail and Outlook — you approve, the app files', zone: 'Planning', icon: 'mail' },
