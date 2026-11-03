@@ -9,8 +9,8 @@
 //   bank balance    what the institution last reported (accounts.bank_balance, dated bank_balance_as_of)
 //   verified / reconciled balance = bank balance + the effect of everything still outstanding — the number every module uses
 //   book balance    the household's own running figure (accounts.balance); the variance is book − verified
-import type { DTxn } from './dedupe'
-import { classify, payeeSimilarity, origin } from './dedupe'
+import type { DTxn } from './dedupe.ts'
+import { classify, payeeSimilarity, origin } from './dedupe.ts'
 
 export const LIABILITY_KINDS = ['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability']
 export interface RAccount { id: string; kind: string; balance: number; bank_balance?: number | null; bank_balance_as_of?: string | null; last_reconciled_on?: string | null; last_reconciled_balance?: number | null }
