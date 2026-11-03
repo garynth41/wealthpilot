@@ -42,11 +42,29 @@ export function splitAccessUrl(accessUrl: string): { base: string; authorization
 }
 export const redactUrl = (s: string) => s.replace(/\/\/[^/@\s]+:[^/@\s]+@/g, '//***:***@')
 
-/** SimpleFIN allows at most 90 days per request. Re-read a few days before the last sync so late-posting items are caught; first sync takes the whole 90. */
-export function syncWindow(lastSyncUnix: number | null, nowUnix: number, overlapDays = 5): { start: number; end: number } {
-  const maxBack = nowUnix - 89 * 86400
-  const start = lastSyncUnix ? Math.max(maxBack, lastSyncUnix - overlapDays * 86400) : maxBack
-  return { start: Math.floor(start), end: Math.floor(nowUnix) }
+/** SimpleFIN recommends at most 45 days per request ("Requested date range exceeds recommended range of 45 days" otherwise, and may cap it).
+ *  Return windows of at most 44 days, oldest first, covering from a few days before the last sync — or `firstDays` back on the first sync — up to now. */
+export const MAX_WINDOW_DAYS = 44
+export function syncWindows(lastSyncUnix: number | null, nowUnix: number, overlapDays = 5, firstDays = 88): Array<{ start: number; end: number }> {
+  const end = Math.floor(nowUnix), earliest = end - firstDays * 86400
+  let start = Math.floor(lastSyncUnix ? Math.max(earliest, lastSyncUnix - overlapDays * 86400) : earliest)
+  if (start >= end) start = end - 86400
+  const out: Array<{ start: number; end: number }> = []
+  while (start < end) { const e = Math.min(end, start + MAX_WINDOW_DAYS * 86400); out.push({ start, end: e }); start = e }
+  return out
+}
+/** Combine the replies for several windows: one entry per account, the newest balance, every transaction once, each bank note once. */
+export function mergeResponses(resps: SfinResponse[]): SfinResponse {
+  const acc = new Map<string, SfinAccountRaw>(); const errors: string[] = []
+  for (const r of resps) {
+    for (const e of r.errors || []) if (!errors.includes(e)) errors.push(e)
+    for (const a of r.accounts || []) {
+      const prev = acc.get(a.id); const txns = new Map<string, SfinTxn>()
+      for (const t of [...(prev?.transactions || []), ...(a.transactions || [])]) txns.set(String(t.id), t)
+      acc.set(a.id, { ...(prev || {}), ...a, transactions: [...txns.values()] })
+    }
+  }
+  return { errors, accounts: [...acc.values()] }
 }
 
 /** "…1234", "x1234", "ending in 1234", "(1234)", "*1234" or a trailing 4 digits. Never returns more than 4 digits. */

@@ -67,7 +67,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
       <Pill cls={c.status === 'connected' ? 'good' : 'crit'}>{c.status === 'connected' ? 'Connected' : 'Needs attention'}</Pill>
       <span className="note" style={{ margin: 0 }}>{c.last_sync_at ? `Last sync ${new Date(c.last_sync_at).toLocaleString()}` : 'Not synced yet'}</span>
     </div>
-    {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.last_error}</div>}
+    {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.status === 'error' ? <b>Last sync failed: </b> : <b>Note from SimpleFIN (sync still worked): </b>}{c.last_error}{/45 days/i.test(c.last_error) && c.status !== 'error' ? ' — WealthPilot now asks for at most 44 days at a time, so this note clears on the next sync.' : ''}</div>}
     <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>At the bank</th><th className="num">Balance</th><th>Goes into</th></tr></thead><tbody>
       {c.discovered.length === 0 && <tr><td colSpan={3} className="note">No accounts reported by the bank yet — press Sync now once, or check the accounts are linked in SimpleFIN.</td></tr>}
       {c.discovered.map(d => <tr key={d.id}><td><b>{d.org || '—'}</b> · {d.name}{d.last4 ? <span className="note" style={{ margin: 0, display: 'inline' }}> · …{d.last4}</span> : null}</td><td className="num">{fm2(d.balance)}</td>

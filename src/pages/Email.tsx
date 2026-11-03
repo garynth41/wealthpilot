@@ -4,7 +4,7 @@ import { useStore } from '../app/store'
 import type { EmailItem } from '../app/data/types'
 import { Card, KPI, Btn, Pill, Note, useModal, MHead, MBody, MFoot, Field } from '../components/ui'
 import { Table, type Col } from '../components/Table'
-import { gmRun, olRun, mailLink, sinceDate, type FactEv } from '../lib/email/mail'
+import { gmRun, olRun, mailLink, sinceDate, type FactEv, type MailStats } from '../lib/email/mail'
 import { propose, type Proposal, type Target, type FactG } from '../lib/email/propose'
 import { applyMany, ignoreMany, statusOf, isOpenItem, type ApplyInput, type Ctx } from '../lib/email/apply'
 import { extract, type Fact } from '../lib/email/extract'
@@ -21,7 +21,16 @@ export function EmailPage() {
   const [busy, setBusy] = useState(''); const [props, setProps] = useState<Proposal[] | null>(null); const [inputs, setInputs] = useState<Record<number, ApplyInput & { checked?: boolean; ignore?: boolean }>>({})
   const seen = useMemo(() => new Set(data.emailLedger.map(x => x.message_id)), [data.emailLedger])
   const ctx: Ctx = { data: () => useStore.getState().data, settings: () => useStore.getState().settings(), insert: (c, r) => store.insert(c, r), update: (c, id, p) => store.update(c, id, p), saveSettings: p => saveSettings(p), ledger: rows => repo!.ledger(rows) }
-  const run = async (which: 'gmail' | 'outlook') => { setBusy('Connecting…'); try { const facts = which === 'gmail' ? await gmRun(settings, seen, setBusy) : await olRun(settings, seen, setBusy); const p = propose(data, settings, facts); setProps(p); setInputs({}); const cfg = which === 'gmail' ? settings.gmail || {} : settings.outlook || {}; await saveSettings({ [which]: { ...cfg, lastRun: new Date().toISOString(), lastSummary: `${p.filter(x => x.kind === 'item').length} to review` } } as never)
+  const run = async (which: 'gmail' | 'outlook' | 'both') => { setBusy('Connecting…'); try {
+      const srcs: Array<'gmail' | 'outlook'> = which === 'both' ? ['gmail', 'outlook'] : [which]; const facts: FactEv[] = []; const patch: Record<string, unknown> = {}; const lines: string[] = []
+      for (const w of srcs) {
+        const st: MailStats = { scanned: 0, matched: 0 }; const label = w === 'gmail' ? 'Gmail' : 'Outlook'
+        try { const f = w === 'gmail' ? await gmRun(settings, seen, setBusy, st) : await olRun(settings, seen, setBusy, st); facts.push(...f)
+          const n = propose(data, settings, f).filter(x => x.kind === 'item').length; const summary = `${n} to review · ${st.scanned} ${w === 'gmail' ? 'threads found' : 'messages checked'}, ${st.matched} looked like money mail`
+          patch[w] = { ...((w === 'gmail' ? settings.gmail : settings.outlook) || {}), lastRun: new Date().toISOString(), lastSummary: summary }; lines.push(`${label}: ${summary}`)
+        } catch (e) { if (srcs.length === 1) throw e; lines.push(`${label}: ${(e as Error).message}`) } }
+      const p = propose(data, settings, facts); setProps(p); setInputs({}); if (Object.keys(patch).length) await saveSettings(patch as never)
+      if (!p.filter(x => x.kind === 'item').length) useStore.getState().toast(lines.join(' · ') || 'Nothing new to review')
       if (settings.finmail?.auto) { const auto = p.filter(x => x.kind === 'item' && x.auto); if (auto.length) { await applyMany(ctx, auto); setProps(p.filter(x => !auto.includes(x))); useStore.getState().toast(`${auto.length} clearly matched item${auto.length === 1 ? '' : 's'} filed automatically`) } } } catch (e) { useStore.getState().toast((e as Error).message, true) } finally { setBusy('') } }
   const apply = () => guarded(async () => { if (!props) return; const list: Proposal[] = [], ins: ApplyInput[] = [], ign: Proposal[] = []
     props.forEach((p, i) => { const inp = inputs[i] || {}; if (p.kind === 'info') { ign.push(p); return } if (inp.ignore) { ign.push(p); return } if (p.kind === 'current') { ign.push(p); return } if (!(inp.checked ?? p.checked)) return; list.push(p); ins.push({ amount: inp.amount, date: inp.date, target: inp.target, name: inp.name, accountId: inp.accountId }) })
@@ -35,7 +44,7 @@ export function EmailPage() {
   const lastRun = (c?: { lastRun?: string | null; lastSummary?: string }) => c?.lastRun ? `last run ${fmtDY(iso(new Date(c.lastRun)))} · ${c.lastSummary || ''}` : 'never run'
   return <>
     <Card className="span12" title="Sync" hint="read-only: nothing is sent, labelled or deleted · amounts and dates exactly as the emails state them">
-      <div className="btnrow"><Btn primary onClick={() => run('gmail')} disabled={!!busy || !canEdit}>{settings.gmail?.clientId ? '✉ Check Gmail' : 'Set up Gmail'}</Btn><span className="note" style={{ margin: 0 }}>{lastRun(settings.gmail)}</span><Btn onClick={() => run('outlook')} disabled={!!busy || !canEdit}>{settings.outlook?.clientId ? '✉ Check Outlook' : 'Set up Outlook'}</Btn><span className="note" style={{ margin: 0 }}>{lastRun(settings.outlook)}</span><span style={{ flex: 1 }} /><Btn onClick={() => open(<PasteTester onDone={close} onProps={p => { setProps(p); setInputs({}) }} />, { wide: true })}>Paste an email to test</Btn>{isOwner && <Btn onClick={() => open(<MailSetup onDone={close} />, { wide: true })}>Settings</Btn>}</div>
+      <div className="btnrow"><Btn primary onClick={() => !settings.gmail?.clientId && isOwner ? open(<MailSetup onDone={close} />, { wide: true }) : run('gmail')} disabled={!!busy || !canEdit}>{settings.gmail?.clientId ? '✉ Check Gmail' : 'Set up Gmail'}</Btn><span className="note" style={{ margin: 0 }}>{lastRun(settings.gmail)}</span><Btn onClick={() => !settings.outlook?.clientId && isOwner ? open(<MailSetup onDone={close} />, { wide: true }) : run('outlook')} disabled={!!busy || !canEdit}>{settings.outlook?.clientId ? '✉ Check Outlook' : 'Set up Outlook'}</Btn><span className="note" style={{ margin: 0 }}>{lastRun(settings.outlook)}</span>{settings.gmail?.clientId && settings.outlook?.clientId && <Btn onClick={() => run('both')} disabled={!!busy || !canEdit}>✉ Check Gmail &amp; Outlook</Btn>}<span style={{ flex: 1 }} /><Btn onClick={() => open(<PasteTester onDone={close} onProps={p => { setProps(p); setInputs({}) }} />, { wide: true })}>Paste an email to test</Btn>{isOwner && <Btn onClick={() => open(<MailSetup onDone={close} />, { wide: true })}>Settings</Btn>}</div>
       {busy && <div className="banner info" style={{ marginTop: 10 }}>{busy}</div>}
       {!settings.gmail?.clientId && !settings.outlook?.clientId && <Note>Reading mail needs a Google OAuth client ID (Gmail) or a Microsoft app registration (Outlook) with this site's address as an allowed origin — use <b>Set up Gmail</b> above, or <b>Settings → General → Email capture</b>. Until then use <b>Paste an email</b> to see what the parser does.</Note>}
       <Note>Reads from <b>{fmtDY(sinceDate(settings))}</b>. Every message is reviewed once: approved items are filed, ignored ones are remembered. Email bodies are never stored — only amounts, dates, payees and the last four digits of an account.</Note>

@@ -24,7 +24,7 @@ export const GM_QUERIES = [
 function loadGIS() { return new Promise<void>((res, rej) => { if (window.google?.accounts?.oauth2) return res(); const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.onload = () => res(); s.onerror = () => rej(new Error('Could not load Google sign-in (connection or ad blocker)')); document.head.appendChild(s) }) }
 export async function gmToken(clientId: string, hint?: string) {
   if (GM.token && Date.now() < GM.exp - 60000) return GM.token
-  if (!clientId) throw new Error('Gmail is not set up yet — add the OAuth client ID in Settings')
+  if (!clientId) throw new Error('Gmail is not set up yet — add the OAuth client ID in Settings → General → Email capture')
   await loadGIS()
   return new Promise<string>((res, rej) => { const c = window.google!.accounts.oauth2.initTokenClient({ client_id: clientId, scope: GM_SCOPE, hint: hint || undefined, callback: (r: { error?: string; error_description?: string; access_token?: string; expires_in?: number }) => { if (!r || r.error || !r.access_token) return rej(new Error((r && (r.error_description || r.error)) || 'Google sign-in failed')); GM.token = r.access_token; GM.exp = Date.now() + (+(r.expires_in || 3600)) * 1000; res(GM.token) }, error_callback: (e: { type?: string; message?: string }) => rej(new Error(e?.type === 'popup_closed' ? 'Google sign-in window was closed' : e?.message || e?.type || 'Google sign-in failed')) }); c.requestAccessToken({ prompt: '' }) })
 }
@@ -49,13 +49,13 @@ export function gmMsg(m: GMessage, me: string, account: string): Msg {
 const gmDate = (d: string) => { const x = parse(addDays(d, -1)); return `${x.getFullYear()}/${String(x.getMonth() + 1).padStart(2, '0')}/${String(x.getDate()).padStart(2, '0')}` }
 export type FactEv = (Fact | Skip) & { ev: Evidence[] }
 /** Search Gmail for money mail since `since`, read each thread, return facts (one per message). `seen` = message ids already reviewed. */
-export async function gmRun(s: Settings, seen: Set<string>, progress?: (t: string) => void): Promise<FactEv[]> {
+export async function gmRun(s: Settings, seen: Set<string>, progress?: (t: string) => void, stats?: MailStats): Promise<FactEv[]> {
   const clientId = s.gmail?.clientId || ''; const account = s.gmail?.account || ''; const since = sinceDate(s)
   const me = (await gmApi(clientId, 'profile', undefined, account)).emailAddress?.toLowerCase() || account
   const ids = new Set<string>()
   for (let i = 0; i < GM_QUERIES.length; i++) { progress?.(`Looking for bills, payments and deposits (${i + 1}/${GM_QUERIES.length})…`); let page: string | undefined, n = 0
     do { const r = await gmApi(clientId, 'threads', { q: `after:${gmDate(since)} ${GM_QUERIES[i]} ${GM_EXCL}`, maxResults: '100', ...(page ? { pageToken: page } : {}) }, account); (r.threads || []).forEach((t: { id: string }) => ids.add(t.id)); page = r.nextPageToken; n++ } while (page && n < 3) }
-  const list = [...ids].slice(0, 500); const facts: FactEv[] = []; let done = 0
+  const list = [...ids].slice(0, 500); const facts: FactEv[] = []; let done = 0; if (stats) { stats.scanned += ids.size; stats.matched += list.length }
   const worker = async () => { while (list.length) { const id = list.shift()!; try { const th = await gmApi(clientId, 'threads/' + id, { format: 'full' }, account); for (const raw of (th.messages || []) as GMessage[]) { const m = gmMsg(raw, me, account); if (m.sent || seen.has(m.id) || iso(m.date) < since) continue; const f = extract(m); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: th.id, src: 'gmail', url: m.url, subject: m.subject || '', date: iso(m.date) }] }) } } catch (e) { if (/expired|sign-in/i.test((e as Error).message)) throw e; console.warn('money thread', e) } done++; progress?.(`Reading money emails — ${done} of ${done + list.length}…`) } }
   await Promise.all([worker(), worker(), worker(), worker()])
   return facts
@@ -64,8 +64,25 @@ export async function gmRun(s: Settings, seen: Set<string>, progress?: (t: strin
 /* ---------------- Outlook / Microsoft Graph ---------------- */
 const OL = { token: null as string | null, exp: 0 }
 const OL_SCOPE = 'openid offline_access User.Read Mail.Read'
-const OL_SEL = 'id,conversationId,subject,from,toRecipients,receivedDateTime,sentDateTime,body,webLink,parentFolderId'
-export const OL_QUERIES = ['statement OR "your bill" OR invoice OR "amount due" OR "payment due" OR "minimum payment"', '"payment received" OR "payment processed" OR "payment confirmation" OR "thank you for your payment" OR "recurring payment"', 'autopay OR "automatic payment" OR "payment reminder" OR "scheduled payment" OR "will be charged"', '"direct deposit" OR "was credited" OR refund OR "you received" OR "sent you" OR paystub', '"past due" OR declined OR "insufficient funds" OR overdraft OR "missed payment"', 'receipt OR renewed OR "order confirmation"']
+const OL_SEL = 'id,conversationId,subject,from,receivedDateTime,sentDateTime,body,webLink,parentFolderId'
+/** The same money vocabulary the Gmail searches use, applied locally to each Outlook message (Microsoft's $search is unreliable on personal Outlook.com mailboxes). */
+export const MONEY_RE = new RegExp([
+  'statement', 'your bill', 'bill is (?:ready|available)', 'new bill', 'invoice', 'amount due', 'balance due', 'minimum payment', 'payment (?:is )?due', 'due date',
+  'payment (?:received|processed|confirmation|posted|was successful|successful|scheduled|reminder|issued|declined|failed)', 'thanks? (?:you )?for your payment', 'received your payment', 'recurring payment', 'scheduled payment',
+  'auto ?pay', 'automatic payment', 'upcoming payment', 'will be (?:charged|processed|debited)',
+  'direct deposit', 'deposit (?:posted|received)', 'was credited', 'has been deposited', 'sent you', 'you received', 'refund (?:issued|processed)', 'benefit payment', 'pay ?stub',
+  'past due', 'missed payment', 'overdue', 'insufficient funds', 'overdraft', 'returned payment', 'transaction was declined', 'low balance',
+  'receipt', 'renewed', 'order confirmation', 'subscription (?:renewal|confirmation)',
+].map(t => '\\b' + t + '\\b').join('|'), 'i')
+const NOT_MONEY_SENDER = /(?:^|[@.])(?:creditkarma\.com|substack\.com|beehiiv\.com|medium\.com|linkedin\.com)$/i
+/** Does this look like a bill, payment, deposit or account alert? (subject, sender name and the start of the body) */
+export function isMoneyMail(m: { subject?: string; fromName?: string; fromEmail?: string; text?: string }): boolean {
+  if (m.fromEmail && NOT_MONEY_SENDER.test(m.fromEmail)) return false
+  return MONEY_RE.test(`${m.subject || ''} \n ${m.fromName || ''} \n ${(m.text || '').slice(0, 6000)}`)
+}
+/** Build a Graph query string with %20 for spaces (some Microsoft endpoints read "+" literally). */
+export const graphQs = (p: Record<string, string>) => Object.entries(p).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')
+export interface MailStats { scanned: number; matched: number }
 const b64u = (buf: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 const olBase = (tenant: string) => `https://login.microsoftonline.com/${encodeURIComponent(tenant || 'consumers')}/oauth2/v2.0/`
 const redirect = () => location.origin + location.pathname
@@ -78,7 +95,7 @@ export async function olToken(s: Settings, interactive = true) {
   if (OL.token && Date.now() < OL.exp - 60000) return OL.token
   let rt: string | null = null; try { rt = sessionStorage.getItem('wealthpilot.olrt') } catch { /* */ }
   if (rt) { try { return await olTokenReq(s, { grant_type: 'refresh_token', refresh_token: rt }) } catch { try { sessionStorage.removeItem('wealthpilot.olrt') } catch { /* */ } } }
-  if (!interactive) return null; if (!s.outlook?.clientId) throw new Error('Outlook is not set up yet — add the application (client) ID in Settings')
+  if (!interactive) return null; if (!s.outlook?.clientId) throw new Error('Outlook is not set up yet — add the application (client) ID in Settings → General → Email capture')
   const verifier = b64u(crypto.getRandomValues(new Uint8Array(32))), challenge = b64u(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))), state = 'pl-ol-' + b64u(crypto.getRandomValues(new Uint8Array(12)))
   const url = olBase(s.outlook.tenant || 'consumers') + 'authorize?' + new URLSearchParams({ client_id: s.outlook.clientId, response_type: 'code', redirect_uri: redirect(), response_mode: 'query', scope: OL_SCOPE, state, code_challenge: challenge, code_challenge_method: 'S256', prompt: 'select_account', login_hint: s.outlook.account || '' }).toString()
   const w = window.open(url, 'pl-outlook', 'width=520,height=680'); if (!w) throw new Error('Allow pop-ups for this site, then click Sync again')
@@ -91,24 +108,30 @@ export async function olToken(s: Settings, interactive = true) {
 export function olPopupRelay() { try { const p = new URLSearchParams(location.search); const st = p.get('state') || ''; if (window.opener && st.startsWith('pl-ol-') && (p.get('code') || p.get('error'))) { window.opener.postMessage({ type: 'pl-ol', state: st, code: p.get('code'), error: p.get('error_description') || p.get('error') }, location.origin); window.close(); return true } } catch { /* */ } return false }
 export async function olApi(s: Settings, pathOrUrl: string, params?: Record<string, string> | null, interactive = true) {
   const tok = await olToken(s, interactive); if (!tok) throw new Error('Outlook sign-in needed')
-  const url = /^https:/.test(pathOrUrl) ? pathOrUrl : 'https://graph.microsoft.com/v1.0/' + pathOrUrl + (params ? '?' + new URLSearchParams(params).toString() : '')
-  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + tok, Prefer: 'outlook.body-content-type="html"', ConsistencyLevel: 'eventual' } })
+  const url = /^https:/.test(pathOrUrl) ? pathOrUrl : 'https://graph.microsoft.com/v1.0/' + pathOrUrl + (params ? '?' + graphQs(params) : '')
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + tok, Prefer: 'outlook.body-content-type="html"' } })
   if (r.status === 401) { OL.token = null; throw new Error('Microsoft sign-in expired — click Sync again') }
   if (!r.ok) { let m = ''; try { m = (await r.json()).error.message } catch { /* */ } throw new Error('Outlook ' + r.status + (m ? ': ' + m : '')) } return r.json()
 }
 interface OMsg { id: string; conversationId?: string; subject?: string; from?: { emailAddress?: { name?: string; address?: string } }; receivedDateTime?: string; sentDateTime?: string; body?: { contentType?: string; content?: string }; webLink?: string; parentFolderId?: string }
-export async function olRun(s: Settings, seen: Set<string>, progress?: (t: string) => void): Promise<FactEv[]> {
-  const since = sinceDate(s); const me = ((await olApi(s, 'me', { $select: 'mail,userPrincipalName' })).mail || '').toLowerCase()
-  let sentFolder = ''; try { sentFolder = (await olApi(s, 'me/mailFolders/sentitems', { $select: 'id' })).id } catch { /* */ }
-  const msgs = new Map<string, OMsg>()
-  for (const [k, q] of OL_QUERIES.entries()) { progress?.(`Looking for bills, payments and deposits in Outlook (${k + 1}/${OL_QUERIES.length})…`)
-    let j = await olApi(s, 'me/messages', { $search: `"(${q.replace(/"/g, '\\"')}) AND received>=${since}"`, $select: OL_SEL, $top: '100' }); (j.value || []).forEach((m: OMsg) => msgs.set(m.id, m)); let n = 1
-    while (j['@odata.nextLink'] && n < 3) { j = await olApi(s, j['@odata.nextLink'], null); (j.value || []).forEach((m: OMsg) => msgs.set(m.id, m)); n++ } }
-  const facts: FactEv[] = []
-  for (const m of msgs.values()) { const when = (m.receivedDateTime || m.sentDateTime || '').slice(0, 10); if (!when || when < since || seen.has(m.id)) continue
-    const fromAddr = (m.from?.emailAddress?.address || '').toLowerCase(); const sent = m.parentFolderId === sentFolder || fromAddr === me
-    const msg: Msg = { id: m.id, threadId: m.conversationId, date: new Date(m.receivedDateTime || m.sentDateTime || Date.now()), from: { name: m.from?.emailAddress?.name || '', email: fromAddr }, subject: m.subject || '', body: m.body?.contentType === 'text' ? m.body?.content || '' : htmlToText(m.body?.content || ''), html: m.body?.contentType === 'html' ? m.body?.content : undefined, sent, url: m.webLink }
-    const f = extract(msg); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: 'ol:' + (m.conversationId || m.id), src: 'outlook', url: m.webLink || '', subject: m.subject || '', date: when }] } as FactEv) }
+/** List every message received since `since` (newest first, up to 2,000), skip sent / deleted / junk / drafts, keep the ones that read like money mail, extract facts. */
+export async function olRun(s: Settings, seen: Set<string>, progress?: (t: string) => void, stats?: MailStats): Promise<FactEv[]> {
+  const since = sinceDate(s); const meJ = await olApi(s, 'me', { $select: 'mail,userPrincipalName' }); const me = String(meJ.mail || meJ.userPrincipalName || '').toLowerCase()
+  const skipFolders = new Set<string>()
+  for (const f of ['sentitems', 'deleteditems', 'junkemail', 'drafts', 'outbox']) { try { const id = (await olApi(s, 'me/mailFolders/' + f, { $select: 'id' })).id; if (id) skipFolders.add(id) } catch { /* folder may not exist */ } }
+  const facts: FactEv[] = []; const st: MailStats = stats || { scanned: 0, matched: 0 }; const done = new Set<string>()
+  const take = (list: OMsg[]) => { for (const m of list || []) {
+    if (done.has(m.id)) continue; done.add(m.id); st.scanned++
+    const when = (m.receivedDateTime || m.sentDateTime || '').slice(0, 10); if (!when || when < since || seen.has(m.id) || (m.parentFolderId && skipFolders.has(m.parentFolderId))) continue
+    const fromAddr = (m.from?.emailAddress?.address || '').toLowerCase(); if (fromAddr && fromAddr === me) continue
+    const html = m.body?.contentType === 'html' ? m.body?.content || '' : ''; const text = m.body?.contentType === 'text' ? m.body?.content || '' : htmlToText(html)
+    if (!isMoneyMail({ subject: m.subject, fromName: m.from?.emailAddress?.name, fromEmail: fromAddr, text })) continue
+    st.matched++
+    const msg: Msg = { id: m.id, threadId: m.conversationId, date: new Date(m.receivedDateTime || m.sentDateTime || Date.now()), from: { name: m.from?.emailAddress?.name || '', email: fromAddr }, subject: m.subject || '', body: text.slice(0, 12000), html: html ? html.slice(0, 60000) : undefined, sent: false, url: m.webLink }
+    const f = extract(msg); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: 'ol:' + (m.conversationId || m.id), src: 'outlook', url: m.webLink || '', subject: m.subject || '', date: when }] } as FactEv) } }
+  progress?.('Reading Outlook messages…')
+  let j = await olApi(s, 'me/messages', { $filter: `receivedDateTime ge ${since}T00:00:00Z`, $orderby: 'receivedDateTime desc', $select: OL_SEL, $top: '50' }); take(j.value); let pages = 1
+  while (j['@odata.nextLink'] && pages < 40) { progress?.(`Reading Outlook — ${st.scanned} messages checked, ${st.matched} look like bills or payments…`); j = await olApi(s, j['@odata.nextLink'], null); take(j.value); pages++ }
   return facts
 }
 export const mailLink = (e: { src?: string; url?: string; thread_id?: string }) => e.url || (e.src === 'outlook' ? 'https://outlook.live.com/mail/' : `https://mail.google.com/mail/#all/${e.thread_id || ''}`)

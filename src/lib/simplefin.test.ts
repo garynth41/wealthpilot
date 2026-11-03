@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import functionCopy from '../../supabase/functions/sync-simplefin/simplefin.ts?raw'
 import engineSource from './simplefin.ts?raw'
-import { guessKind, claimUrlFromToken, splitAccessUrl, redactUrl, syncWindow, guessLast4, normaliseResponse, autoMatch, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin'
+import { guessKind, claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, MAX_WINDOW_DAYS, guessLast4, normaliseResponse, autoMatch, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin'
 
 const b64 = (s: string) => btoa(s)
 const resp: SfinResponse = { errors: ['Connection to Chase failed at https://u:p@bridge.example/x'], accounts: [
@@ -30,11 +30,21 @@ describe('setup token and access URL', () => {
 })
 
 describe('window and account hints', () => {
-  it('first sync reads 89 days; later syncs overlap 5 days and never exceed 90', () => {
-    const now = 1_800_000_000
-    expect(syncWindow(null, now)).toEqual({ start: now - 89 * 86400, end: now })
-    expect(syncWindow(now - 86400, now)).toEqual({ start: now - 86400 - 5 * 86400, end: now })
-    expect(syncWindow(now - 200 * 86400, now).start).toBe(now - 89 * 86400)
+  it('never asks SimpleFIN for more than 45 days at once: first sync = two 44-day requests, later syncs overlap 5 days', () => {
+    const now = 1_800_000_000, D = 86400
+    const first = syncWindows(null, now)
+    expect(first).toEqual([{ start: now - 88 * D, end: now - 44 * D }, { start: now - 44 * D, end: now }])
+    expect(syncWindows(now - D, now)).toEqual([{ start: now - 6 * D, end: now }])
+    const long = syncWindows(now - 200 * D, now); expect(long[0].start).toBe(now - 88 * D); expect(long[long.length - 1].end).toBe(now)
+    for (const w of [...first, ...long, ...syncWindows(now - 50 * D, now)]) expect(w.end - w.start).toBeLessThanOrEqual(MAX_WINDOW_DAYS * D)
+    expect(syncWindows(now + D, now)).toEqual([{ start: now - 4 * D, end: now }])   // a last-sync time slightly in the future still re-reads the overlap
+  })
+  it('merges window replies: newest balance, each transaction once, each note once', () => {
+    const a = { id: 'A', name: 'Chk', balance: '10.00', transactions: [{ id: 't1', posted: 1, amount: '-1', description: 'x' }, { id: 't2', posted: 2, amount: '-2', description: 'y' }] }
+    const b = { id: 'A', name: 'Chk', balance: '12.50', transactions: [{ id: 't2', posted: 2, amount: '-2', description: 'y' }, { id: 't3', posted: 3, amount: '5', description: 'z' }] }
+    const m = mergeResponses([{ errors: ['note'], accounts: [a] }, { errors: ['note'], accounts: [b, { id: 'B', name: 'Sav', balance: '1' }] }])
+    expect(m.errors).toEqual(['note']); expect(m.accounts!.map(x => x.id)).toEqual(['A', 'B'])
+    expect(m.accounts![0].balance).toBe('12.50'); expect(m.accounts![0].transactions!.map(t => t.id)).toEqual(['t1', 't2', 't3'])
   })
   it('finds the last four digits in the usual spellings', () => {
     for (const [n, e] of [['Total Checking (x4821)', '4821'], ['Card ...7710', '7710'], ['Visa ending in 0042', '0042'], ['Savings *9911', '9911'], ['IRA 5555', '5555'], ['Savings', null], ['Account 12345678', null]] as const) expect(guessLast4(n), n).toBe(e)

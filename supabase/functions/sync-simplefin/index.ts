@@ -2,10 +2,10 @@
 //   connect    { household_id, setup_token }  owner: claims the access URL (stored server-side only), reads the account list, first sync
 //   sync       { household_id }               owner/editor: balances + new transactions for the accounts mapped on Bank Connections
 //   disconnect { household_id }               owner: forgets the access URL and the connection
-// Daily run: POST { action: "sync_all" } with header x-cron-secret equal to the CRON_SECRET function secret (see docs/BANK_SYNC.md for the pg_cron line).
+// Daily run: pg_cron (migration 0005) POSTs { action: "sync_all" } with header x-cron-secret = the Vault secret 'wealthpilot_cron_secret' (checked by cron_secret_ok).
 // The access URL contains the SimpleFIN credentials: it is only ever in sync_secrets (no browser access), never logged, never returned.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindow, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
+import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -16,13 +16,19 @@ type Trigger = 'manual' | 'daily' | 'connect'
 interface Result { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string }
 
 async function fetchAccounts(accessUrl: string, lastSyncUnix: number | null, withTxns: boolean): Promise<SfinResponse> {
-  const { base, authorization } = splitAccessUrl(accessUrl); const now = Math.floor(Date.now() / 1000); const w = syncWindow(lastSyncUnix, now)
-  const q = withTxns ? `?start-date=${w.start}&end-date=${w.end}` : '?balances-only=1'
-  const r = await fetch(`${base}/accounts${q}`, { headers: { Authorization: authorization, Accept: 'application/json' } })
-  if (r.status === 403) throw new Error('SimpleFIN refused the access URL (403) — the token may have been revoked; reconnect from Bank Connections')
-  if (r.status === 402) throw new Error('SimpleFIN says payment is required (402) — check your SimpleFIN Bridge subscription')
-  if (!r.ok) throw new Error(`SimpleFIN replied ${r.status}`)
-  return await r.json() as SfinResponse
+  const { base, authorization } = splitAccessUrl(accessUrl)
+  const get = async (q: string) => {
+    const r = await fetch(`${base}/accounts${q}`, { headers: { Authorization: authorization, Accept: 'application/json' } })
+    if (r.status === 403) throw new Error('SimpleFIN refused the access URL (403) — the token may have been revoked; reconnect from Bank Connections')
+    if (r.status === 402) throw new Error('SimpleFIN says payment is required (402) — check your SimpleFIN Bridge subscription')
+    if (!r.ok) throw new Error(`SimpleFIN replied ${r.status}`)
+    return await r.json() as SfinResponse
+  }
+  if (!withTxns) return await get('?balances-only=1')
+  // at most 44 days per request (SimpleFIN's recommended maximum is 45); the first sync takes two requests
+  const out: SfinResponse[] = []
+  for (const w of syncWindows(lastSyncUnix, Math.floor(Date.now() / 1000))) out.push(await get(`?start-date=${w.start}&end-date=${w.end}`))
+  return mergeResponses(out)
 }
 
 async function runSync(hh: string, trigger: Trigger): Promise<Result> {
@@ -79,8 +85,10 @@ Deno.serve(async (req) => {
 
   // scheduled daily run
   if (b.action === 'sync_all') {
-    const secret = Deno.env.get('CRON_SECRET')
-    if (!secret || req.headers.get('x-cron-secret') !== secret) return json(401, { error: 'Not allowed' })
+    // the caller secret lives in Vault (migration 0005); a CRON_SECRET function secret is still accepted for manual setups
+    const given = req.headers.get('x-cron-secret') || '', envSecret = Deno.env.get('CRON_SECRET')
+    const ok = (!!envSecret && given === envSecret) || (given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)
+    if (!ok) return json(401, { error: 'Not allowed' })
     const { data: conns } = await admin.from('sync_connections').select('household_id').eq('provider', 'simplefin')
     const out: Array<{ household_id: string; ok: boolean; message: string }> = []
     for (const c of conns || []) { const r = await runSync(c.household_id as string, 'daily'); out.push({ household_id: c.household_id as string, ok: r.ok, message: r.message }) }
