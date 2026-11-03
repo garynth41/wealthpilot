@@ -11,6 +11,7 @@ import { post } from '../lib/ledger'
 import { suggest, applySuggestion, planAutoCategorise, learnRule, upsertRule } from '../lib/rules'
 import { spanFor } from '../lib/periods'
 import { isLiability } from '../lib/accounts'
+import { DuplicatesReview, duplicateCounts } from './Duplicates'
 
 const SRC_PILL: Record<string, string> = { manual: 'info', email: 'wait', import: 'idle', recurring: 'good', statement: 'idle', adjustment: 'idle' }
 export function TransactionsPage() {
@@ -18,6 +19,7 @@ export function TransactionsPage() {
   const confirm = useConfirm(); const { open, close } = useModal()
   const [range, setRange] = useState<'period' | '30' | 'month' | '90' | 'all'>('period'); const [kind, setKind] = useState<'all' | TxnKind | 'uncat'>('all'); const [acct, setAcct] = useState('')
   const sp = spanFor(data, settings); const t = today()
+  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates), [data.transactions, data.duplicates]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
   const from = range === 'period' ? sp.start : range === '30' ? addDays(t, -29) : range === 'month' ? monthStart(curMonth()) : range === '90' ? addDays(t, -89) : '0000'
   const to = range === 'period' ? sp.end : '9999'
   const [params, setParams] = useSearchParams(); const ids = useMemo(() => new Set((params.get('ids') || '').split(',').filter(Boolean)), [params])
@@ -49,7 +51,8 @@ export function TransactionsPage() {
     <div className="slicers"><div className="slicer"><div className="l">Range</div><div className="opts">{([['period', sp.label], ['30', 'Last 30 days'], ['month', 'This month'], ['90', 'Last 90 days'], ['all', 'All']] as const).map(([v, l]) => <button key={v} className={range === v ? 'on' : ''} onClick={() => setRange(v)}>{l}</button>)}</div></div>
       <div className="slicer"><div className="l">Type</div><div className="opts">{([['all', 'All'], ['expense', 'Expenses'], ['income', 'Income'], ['transfer', 'Transfers'], ['uncat', 'Uncategorized']] as const).map(([v, l]) => <button key={v} className={kind === v ? 'on' : ''} onClick={() => setKind(v)}>{l}</button>)}</div></div>
       <div className="slicer"><div className="l">Account</div><div className="opts"><button className={acct ? '' : 'on'} onClick={() => setAcct('')}>All</button>{accts.map(a => <button key={a.id} className={acct === a.id ? 'on' : ''} onClick={() => setAcct(a.id)}>{acctName(a.id)}</button>)}</div></div></div>
-    <Card title="Ledger" hint="click any cell to edit · amounts are always positive, the type gives the direction" right={canEdit ? <Btn primary sm onClick={addForm}>+ Add transaction</Btn> : undefined}>
+    {(dupN.review > 0 || dupN.pendingAuto > 0) && <div className="banner" style={{ marginBottom: 12 }}>{dupN.pendingAuto > 0 ? `${dupN.pendingAuto} duplicate${dupN.pendingAuto === 1 ? '' : 's'} found` : ''}{dupN.pendingAuto > 0 && dupN.review > 0 ? ' · ' : ''}{dupN.review > 0 ? `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check` : ''} <button className="btn sm" onClick={openDups}>Review</button></div>}
+    <Card title="Ledger" hint="click any cell to edit · amounts are always positive, the type gives the direction · every transaction appears once: duplicates are merged" right={<span className="btnrow"><Btn sm onClick={openDups}>Duplicates{dupN.merged ? ` (${dupN.merged} merged)` : ''}</Btn>{canEdit && <Btn primary sm onClick={addForm}>+ Add transaction</Btn>}</span>}>
       <Table rows={rows} cols={cols} onChange={change} onDelete={del} editable={canEdit} rowCls={r => r.status === 'void' ? 'st-idle ex-off' : r.status === 'pending' ? 'st-wait' : r.kind === 'income' ? 'st-good' : r.kind === 'transfer' ? 'st-info' : !r.category_id ? 'st-warn' : ''} empty="No transactions in this range. Add one, or sync your email on the Email page." />
       <div className="note">Expenses reduce the account they were paid from (a card's balance owed goes up); income adds to it; a transfer moves money between accounts and a transfer to a card or loan is a debt payment. Budget actuals are the sum of expenses by category for the period, so categorize everything.</div>
     </Card>

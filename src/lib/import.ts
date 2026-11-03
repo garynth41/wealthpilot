@@ -109,7 +109,7 @@ export interface Proposed { row: ImportRow; dup: DupReason | null; match?: Trans
 const norm = (s?: string | null) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 /** Mark rows that already exist: same external_id (exact), or same account + amount + payee within ±3 days (likely the same transaction logged by hand or from email). */
 export function dedupe(d: Data, account: Account, rows: ImportRow[]): Proposed[] {
-  const byExt = new Map(d.transactions.filter(t => t.external_id).map(t => [t.external_id!, t])); const seenIds = new Set<string>()
+  const byExt = new Map([...d.transactions, ...(d.duplicates || [])].filter(t => t.external_id).map(t => [t.external_id!, t])); const seenIds = new Set<string>()   // merged duplicates still count as imported
   const existing = d.transactions.filter(t => t.status !== 'void' && (t.account_id === account.id || t.to_account_id === account.id))
   return rows.map(row => {
     const txn: Partial<Transaction> = { date: row.date, kind: row.kind, amount: row.amount, account_id: account.id, payee: row.payee || null, memo: row.memo || null, tags: [], status: 'cleared', source: 'import', external_id: row.external_id || null, exclude_from_budget: false }

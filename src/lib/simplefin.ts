@@ -103,14 +103,15 @@ export function autoMatch(sf: SfinAccount[], locals: Local[]): Record<string, st
 
 /** A reasonable WealthPilot account type for a bank account that has no match yet, from its name — the owner can change it afterwards. */
 export function guessKind(name: string, balance = 0): string {
-  const n = String(name || '').toLowerCase()
+  // drop the account's last four digits first — "Checking (4019)" must not read as a 401(k)
+  const n = String(name || '').toLowerCase().replace(/\(?\s*(?:x+|\*+|…|\.{2,}|#|ending in\s*)?\d{4}\s*\)?\s*$/, '').trim()
   if (/mortgage/.test(n)) return 'mortgage'
   if (/auto|car loan|vehicle/.test(n) && /loan|financ/.test(n)) return 'auto_loan'
   if (/student/.test(n)) return 'student_loan'
   if (/line of credit|heloc/.test(n)) return 'line_of_credit'
   if (/\bloan\b/.test(n)) return 'loan'
   if (/credit|card|visa|mastercard|amex|discover|freedom|sapphire|platinum|rewards|cash\+?/.test(n) && !/saving|checking/.test(n)) return 'credit_card'
-  if (/401|403|ira\b|roth|retire|pension/.test(n)) return 'retirement'
+  if (/\b40[13]\s*\(?[kb]\b|\b457\s*\(?b|\bira\b|\broth\b|retire|pension|\btsp\b/.test(n)) return 'retirement'
   if (/brokerage|invest|trading|stock|etf/.test(n)) return 'investment'
   if (/sav|money market|\bmm\b|high.?yield|\bcd\b/.test(n)) return 'savings'
   if (/check|chk|spending|everyday|debit|total/.test(n)) return 'checking'

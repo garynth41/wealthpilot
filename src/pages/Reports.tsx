@@ -33,7 +33,7 @@ export function ReportsPage() {
   return <>
     <Card span={12} className="noprint" title="Build a report" right={<span className="btnrow"><Btn primary sm onClick={pdf} title="Opens the print dialog — choose “Save as PDF”">PDF</Btn><Btn sm onClick={excel}>Excel</Btn><Btn sm onClick={csv}>CSV</Btn></span>}>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <Field label="Report"><Seg value={kind} options={[['month', 'Monthly'], ['quarter', 'Quarterly'], ['year', 'Annual']]} onChange={setK} /></Field>
+        <Field label="Report"><Seg value={kind} options={[['month', 'Monthly'], ['quarter', 'Quarterly'], ['year', 'Annual / year to date']]} onChange={setK} /></Field>
         <Field label="Period"><select className="inp" value={anchor} onChange={e => setAnchor(e.target.value)} style={{ minWidth: 180 }}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
         <Field label="Include">{<div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>{SECTIONS.map(([id, l]) => <label key={id}><input type="checkbox" checked={on.includes(id)} onChange={e => setOn(x => e.target.checked ? SECTIONS.map(s => s[0]).filter(k => x.includes(k) || k === id) : x.filter(k => k !== id))} /> {l}</label>)}</div>}</Field>
       </div>

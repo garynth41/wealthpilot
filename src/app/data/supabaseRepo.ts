@@ -67,6 +67,7 @@ export class SupabaseRepo implements Repo {
     return { connection: (cn.data as SyncConnection | null) || null, log: (lg.data || []) as SyncLogRow[], available: true } }
   async syncConnect(setupToken: string) { await this.syncCall({ action: 'connect', setup_token: setupToken }) }
   async syncNow() { return await this.syncCall<SyncResult>({ action: 'sync' }) }
+  async syncBackfill(from: string) { return await this.syncCall<SyncResult>({ action: 'backfill', from }) }
   async syncSetMap(map: Record<string, string>) { const { error } = await sb().from('sync_connections').update({ account_map: map }).eq('household_id', this.hh); if (error) throw error }
   async syncDisconnect() { await this.syncCall({ action: 'disconnect' }) }
   async removeMember(userId: string) { const { error } = await sb().from('household_members').delete().eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }

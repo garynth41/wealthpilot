@@ -4,7 +4,7 @@ import { useStore } from '../app/store'
 import type { SyncStatus } from '../app/data/types'
 import { Card, Btn, Note, Pill, Field, useConfirm } from '../components/ui'
 import { autoMatch, guessKind, balanceFor } from '../lib/simplefin'
-import { today } from '../lib/dates'
+import { today, fmtDY } from '../lib/dates'
 import type { SyncConnection } from '../app/data/types'
 import { fm2 } from '../lib/money'
 import { acctLabel } from '../lib/accounts'
@@ -59,9 +59,12 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     await repo!.syncSetMap(final); return final
   }
   const syncClick = () => run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncNow(); await refresh(); await load(); useStore.getState().toast(r.message) })
+  const ytdFrom = today().slice(0, 4) + '-01-01'
+  const backfillClick = async () => { if (!(await confirm(`Load every transaction SimpleFIN still has back to ${fmtDY(ytdFrom)}? SimpleFIN keeps about 90 days, so older months usually need a statement file (CSV / QFX) from your bank — the coverage table below shows which. Duplicates are merged automatically. This uses a few of SimpleFIN's roughly 24 requests a day.`, 'Load history'))) return; run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncBackfill(ytdFrom); await refresh(); await load(); useStore.getState().toast(r.message) }) }
   const why = mappedCount === 0 ? 'Choose where at least one bank account should go (or create it from the bank) first.' : ''
   return <Card span={12} title="Automatic bank sync (SimpleFIN)" hint="balances and new transactions once a day, plus on demand" right={<span className="btnrow">
     {canEdit && <Btn primary sm disabled={busy || mappedCount === 0} title={why} onClick={syncClick}>{busy ? 'Working…' : dirty ? 'Save matching & sync now' : 'Sync now'}</Btn>}
+    {isOwner && <Btn sm disabled={busy || mappedCount === 0} title={why || 'Re-read history back to January 1'} onClick={backfillClick}>Load year-to-date history</Btn>}
     {isOwner && <Btn sm danger onClick={async () => { if (await confirm('Disconnect the bank? The saved key is deleted; imported transactions stay.', 'Disconnect')) run(async () => { await repo!.syncDisconnect(); await load() }, 'Disconnected') }}>Disconnect</Btn>}</span>}>
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
       <Pill cls={c.status === 'connected' ? 'good' : 'crit'}>{c.status === 'connected' ? 'Connected' : 'Needs attention'}</Pill>

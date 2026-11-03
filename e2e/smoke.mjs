@@ -129,6 +129,11 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/email'); await p.waitForTimeout(500); await p.click('button:has-text("Set up Gmail")'); await p.waitForTimeout(300)
     ok(await p.locator('.modal :text("Google OAuth client ID")').count() > 0, 'Set up Gmail opens the email capture settings instead of an error'); await p.click('.modal button:has-text("Cancel")'); await p.waitForTimeout(200)
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500)
+    // 0.13.0: duplicates review + year-to-date coverage
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500); await p.click('button:has-text("Duplicates")'); await p.waitForTimeout(300)
+    ok(/Needs your decision/.test(await p.locator('.modal').textContent()) && /Merged — hidden from every total/.test(await p.locator('.modal').textContent()), 'Transactions → Duplicates opens the review with decisions and undo'); await p.click('.modal button:has-text("Close")'); await p.waitForTimeout(200)
+    await p.goto('http://localhost:4173/#/connections'); await p.waitForTimeout(500); ok(/Year-to-date coverage \(\d{4}\)/.test(await p.locator('main').textContent()) && /90 days/.test(await p.locator('main').textContent()), 'Bank Connections shows year-to-date coverage per account and month')
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500)
     // 0.11.2: email-capture settings live in Settings → General, and dialogs/toasts stay readable in both themes
     await p.click('.seg button:has-text("General")'); await p.waitForTimeout(300)
     ok(/Email capture \(Gmail \/ Outlook\)/.test(await p.locator('main').textContent()), 'Settings → General has the Email capture card')

@@ -32,6 +32,15 @@ export function periodRange(kind: ReportKind, anchor: string, asOf = today()) {
 
 const pctChange = (cur: number, prev: number | null | undefined) => (prev != null && prev !== 0 ? round2((cur - prev) / Math.abs(prev)) : null)
 /** Build the whole report. Spending and cash flow come from transactions; net worth from snapshots + today; investments and tax are point-in-time (today / the report's tax year). */
+/** Warn when the period starts before the first transaction on file — a YTD total built on 3 months of data is not a YTD total. */
+export function coverageNotes(d: Data, from: string, to: string, prevFrom: string): string[] {
+  const dates = d.transactions.filter(t => t.status !== 'void' && !t.duplicate_of).map(t => t.date).sort(); const first = dates[0]
+  const out: string[] = []
+  if (!first) return ['No transactions on file for this period yet.']
+  if (first > addDays(from, 3) && first <= to) out.push(`Incomplete: transactions on file start ${first}, so ${from} to ${addDays(first, -1)} is missing from these totals. Import bank statements for those dates (Bank Connections → Year-to-date coverage shows which accounts).`)
+  if (first > addDays(prevFrom, 3)) out.push(`The comparison period (${prevFrom} onward) has little or no data on file, so the change figures are not meaningful yet.`)
+  return out
+}
 export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: string, sections: SectionId[] = ['summary', 'spending', 'cashflow', 'networth', 'investments', 'tax'], asOf = today()): Report {
   const r = periodRange(kind, anchor, asOf); const cur = rangeStat(d, r.from, r.to), prev = rangeStat(d, r.prevFrom, r.prevTo)
   const out: ReportSection[] = []
@@ -41,7 +50,7 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
     { label: 'Income', value: round2(cur.income), fmt: 'money', prev: round2(prev.income) }, { label: 'Spending', value: round2(cur.spend), fmt: 'money', prev: round2(prev.spend) },
     { label: 'Debt payments', value: round2(cur.debt), fmt: 'money', prev: round2(prev.debt) }, { label: 'Net (kept)', value: net, fmt: 'money', prev: prevNet },
     ...(rate != null ? [{ label: 'Savings rate', value: rate, fmt: 'pct' as const, prev: prevRate }] : []), { label: 'Net worth today', value: round2(netWorth(d).net), fmt: 'money' as const } ],
-    notes: [`${r.label}: ${r.from} to ${r.to}; compared with ${r.prevFrom} to ${r.prevTo}.`, ...(cur.income > 0 && net < 0 ? [`Spending and debt payments exceeded income by ${Math.abs(net).toFixed(2)}.`] : [])] })
+    notes: [`${r.label}: ${r.from} to ${r.to}; compared with ${r.prevFrom} to ${r.prevTo}.`, ...coverageNotes(d, r.from, r.to, r.prevFrom), ...(cur.income > 0 && net < 0 ? [`Spending and debt payments exceeded income by ${Math.abs(net).toFixed(2)}.`] : [])] })
 
   if (sections.includes('spending')) {
     const cats = Object.keys({ ...cur.byCat, ...prev.byCat }).map(name => { const c = d.categories.find(x => x.name === name); const a = round2(cur.byCat[name] || 0), b = round2(prev.byCat[name] || 0); return [c?.group || '', name, a, b, round2(a - b), pctChange(a, b) ?? ''] as Array<string | number> })

@@ -2,9 +2,13 @@
 //   connect    { household_id, setup_token }  owner: claims the access URL (stored server-side only), reads the account list, first sync
 //   sync       { household_id }               owner/editor: balances + new transactions for the accounts mapped on Bank Connections
 //   disconnect { household_id }               owner: forgets the access URL and the connection
+//   backfill   { household_id, from }         owner: re-read history back to `from` (SimpleFIN keeps about 90 days), then merge duplicates
+//   dedupe     { household_id }               owner/editor: merge clear-cut duplicate transactions now (see dedupe.ts)
 // Daily run: pg_cron (migration 0005) POSTs { action: "sync_all" } with header x-cron-secret = the Vault secret 'wealthpilot_cron_secret' (checked by cron_secret_ok).
+// Maintenance (pg_cron secret): { action: "maintenance_all", backfill_from?: "YYYY-MM-DD", dry_run?: true } — backfill (optional) and de-duplicate every household; dry_run only previews the merge plan.
 // The access URL contains the SimpleFIN credentials: it is only ever in sync_secrets (no browser access), never logged, never returned.
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { planDedupe, type DTxn } from './dedupe.ts'
 import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
@@ -12,10 +16,10 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const url = Deno.env.get('SUPABASE_URL')!, anon = Deno.env.get('SUPABASE_ANON_KEY')!, service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const admin = createClient(url, service, { auth: { persistSession: false } })
 
-type Trigger = 'manual' | 'daily' | 'connect'
-interface Result { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string }
+type Trigger = 'manual' | 'daily' | 'connect' | 'backfill'
+interface Result { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; merged: number; review: number; earliest: Record<string, string>; message: string }
 
-async function fetchAccounts(accessUrl: string, lastSyncUnix: number | null, withTxns: boolean): Promise<SfinResponse> {
+async function fetchAccounts(accessUrl: string, lastSyncUnix: number | null, withTxns: boolean, backDays?: number): Promise<SfinResponse> {
   const { base, authorization } = splitAccessUrl(accessUrl)
   const get = async (q: string) => {
     const r = await fetch(`${base}/accounts${q}`, { headers: { Authorization: authorization, Accept: 'application/json' } })
@@ -27,33 +31,57 @@ async function fetchAccounts(accessUrl: string, lastSyncUnix: number | null, wit
   if (!withTxns) return await get('?balances-only=1')
   // at most 44 days per request (SimpleFIN's recommended maximum is 45); the first sync takes two requests
   const out: SfinResponse[] = []
-  for (const w of syncWindows(lastSyncUnix, Math.floor(Date.now() / 1000))) out.push(await get(`?start-date=${w.start}&end-date=${w.end}`))
+  const now = Math.floor(Date.now() / 1000); const windows = backDays ? syncWindows(null, now, 0, backDays) : syncWindows(lastSyncUnix, now)
+  for (const w of windows) out.push(await get(`?start-date=${w.start}&end-date=${w.end}`))
   return mergeResponses(out)
 }
 
-async function runSync(hh: string, trigger: Trigger): Promise<Result> {
+const TXN_COLS = 'id, date, kind, amount, account_id, to_account_id, payee, memo, source, external_id, status, category_id, recurring_id, goal_id, pay_schedule_id, email_item_id, duplicate_of, dedupe_ok, created_at'
+type Brief = { date: string; amount: number; kind: string; payee: string | null; source: string | null; account_id: string | null }
+/** Merge every clear-cut duplicate in the household (same rules as the app). Returns merged rows and pairs left for review; dryRun only previews. */
+async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: number; review: number; preview?: unknown }> {
+  const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
+  const { data, error } = await admin.from('transactions').select(TXN_COLS).eq('household_id', hh).gte('date', since).limit(20000)
+  if (error) throw new Error('Reading transactions for de-duplication failed: ' + error.message)
+  const rows = (data || []).map(t => ({ ...t, amount: Number(t.amount) })) as DTxn[]
+  const plan = planDedupe(rows); let merged = 0
+  if (dryRun) {
+    const byId = new Map(rows.map(t => [t.id, t])); const brief = (id: string): Brief => { const t = byId.get(id)!; return { date: t.date, amount: t.amount, kind: t.kind, payee: t.payee ?? null, source: t.external_id?.startsWith('sfin:') ? 'bank' : t.source ?? null, account_id: t.account_id ?? t.to_account_id ?? null } }
+    return { merged: plan.auto.reduce((n, g) => n + g.dups.length, 0), review: plan.review.length, preview: { auto: plan.auto.map(g => ({ keep: brief(g.keeper), merge: g.dups.map(brief), confidence: g.confidence, reason: g.reason, patch: g.patch })), review: plan.review.slice(0, 60).map(p => ({ a: brief(p.a), b: brief(p.b), reason: p.reason })) } }
+  }
+  for (const g of plan.auto) {
+    if (Object.keys(g.patch).length) { const { error: e1 } = await admin.from('transactions').update(g.patch).eq('id', g.keeper).eq('household_id', hh); if (e1) throw new Error('Merging duplicates failed: ' + e1.message) }
+    const { error: e2 } = await admin.from('transactions').update({ duplicate_of: g.keeper }).in('id', g.dups).eq('household_id', hh); if (e2) throw new Error('Merging duplicates failed: ' + e2.message)
+    merged += g.dups.length
+  }
+  return { merged, review: plan.review.length }
+}
+
+async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise<Result> {
   const started = new Date().toISOString()
   const fail = async (message: string): Promise<Result> => {
     const m = redactUrl(message).slice(0, 400)
     await admin.from('sync_connections').update({ status: 'error', last_error: m }).eq('household_id', hh)
     await admin.from('sync_log').insert({ household_id: hh, started_at: started, finished_at: new Date().toISOString(), trigger, ok: false, message: m })
-    return { ok: false, accounts: 0, added: 0, skipped: 0, unmapped: 0, message: m }
+    return { ok: false, accounts: 0, added: 0, skipped: 0, unmapped: 0, merged: 0, review: 0, earliest: {}, message: m }
   }
   try {
     const { data: sec } = await admin.from('sync_secrets').select('access_url').eq('household_id', hh).maybeSingle()
     const { data: conn } = await admin.from('sync_connections').select('*').eq('household_id', hh).maybeSingle()
-    if (!sec || !conn) return { ok: false, accounts: 0, added: 0, skipped: 0, unmapped: 0, message: 'Not connected' }
+    if (!sec || !conn) return { ok: false, accounts: 0, added: 0, skipped: 0, unmapped: 0, merged: 0, review: 0, earliest: {}, message: 'Not connected' }
     const last = conn.last_sync_at ? Math.floor(new Date(conn.last_sync_at).getTime() / 1000) : null
-    const resp = await fetchAccounts(sec.access_url, last, true)
+    const backDays = fromDate ? Math.min(400, Math.max(1, Math.ceil((Date.now() - Date.parse(fromDate + 'T00:00:00Z')) / 86400000))) : undefined
+    const resp = await fetchAccounts(sec.access_url, last, true, backDays)
     const { accounts: bank, errors } = normaliseResponse(resp)
     const map = (conn.account_map || {}) as Record<string, string>
     const { data: locals } = await admin.from('accounts').select('id, kind').eq('household_id', hh)
     const kindOf = new Map((locals || []).map(a => [a.id as string, a.kind as string]))
-    let added = 0, skipped = 0, unmapped = 0, synced = 0
+    let added = 0, skipped = 0, unmapped = 0, synced = 0; const earliest: Record<string, string> = {}
     for (const sf of bank) {
       const localId = map[sf.id]; const kind = localId ? kindOf.get(localId) : undefined
       if (!localId || !kind) { unmapped++; continue }
       synced++
+      const first = sf.txns.map(t => t.date).sort()[0]; if (first) earliest[localId] = first
       const incoming = toNewTxns(sf, { id: localId, kind })
       if (incoming.length) {
         const dates = incoming.map(t => t.date).sort()
@@ -70,17 +98,19 @@ async function runSync(hh: string, trigger: Trigger): Promise<Result> {
       await admin.from('accounts').update({ balance: balanceFor(sf, kind), balance_as_of: sf.balanceDate }).eq('id', localId)
     }
     const discovered = bank.map(a => ({ id: a.id, name: a.name, org: a.org, last4: a.last4, balance: a.balance }))
-    const message = [`${synced} account${synced === 1 ? '' : 's'} synced`, `${added} new transaction${added === 1 ? '' : 's'}`, skipped ? `${skipped} already present` : '', unmapped ? `${unmapped} account${unmapped === 1 ? '' : 's'} not mapped` : '', errors.length ? `bank notes: ${errors.join('; ')}` : ''].filter(Boolean).join(' · ')
+    const dd = await dedupeHousehold(hh)
+    const oldest = Object.values(earliest).sort()[0]
+    const message = [`${synced} account${synced === 1 ? '' : 's'} synced`, `${added} new transaction${added === 1 ? '' : 's'}`, skipped ? `${skipped} already present` : '', dd.merged ? `${dd.merged} duplicate${dd.merged === 1 ? '' : 's'} merged` : '', dd.review ? `${dd.review} possible duplicate${dd.review === 1 ? '' : 's'} to review` : '', fromDate && oldest ? `history from ${fromDate} requested; the bank feed reaches back to ${oldest}` : '', unmapped ? `${unmapped} account${unmapped === 1 ? '' : 's'} not mapped` : '', errors.length ? `bank notes: ${errors.join('; ')}` : ''].filter(Boolean).join(' · ')
     await admin.from('sync_connections').update({ status: 'connected', last_error: errors.length ? errors.join('; ').slice(0, 400) : null, last_sync_at: new Date().toISOString(), discovered }).eq('household_id', hh)
     await admin.from('sync_log').insert({ household_id: hh, started_at: started, finished_at: new Date().toISOString(), trigger, ok: true, accounts: synced, added, skipped, message })
-    return { ok: true, accounts: synced, added, skipped, unmapped, message }
+    return { ok: true, accounts: synced, added, skipped, unmapped, merged: dd.merged, review: dd.review, earliest, message }
   } catch (e) { return await fail((e as Error).message) }
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json(405, { error: 'POST only' })
-  let b: { action?: string; household_id?: string; setup_token?: string }
+  let b: { action?: string; household_id?: string; setup_token?: string; from?: string; backfill_from?: string; dry_run?: boolean }
   try { b = await req.json() } catch { return json(400, { error: 'Bad JSON' }) }
 
   // scheduled daily run
@@ -92,6 +122,18 @@ Deno.serve(async (req) => {
     const { data: conns } = await admin.from('sync_connections').select('household_id').eq('provider', 'simplefin')
     const out: Array<{ household_id: string; ok: boolean; message: string }> = []
     for (const c of conns || []) { const r = await runSync(c.household_id as string, 'daily'); out.push({ household_id: c.household_id as string, ok: r.ok, message: r.message }) }
+    return json(200, { ok: true, results: out })
+  }
+  if (b.action === 'maintenance_all') {
+    const given = req.headers.get('x-cron-secret') || ''
+    if (!(given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)) return json(401, { error: 'Not allowed' })
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(String(b.backfill_from || '')) ? String(b.backfill_from) : undefined, dry = b.dry_run === true
+    const { data: conns } = await admin.from('sync_connections').select('household_id').eq('provider', 'simplefin'); const connected = new Set((conns || []).map(c => c.household_id as string))
+    const { data: hhs } = await admin.from('households').select('id')
+    const out: Array<Record<string, unknown>> = []
+    for (const h of hhs || []) { const id = h.id as string
+      try { if (dry) { out.push({ household_id: id, ok: true, ...(await dedupeHousehold(id, true)) }) } else if (from && connected.has(id)) { const r = await runSync(id, 'backfill', from); out.push({ household_id: id, ok: r.ok, message: r.message, earliest: r.earliest }) } else { const d = await dedupeHousehold(id); out.push({ household_id: id, ok: true, ...d }) } }
+      catch (e) { out.push({ household_id: id, ok: false, message: (e as Error).message }) } }
     return json(200, { ok: true, results: out })
   }
 
@@ -128,6 +170,15 @@ Deno.serve(async (req) => {
   if (b.action === 'sync') {
     if (!canEdit) return json(403, { error: 'Your access is read-only' })
     const r = await runSync(hh, 'manual'); return json(r.ok ? 200 : 502, r)
+  }
+  if (b.action === 'backfill') {
+    if (!isOwner) return json(403, { error: 'Only an owner can load bank history' })
+    const from = String(b.from || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return json(400, { error: 'from must be a date (YYYY-MM-DD)' })
+    const r = await runSync(hh, 'backfill', from); return json(r.ok ? 200 : 502, r)
+  }
+  if (b.action === 'dedupe') {
+    if (!canEdit) return json(403, { error: 'Your access is read-only' })
+    try { return json(200, { ok: true, ...(await dedupeHousehold(hh)) }) } catch (e) { return json(500, { error: (e as Error).message }) }
   }
   if (b.action === 'disconnect') {
     if (!isOwner) return json(403, { error: 'Only an owner can disconnect' })

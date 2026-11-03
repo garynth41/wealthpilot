@@ -21,6 +21,8 @@ export interface Repo {
   syncStatus(): Promise<SyncStatus>
   syncConnect(setupToken: string): Promise<void>
   syncNow(): Promise<SyncResult>
+  /** re-read bank history back to `from` (SimpleFIN keeps about 90 days); duplicates are merged afterwards */
+  syncBackfill(from: string): Promise<SyncResult>
   syncSetMap(map: Record<string, string>): Promise<void>
   syncDisconnect(): Promise<void>
   exportJson(): Promise<Record<string, unknown>>

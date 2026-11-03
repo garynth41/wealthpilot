@@ -88,6 +88,7 @@ export class MemoryRepo implements Repo {
     this.sim.last = new Date().toISOString(); const message = `${accounts} accounts synced · ${added} new transactions${skipped ? ` · ${skipped} already present` : ''}`
     this.sim.log = [{ id: this.sim.log.length + 1, started_at: this.sim.last, finished_at: this.sim.last, trigger: 'manual' as const, ok: true, accounts, added, skipped, message }, ...this.sim.log]; this.persist(); this.emit()
     return { ok: true, accounts, added, skipped, unmapped: 0, message } }
+  async syncBackfill(from: string): Promise<SyncResult> { const r = await this.syncNow(); return { ...r, message: r.message + ` · history from ${from} requested; the simulated bank only has today` } }
   async syncSetMap(map: Record<string, string>): Promise<void> { if (this.simOn()) this.sim.map = map }
   async syncDisconnect(): Promise<void> { this.sim = { connected: false, map: {}, last: null, log: [] } }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }

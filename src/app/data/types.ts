@@ -52,6 +52,10 @@ export interface Transaction extends Stamped {
   status: 'pending' | 'cleared' | 'void'; source: TxnSource
   recurring_id?: UUID | null; pay_schedule_id?: UUID | null; goal_id?: UUID | null; email_item_id?: UUID | null; external_id?: string | null
   exclude_from_budget: boolean
+  /** set when this row is a duplicate of another transaction (the keeper): it stays in the database but out of every total */
+  duplicate_of?: UUID | null
+  /** the owner said this row is not a duplicate — never merge it automatically */
+  dedupe_ok?: boolean
 }
 
 export type RecurringKind = 'bill' | 'subscription' | 'debt_payment' | 'income' | 'transfer' | 'savings'
@@ -102,9 +106,9 @@ export interface Member { household_id: UUID; user_id: UUID; email: string; disp
 export interface Invite { id: UUID; household_id: UUID; email: string; role: Role; read_only?: boolean; modules?: string[] | null; display_name?: string | null; created_at?: string; accepted_at?: string | null; temp_password_issued_at?: string | null; sent_at?: string | null }
 /** Automatic bank sync (SimpleFIN) — the connection row and its recent runs. The access URL itself never reaches the browser. */
 export interface SyncConnection { household_id: UUID; provider: string; status: 'connected' | 'error'; last_sync_at: string | null; last_error: string | null; account_map: Record<string, string>; discovered: Array<{ id: string; name: string; org: string; last4: string | null; balance: number }> }
-export interface SyncLogRow { id: number; started_at: string; finished_at: string | null; trigger: 'manual' | 'daily' | 'connect'; ok: boolean; accounts: number; added: number; skipped: number; message: string | null }
+export interface SyncLogRow { id: number; started_at: string; finished_at: string | null; trigger: 'manual' | 'daily' | 'connect' | 'backfill'; ok: boolean; accounts: number; added: number; skipped: number; message: string | null }
 export interface SyncStatus { connection: SyncConnection | null; log: SyncLogRow[]; available: boolean }
-export interface SyncResult { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string }
+export interface SyncResult { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string; merged?: number; review?: number; earliest?: Record<string, string> }
 /** What an owner asks for when inviting; the server issues the temporary password and returns it once. */
 export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; subject: string; body: string }
 export interface InviteResult { user_id: UUID; existing: boolean; temp_password: string | null; sent: boolean; send_error?: string | null; can_send: boolean }
@@ -144,6 +148,8 @@ export interface Data {
   transactions: Transaction[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
   planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]
   emailLedger: EmailLedgerRow[]; members: Member[]; invites: Invite[]; activity: ActivityRow[]
+  /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
+  duplicates: Transaction[]
 }
-export const emptyData = (): Data => ({ accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ duplicates: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

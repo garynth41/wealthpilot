@@ -7,6 +7,11 @@ import { SupabaseRepo } from './data/supabaseRepo'
 import { hasSupabase, sb } from './supabase'
 import { LS, APP_VERSION, cmpVer } from './config'
 import { canViewPath } from '../lib/access'
+import { planDedupe, type DTxn } from '../lib/dedupe'
+import type { Transaction } from './data/types'
+
+/** Merged duplicates live in data.duplicates, everything else in data.transactions — so every page and engine sees each transaction once. */
+export const splitDups = (d: Data): Data => { const all = [...d.transactions, ...(d.duplicates || [])]; return { ...d, transactions: all.filter(t => !t.duplicate_of), duplicates: all.filter(t => !!t.duplicate_of) } }
 
 export type Mode = 'db' | 'demo' | null
 export interface Toast { id: number; text: string; err?: boolean }
@@ -32,10 +37,16 @@ interface State {
   saveSettings: (patch: Partial<Settings>) => Promise<void>
   toast: (text: string, err?: boolean) => void
   guarded: <T>(fn: () => Promise<T>, ok?: string) => Promise<T | undefined>
+  /** merge every clear-cut duplicate (see lib/dedupe.ts); returns how many rows were merged */
+  autoDedupe: (quiet?: boolean) => Promise<number>
+  mergeDuplicates: (keeper: string, dups: string[], patch?: Partial<Transaction>) => Promise<void>
+  restoreDuplicate: (id: string) => Promise<void>
+  notDuplicates: (ids: string[]) => Promise<void>
 }
 
 /** Captured before the Supabase client reads and clears the URL: a password-reset link lands with #access_token=…&type=recovery. */
 const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search)
+let deduping = false
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
@@ -85,11 +96,31 @@ export const useStore = create<State>((set, get) => ({
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
-    try { const r = await repo.loadAll(); set({ household: r.household, data: r.data, role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now() }) }
+    try { const r = await repo.loadAll(); set({ household: r.household, data: splitDups(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now() }); if (get().canEdit()) void get().autoDedupe().catch(() => {}) }
     catch (e) { set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
-  async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); return r },
-  async insertMany(coll, rows) { const repo = need(get); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); return r },
+  async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async insertMany(coll, rows) { const repo = need(get); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async mergeDuplicates(keeper, dups, patch) {
+    const repo = need(get)
+    if (patch && Object.keys(patch).length) { const k = await repo.update('transactions', keeper, patch); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) }
+    for (const id of dups) { const d = await repo.update('transactions', id, { duplicate_of: keeper }); set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) }
+  },
+  async restoreDuplicate(id) {
+    const repo = need(get); const r = await repo.update('transactions', id, { duplicate_of: null, dedupe_ok: true })
+    set(s => ({ data: { ...s.data, duplicates: s.data.duplicates.filter(t => t.id !== id), transactions: [...s.data.transactions.filter(t => t.id !== id), r] } }))
+  },
+  async notDuplicates(ids) { for (const id of ids) await get().update('transactions', id, { dedupe_ok: true }) },
+  async autoDedupe(quiet) {
+    if (deduping || !get().canEdit() || !get().repo) return 0
+    deduping = true
+    try {
+      const plan = planDedupe(get().data.transactions as unknown as DTxn[]); let n = 0
+      for (const g of plan.auto) { await get().mergeDuplicates(g.keeper, g.dups, g.patch as Partial<Transaction>); n += g.dups.length }
+      if (n && !quiet) get().toast(`Merged ${n} duplicate transaction${n === 1 ? '' : 's'} — one copy kept (the bank's when there is one). Review or undo in Transactions → Duplicates.`)
+      return n
+    } finally { deduping = false }
+  },
   async update(coll, id, patch) {
     const repo = need(get); const before = get().data[coll] as unknown as Array<{ id: string }>
     set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? { ...x, ...patch } : x) } }))   // optimistic

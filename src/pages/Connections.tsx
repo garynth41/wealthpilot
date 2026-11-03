@@ -10,6 +10,7 @@ import { fm2, fmtMoney, round2 } from '../lib/money'
 import { fmtD, today, ago } from '../lib/dates'
 import { isLiability, acctLabel } from '../lib/accounts'
 import { BankSyncCard, syncKpi } from './BankSync'
+import { YtdCoverageCard } from './Coverage'
 import type { SyncStatus } from '../app/data/types'
 
 type Stage = 'pick' | 'map' | 'review' | 'done'
@@ -56,6 +57,7 @@ export function ConnectionsPage() {
     </div>
     <div className="grid g12">
       <BankSyncCard onKpi={setSync} />
+      <YtdCoverageCard />
       <Card span={7} title="Import a statement" hint="CSV, OFX or QFX from your bank or card — duplicates are detected before anything is written">
         {!canEdit && <Banner cls="warn">You have read-only access — imports are disabled.</Banner>}
         {stage === 'pick' && <>

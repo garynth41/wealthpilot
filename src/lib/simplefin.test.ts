@@ -75,7 +75,7 @@ describe('normalise, match and map', () => {
 
 describe('account type guess', () => {
   it('picks a sensible type from the bank account name, falling back on the sign of the balance', () => {
-    for (const [n, e] of [['Total Checking (x4821)', 'checking'], ['Chase Freedom Unlimited', 'credit_card'], ['Ally Online Savings', 'savings'], ['Fidelity 401(k)', 'retirement'], ['Roth IRA', 'retirement'], ['Schwab Brokerage', 'investment'], ['Auto Loan', 'auto_loan'], ['Home Mortgage', 'mortgage'], ['Student Loan', 'student_loan'], ['Platinum Card', 'credit_card'], ['Joint Spending', 'checking']] as const) expect(guessKind(n), n).toBe(e)
+    for (const [n, e] of [['Total Checking (x4821)', 'checking'], ['Chase Freedom Unlimited', 'credit_card'], ['Ally Online Savings', 'savings'], ['Fidelity 401(k)', 'retirement'], ['Roth IRA', 'retirement'], ['Schwab Brokerage', 'investment'], ['Auto Loan', 'auto_loan'], ['Home Mortgage', 'mortgage'], ['Student Loan', 'student_loan'], ['Platinum Card', 'credit_card'], ['Joint Spending', 'checking'], ['Gary Checking (4019)', 'checking'], ['Gary Premier Savings (4958)', 'savings'], ['Adv Plus Banking- 0224 (0224)', 'checking'], ['Fidelity 403(b)', 'retirement'], ['Rollover IRA x4011', 'retirement'], ['Brokerage ...4013', 'investment']] as const) expect(guessKind(n), n).toBe(e)
     expect(guessKind('Account 7', -300)).toBe('credit_card'); expect(guessKind('Account 7', 300)).toBe('checking')
   })
 })
