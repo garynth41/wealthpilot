@@ -6,7 +6,7 @@ import { Card, KPI, Btn, Pill, Note, Empty, useConfirm, useModal, MHead, MBody, 
 import { Table, type Col } from '../components/Table'
 import { availableBalance, liquidity, goalAllocation } from '../lib/planning'
 import { Link } from 'react-router-dom'
-import { assets, liabilities, isLiability, debtBal, utilization, debtDueState, cashOnHand, netWorth, debtPlanned } from '../lib/accounts'
+import { assets, liabilities, isLiability, debtBal, utilization, debtDueState, cashOnHand, netWorth, debtPlanned, balanceOf } from '../lib/accounts'
 import { fmtMoney, fm2, parseNum, sum } from '../lib/money'
 import { addDays, fmtD, fmtDY, today, ago } from '../lib/dates'
 import { post } from '../lib/ledger'
@@ -37,7 +37,7 @@ export function AccountsPage() {
       <Card span={12} title="Account balances as last updated" hint="every active account in one place · edit balances in the tables below">
         <Table rows={data.accounts.filter(a => a.status === 'Active').slice().sort((a, b) => (isLiability(a) ? 1 : 0) - (isLiability(b) ? 1 : 0) || a.sort_order - b.sort_order)} name="account-balances" editable={false} search={false} pageSize={50}
           cols={[{ k: 'institution', label: 'Institution', type: 'ro', fmt: a => a.institution || '—' }, { k: 'name', label: 'Account', type: 'ro', fmt: a => <b>{a.name}{a.last4 ? <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> ··{a.last4}</span> : null}</b> }, { k: 'kind', label: 'Type', type: 'ro', fmt: a => ACCOUNT_KIND_LABEL[a.kind] },
-            { k: 'balance', label: 'Current balance', type: 'ro', cls: 'num', sortVal: a => (isLiability(a) ? -1 : 1) * (+a.balance || 0), fmt: a => <span style={{ color: isLiability(a) ? 'var(--crit)' : undefined }}>{isLiability(a) ? '−' : ''}{fm2(Math.abs(+a.balance || 0))}</span> },
+            { k: 'balance', label: 'Current balance', type: 'ro', cls: 'num', sortVal: a => (isLiability(a) ? -1 : 1) * balanceOf(a, data), fmt: a => <span style={{ color: isLiability(a) ? 'var(--crit-ink)' : undefined }} title={a.bank_balance != null ? `verified: bank ${fm2(a.bank_balance)} as of ${a.bank_balance_as_of || '—'} ± outstanding entries` : 'book balance (no bank figure yet)'}>{isLiability(a) ? '−' : ''}{fm2(Math.abs(balanceOf(a, data)))}{a.bank_balance != null && <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--good-ink)' }}>✓</span>}</span> },
             { k: '_avail', label: 'Available', type: 'ro', cls: 'num', sortVal: a => availableBalance(a) ?? -1, fmt: a => { const v = availableBalance(a); return v == null ? '—' : fm2(v) } },
             { k: 'balance_as_of', label: 'Last updated', type: 'ro', sortVal: a => a.balance_as_of || '', fmt: a => a.balance_as_of ? <>{fmtDY(a.balance_as_of)} <span style={{ color: 'var(--ink-3)' }}>· {ago(a.balance_as_of)}</span></> : '—' }]} />
         <Note>Balances change three ways: you type one in, a transaction posts to the account, or a statement import sets it. Each change is recorded in Settings → Activity log.</Note>

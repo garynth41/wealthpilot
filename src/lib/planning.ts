@@ -2,7 +2,7 @@
 import type { Account, Data, Goal, Settings } from '../app/data/types'
 import { addDays, diffDays, today } from './dates'
 import { round2, sum } from './money'
-import { assets, cashOnHand, isLiability, isRevolving, debtBal } from './accounts'
+import { assets, cashOnHand, isLiability, isRevolving, debtBal, balanceOf } from './accounts'
 import { healthIndicators } from './intelligence'
 import { goalProgress } from './goals'
 
@@ -23,7 +23,7 @@ export function liquidity(d: Data, s: Settings, asOf = today()): Liquidity {
   const cash = cashOnHand(d, s)
   const ef = d.goals.filter(g => g.kind === 'emergency_fund' && g.status !== 'Cancelled').map(g => goalProgress(d, g).saved)
   const efAcct = d.goals.filter(g => g.kind === 'emergency_fund' && g.account_id).map(g => d.accounts.find(a => a.id === g.account_id)).filter(Boolean) as Account[]
-  const emergencyFund = round2(ef.length ? Math.max(...ef, ...efAcct.map(a => +a.balance || 0)) : sum(assets(d).filter(a => a.kind === 'savings').map(a => +a.balance || 0)))
+  const emergencyFund = round2(ef.length ? Math.max(...ef, ...efAcct.map(a => balanceOf(a, d))) : sum(assets(d).filter(a => a.kind === 'savings').map(a => balanceOf(a, d))))
   const targetMonths = Math.max(1, s.runwayGreen); const targetFund = round2(essentialsPerMonth * targetMonths)
   const monthsEssentials = essentialsPerMonth > 0 ? round2(cash / essentialsPerMonth) : null, monthsAll = h.burnRate > 0 ? round2(cash / h.burnRate) : null
   const coveragePct = targetFund > 0 ? round2(emergencyFund / targetFund) : null
@@ -39,7 +39,7 @@ export interface AllocationResult { rows: Allocation[]; allocatable: number; all
  *  unlinked savings goals draw on remaining unassigned cash (savings first, then checking above the reserve floor), by priority. Debt-payoff goals report progress only. */
 export function goalAllocation(d: Data, s: Settings): AllocationResult {
   const goals = d.goals.filter(g => g.status === 'Active').slice().sort((a, b) => a.priority - b.priority || a.sort_order - b.sort_order)
-  const acctLeft = new Map<string, number>(assets(d).map(a => [a.id, +a.balance || 0]))
+  const acctLeft = new Map<string, number>(assets(d).map(a => [a.id, balanceOf(a, d)]))
   const rows: Allocation[] = []
   for (const g of goals.filter(g => g.account_id)) { const p = goalProgress(d, g); if (g.kind === 'debt_payoff') { rows.push({ goal: g, saved: p.saved, target: g.target_amount, left: p.left, pct: p.pct, allocated: p.saved, fromAccount: g.account_id!, covered: 'tracked' }); continue }
     const avail = acctLeft.get(g.account_id!) ?? 0; const take = Math.min(avail, g.target_amount); acctLeft.set(g.account_id!, round2(avail - take))
@@ -49,7 +49,7 @@ export function goalAllocation(d: Data, s: Settings): AllocationResult {
   for (const g of goals.filter(g => !g.account_id)) { const p = goalProgress(d, g); const take = Math.min(pool, g.target_amount); pool = round2(pool - take)
     rows.push({ goal: g, saved: p.saved, target: g.target_amount, left: p.left, pct: p.pct, allocated: round2(take), fromAccount: null, covered: take >= g.target_amount - 0.005 ? 'full' : take > 0 ? 'partial' : 'none' }) }
   const allocated = round2(sum(rows.filter(r => r.covered !== 'tracked').map(r => r.allocated)))
-  const allocatable = round2(sum(assets(d).filter(a => a.include_in_cash).map(a => +a.balance || 0)))
+  const allocatable = round2(sum(assets(d).filter(a => a.include_in_cash).map(a => balanceOf(a, d))))
   const shortfall = round2(sum(rows.filter(r => r.covered !== 'tracked').map(r => Math.max(0, r.target - r.allocated))))
   return { rows, allocatable, allocated, unallocated: round2(Math.max(0, pool)), shortfall }
 }

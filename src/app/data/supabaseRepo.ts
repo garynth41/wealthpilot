@@ -1,10 +1,10 @@
 import type { Repo } from './repo'
-import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type SyncLogRow } from './types'
+import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
 import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 
 const COLLECTIONS = Object.keys(TABLE) as Collection[]
-const IMPORT_ORDER: Collection[] = ['accounts', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems']
+const IMPORT_ORDER: Collection[] = ['accounts', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
 const strip = <T extends object>(row: T) => { const r = { ...row } as Record<string, unknown>; for (const k of ['created_at', 'updated_at', 'created_by', 'updated_by', 'value']) delete r[k]; return r }   // 'value' is a generated column on holdings
 
 export class SupabaseRepo implements Repo {
@@ -14,18 +14,20 @@ export class SupabaseRepo implements Repo {
 
   async loadAll() {
     const c = sb()
-    const [hhRes, memRes, invRes, actRes, ledRes, ...rows] = await Promise.all([
+    const [hhRes, memRes, invRes, actRes, ledRes, audRes, ...rows] = await Promise.all([
       c.from('households').select('*').eq('id', this.hh).single(),
       c.from('household_members').select('*').eq('household_id', this.hh),
       c.from('household_invites').select('*').eq('household_id', this.hh).is('accepted_at', null),
       c.from('activity_log').select('*').eq('household_id', this.hh).order('created_at', { ascending: false }).limit(300),
       c.from('email_ledger').select('*').eq('household_id', this.hh),
+      c.from('audit_events').select('*').eq('household_id', this.hh).order('created_at', { ascending: false }).limit(500),
       ...COLLECTIONS.map(k => c.from(TABLE[k]).select('*').eq('household_id', this.hh).limit(20000)),
     ])
     if (hhRes.error) throw hhRes.error
     const data: Data = emptyData()
-    COLLECTIONS.forEach((k, i) => { const r = rows[i]; if (r.error) throw r.error; (data as unknown as Record<string, unknown[]>)[k] = (r.data || []).map(this.num) })
-    data.members = (memRes.data || []) as Member[]; data.invites = invRes.data || []; data.activity = actRes.data || []; data.emailLedger = (ledRes.data || []) as EmailLedgerRow[]
+    const missing = (e: { code?: string; message?: string } | null) => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache/i.test(e.message || ''))   // table not migrated yet: treat as empty
+    COLLECTIONS.forEach((k, i) => { const r = rows[i]; if (r.error && !missing(r.error)) throw r.error; (data as unknown as Record<string, unknown[]>)[k] = (r.data || []).map(this.num) })
+    data.members = (memRes.data || []) as Member[]; data.invites = invRes.data || []; data.activity = actRes.data || []; data.emailLedger = (ledRes.data || []) as EmailLedgerRow[]; data.audit = (audRes.error && !missing(audRes.error) ? (() => { throw audRes.error })() : (audRes.data || [])) as AuditEvent[]
     const { data: { user } } = await c.auth.getUser()
     const me = data.members.find(m => m.user_id === user?.id)
     const household: Household = { ...hhRes.data, settings: { ...SETTINGS_DEFAULTS, ...(hhRes.data.settings || {}) } }
@@ -70,6 +72,11 @@ export class SupabaseRepo implements Repo {
   async syncBackfill(from: string) { return await this.syncCall<SyncResult>({ action: 'backfill', from }) }
   async syncSetMap(map: Record<string, string>) { const { error } = await sb().from('sync_connections').update({ account_map: map }).eq('household_id', this.hh); if (error) throw error }
   async syncDisconnect() { await this.syncCall({ action: 'disconnect' }) }
+  async completeReconciliation(i: ReconciliationInput) { const { data, error } = await sb().rpc('complete_reconciliation', { p: { ...i, household_id: this.hh } }); if (error) throw error; return this.num(data as Record<string, unknown>) as unknown as Reconciliation }
+  async logAudit(kind: AuditKind, summary: string, detail?: Record<string, unknown>, accountId?: string | null) {
+    const { data: { user } } = await sb().auth.getUser()
+    const { data, error } = await sb().from('audit_events').insert({ household_id: this.hh, account_id: accountId ?? null, kind, summary: summary.slice(0, 300), detail: detail ?? null, user_id: user?.id ?? null, user_email: user?.email ?? null }).select('*').single(); if (error) throw error; return data as AuditEvent
+  }
   async removeMember(userId: string) { const { error } = await sb().from('household_members').delete().eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { const { error } = await sb().from('household_members').update({ role, read_only: readOnly, modules }).eq('household_id', this.hh).eq('user_id', userId); if (error) throw error }
   async inviteWithPassword(req: InviteRequest): Promise<InviteResult> {
@@ -95,4 +102,4 @@ export class SupabaseRepo implements Repo {
     return () => { sb().removeChannel(ch) }
   }
 }
-const NUMERIC = new Set(['quantity', 'cost_basis', 'price', 'value', 'expense_ratio', 'yield_pct', 'balance', 'credit_limit', 'apr', 'statement_balance', 'minimum_payment', 'planned_payment', 'default_budget', 'gross_amount', 'net_amount', 'hours_per_period', 'hourly_rate', 'expected_income', 'planned', 'rollover_in', 'amount', 'paid_amount', 'target_amount', 'starting_amount', 'monthly_contribution', 'cash', 'assets', 'liabilities', 'monthly_obligation', 'relief_monthly', 'min_due', 'fee', 'last_paid_amount'])
+const NUMERIC = new Set(['bank_balance', 'last_reconciled_balance', 'opening_balance', 'cleared_deposits', 'cleared_payments', 'book_balance', 'outstanding_checks', 'deposits_in_transit', 'reconciled_balance', 'variance', 'adjustment', 'quantity', 'cost_basis', 'price', 'value', 'expense_ratio', 'yield_pct', 'balance', 'credit_limit', 'apr', 'statement_balance', 'minimum_payment', 'planned_payment', 'default_budget', 'gross_amount', 'net_amount', 'hours_per_period', 'hourly_rate', 'expected_income', 'planned', 'rollover_in', 'amount', 'paid_amount', 'target_amount', 'starting_amount', 'monthly_contribution', 'cash', 'assets', 'liabilities', 'monthly_obligation', 'relief_monthly', 'min_due', 'fee', 'last_paid_amount'])

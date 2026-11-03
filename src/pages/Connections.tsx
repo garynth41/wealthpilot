@@ -17,7 +17,7 @@ type Stage = 'pick' | 'map' | 'review' | 'done'
 const COLS: Array<[keyof Mapping, string]> = [['date', 'Date'], ['payee', 'Payee / description'], ['amount', 'Amount (signed)'], ['debit', 'Debit / money out'], ['credit', 'Credit / money in'], ['memo', 'Memo'], ['id', 'Transaction id'], ['type', 'Type']]
 
 export function ConnectionsPage() {
-  const { data, settings, accts, saveSettings, insertMany, update, guarded, canEdit } = useData()
+  const { data, settings, accts, saveSettings, insertMany, update, guarded, canEdit, repo } = useData()
   const [stage, setStage] = useState<Stage>('pick'); const [file, setFile] = useState<{ name: string; text: string } | null>(null); const [acctId, setAcctId] = useState(accts[0]?.id || '')
   const [rows, setRows] = useState<string[][]>([]); const [map, setMap] = useState<Mapping | null>(null); const [ofx, setOfx] = useState<ReturnType<typeof parseOfx> | null>(null)
   const [skipDups, setSkipDups] = useState(true); const [setBalance, setSetBalance] = useState(true); const [result, setResult] = useState<ImportLog | null>(null); const [err, setErr] = useState('')
@@ -40,7 +40,9 @@ export function ConnectionsPage() {
     if (!account || !file) return
     const made = await insertMany('transactions', toAdd.map(p => p.txn))
     let d = data; for (const t of made) { await post(d, async (id, patch) => { await update('accounts', id, patch); d = { ...d, accounts: d.accounts.map(a => a.id === id ? { ...a, ...patch } : a) } }, t, 1, t.date) }
-    if (setBalance && ofx?.balance != null) await update('accounts', account.id, { balance: isLiability(account) ? Math.abs(ofx.balance) : ofx.balance, balance_as_of: ofx.balanceAsOf || today() })
+    // a statement's ledger balance is a bank-verified figure: it becomes the bank balance, and the book follows (bank + outstanding)
+    if (setBalance && ofx?.balance != null) { const bb = isLiability(account) ? Math.abs(ofx.balance) : ofx.balance; await update('accounts', account.id, { bank_balance: bb, bank_balance_as_of: ofx.balanceAsOf || today(), balance: bb, balance_as_of: ofx.balanceAsOf || today() }) }
+    await repo!.logAudit('import', `Imported ${file.name}: ${made.length} added, ${proposed.length - made.length} skipped${ofx?.balance != null ? `, statement balance ${ofx.balance}` : ''}`, { file: file.name, format, added: made.length, skipped: proposed.length - made.length }, account.id).catch(() => {})
     const log: ImportLog = { at: new Date().toISOString(), file: file.name, format, account_id: account.id, rows: proposed.length, added: made.length, skipped: proposed.length - made.length, balance: ofx?.balance ?? null }
     await saveSettings({ imports: [log, ...(settings.imports || [])].slice(0, 50) }); setResult(log); setStage('done')
   }, 'Statement imported')
@@ -50,6 +52,7 @@ export function ConnectionsPage() {
 
   return <>
     <div className="kpis" style={{ marginBottom: 16 }}>
+      <KPI l="Verified accounts" v={`${data.accounts.filter(a => a.status === 'Active' && a.bank_balance != null).length} of ${accts.length}`} cls={data.accounts.some(a => a.bank_balance != null) ? 'good' : 'idle'} s="balances confirmed by the bank feed, a statement or a reconciliation" />
       <KPI l="Connected sources" v={`${accts.length} account${accts.length === 1 ? '' : 's'}`} cls="info" s="statement files (CSV / OFX / QFX) · email capture · manual" />
       <KPI l="Last import" v={history[0] ? ago(history[0].at.slice(0, 10)) : '—'} cls={history[0] ? 'good' : 'idle'} s={history[0] ? `${history[0].file} · ${history[0].added} added` : 'nothing imported yet'} />
       <KPI l="Imported transactions" v={String(data.transactions.filter(t => t.source === 'import').length)} cls="info" s="source = import" />
@@ -58,6 +61,7 @@ export function ConnectionsPage() {
     <div className="grid g12">
       <BankSyncCard onKpi={setSync} />
       <YtdCoverageCard />
+      <DataSourcesCard />
       <Card span={7} title="Import a statement" hint="CSV, OFX or QFX from your bank or card — duplicates are detected before anything is written">
         {!canEdit && <Banner cls="warn">You have read-only access — imports are disabled.</Banner>}
         {stage === 'pick' && <>
@@ -114,4 +118,21 @@ function PreviewTable({ rows }: { rows: Proposed[] }) {
   return <div className="tblwrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>#</th><th>Date</th><th>Payee</th><th>Category</th><th className="num">Amount</th><th>Kind</th><th>Status</th></tr></thead><tbody>
     {rows.map((p, i) => <tr key={i} style={{ opacity: p.row.warn || p.dup ? .6 : 1 }}><td>{p.row.line}</td><td>{p.row.date ? fmtD(p.row.date) : <span style={{ color: 'var(--crit)' }}>?</span>}</td><td>{p.row.payee || <i>—</i>}{p.row.memo && <div className="note" style={{ margin: 0 }}>{p.row.memo}</div>}</td><td style={{ color: p.txn.category_id ? undefined : 'var(--ink-3)' }}>{p.txn.category_id ? catLabels[p.txn.category_id] : '—'}</td><td className="num">{p.row.amount ? fm2(p.row.amount) : '?'}</td><td>{p.txn.kind === 'transfer' ? <Pill cls="good">payment</Pill> : p.row.kind === 'income' ? <Pill cls="good">in</Pill> : <Pill cls="warn">out</Pill>}</td><td>{p.row.warn ? <Pill cls="crit">{p.row.warn}</Pill> : p.dup ? <Pill cls="idle">{DUP_LABEL[p.dup]}</Pill> : <Pill cls="good">new</Pill>}</td></tr>)}
   </tbody></table></div>
+}
+
+/** Where transactions and balances can come from, and what is live. */
+function DataSourcesCard() {
+  const rows: Array<[string, string, string, string]> = [
+    ['SimpleFIN Bridge (bank feed)', 'good', 'Live', 'Read-only feed from your banks — balances and posted transactions daily at 5:17 am and on demand. SimpleFIN itself is built on the MX aggregator.'],
+    ['OFX / QFX statement files', 'good', 'Live', 'Quicken / Money format downloads; each row carries the bank\'s transaction id, so re-imports are no-ops.'],
+    ['CSV statement files', 'good', 'Live', 'Any bank CSV — columns are detected; rows get a stable id so a re-import is a no-op.'],
+    ['Email capture (Gmail / Outlook)', 'good', 'Live', 'Bills, payments, deposits and alerts read from your mail; you approve, the app files.'],
+    ['Manual entry / check register', 'good', 'Live', 'Checks, payments and deposits you record yourself; outstanding until the bank shows them.'],
+    ['Plaid · MX · Teller · Open Banking APIs', 'idle', 'On request', 'Direct aggregator connections need a developer account and keys with each provider; the bank feed above already covers the same banks through MX.'],
+  ]
+  return <Card span={12} title="Data sources" hint="every source goes through the same duplicate check and the same reconciliation rules">
+    <div className="tblwrap"><table className="tbl"><thead><tr><th>Source</th><th>Status</th><th>Notes</th></tr></thead><tbody>
+      {rows.map(([n, cls, st, note]) => <tr key={n}><td>{n}</td><td><Pill cls={cls}>{st}</Pill></td><td style={{ fontSize: 12.5, color: 'var(--ink-2)' }}>{note}</td></tr>)}
+    </tbody></table></div>
+  </Card>
 }

@@ -12,7 +12,7 @@ export const MODULES: Module[] = [
   { k: 'bills', label: 'Bills & subscriptions', paths: ['/bills'], tables: ['recurring', 'bill_occurrences'] },
   { k: 'income', label: 'Income & pay periods', paths: ['/income'], tables: ['pay_schedules'] },
   { k: 'accounts', label: 'Accounts & debts', paths: ['/accounts', '/debts'], tables: ['accounts', 'statements', 'net_worth_snapshots'], hint: 'account names on other pages need this too' },
-  { k: 'connections', label: 'Bank connections & email capture', paths: ['/connections', '/email'], tables: ['email_items', 'email_ledger'] },
+  { k: 'connections', label: 'Cash & account operations (bank feed, reconciliation, email capture)', paths: ['/connections', '/reconcile', '/email'], tables: ['email_items', 'email_ledger'] },
   { k: 'investments', label: 'Investments & retirement', paths: ['/investments'], tables: ['holdings'] },
   { k: 'tax', label: 'Tax planning', paths: ['/tax'], tables: [] },
   { k: 'goals', label: 'Savings goals', paths: ['/goals'], tables: ['goals', 'goal_contributions'] },

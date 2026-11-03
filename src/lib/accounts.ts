@@ -1,6 +1,10 @@
 import { ASSET_KINDS, LIABILITY_KINDS, REVOLVING_KINDS, type Account, type Data, type Settings } from '../app/data/types'
 import { sum } from './money'
 import { diffDays, today } from './dates'
+import { verifiedBalance } from './reconcile'
+
+/** The balance every calculation uses: the bank's verified figure plus outstanding register entries when the account has one, else the book balance. */
+export const balanceOf = (a: Account, d: Data) => verifiedBalance(a, d.transactions)
 
 export const isAsset = (a: Account) => ASSET_KINDS.includes(a.kind)
 export const isLiability = (a: Account) => LIABILITY_KINDS.includes(a.kind)
@@ -9,12 +13,12 @@ export const isActive = (a: Account) => a.status === 'Active'
 export const activeAccounts = (d: Data) => d.accounts.filter(isActive)
 export const assets = (d: Data) => activeAccounts(d).filter(isAsset)
 export const liabilities = (d: Data) => activeAccounts(d).filter(isLiability)
-export const debtBal = (a: Account) => Math.max(0, +a.balance || 0)
+export const debtBal = (a: Account, d?: Data) => Math.max(0, d ? balanceOf(a, d) : +a.balance || 0)
 /** Label that stays unique when two accounts share a name. */
 export function acctLabel(a: Account, all: Account[]) { const same = all.filter(x => (x.name || '').trim().toLowerCase() === (a.name || '').trim().toLowerCase()); if (same.length < 2) return a.name; if (a.last4 && same.filter(x => x.last4 === a.last4).length === 1) return `${a.name} ··${a.last4}`; return `${a.name} (${a.ref || a.id.slice(0, 4)})` }
 /** Cash you can spend: active asset accounts flagged include_in_cash (retirement excluded unless the setting says so). */
-export function cashOnHand(d: Data, s: Settings) { return sum(assets(d).filter(a => a.include_in_cash || (s.includeRetirementInCash && a.kind === 'retirement')).map(a => +a.balance || 0)) }
-export function netWorth(d: Data) { const as = sum(assets(d).filter(a => a.include_in_net_worth).map(a => +a.balance || 0)), li = sum(liabilities(d).filter(a => a.include_in_net_worth).map(debtBal)); return { assets: as, liabilities: li, net: as - li } }
+export function cashOnHand(d: Data, s: Settings) { return sum(assets(d).filter(a => a.include_in_cash || (s.includeRetirementInCash && a.kind === 'retirement')).map(a => balanceOf(a, d))) }
+export function netWorth(d: Data) { const as = sum(assets(d).filter(a => a.include_in_net_worth).map(a => balanceOf(a, d))), li = sum(liabilities(d).filter(a => a.include_in_net_worth).map(a => debtBal(a, d))); return { assets: as, liabilities: li, net: as - li } }
 export const debtPlanned = (a: Account) => Math.max(+(a.planned_payment ?? 0) || 0, +a.minimum_payment || 0)
 export function utilization(a: Account) { return isRevolving(a) && +(a.credit_limit || 0) > 0 ? debtBal(a) / +a.credit_limit! : null }
 export function debtDueState(a: Account) {

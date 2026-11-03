@@ -19,7 +19,7 @@ export interface DTxn {
   account_id?: string | null; to_account_id?: string | null; payee?: string | null; memo?: string | null
   source?: string | null; external_id?: string | null; status?: string | null; category_id?: string | null
   recurring_id?: string | null; goal_id?: string | null; pay_schedule_id?: string | null; email_item_id?: string | null
-  duplicate_of?: string | null; dedupe_ok?: boolean | null; created_at?: string | null
+  duplicate_of?: string | null; dedupe_ok?: boolean | null; created_at?: string | null; check_number?: string | null
 }
 export type DupConfidence = 'certain' | 'likely' | 'possible'
 export interface DupPair { a: string; b: string; confidence: DupConfidence; reason: string; days: number; sim: number | null }
@@ -82,7 +82,7 @@ export function classify(a: DTxn, b: DTxn): DupPair | null {
   return null
 }
 
-const LINKS: Array<keyof DTxn> = ['category_id', 'recurring_id', 'goal_id', 'pay_schedule_id', 'email_item_id', 'account_id']
+const LINKS: Array<keyof DTxn> = ['category_id', 'recurring_id', 'goal_id', 'pay_schedule_id', 'email_item_id', 'account_id', 'check_number']
 /** What the keeper should take over from the duplicates it absorbs (only fields it is missing). */
 export function keeperPatch(keeper: DTxn, dups: DTxn[]): Partial<DTxn> {
   const p: Record<string, unknown> = {}

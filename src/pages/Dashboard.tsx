@@ -8,6 +8,7 @@ import { periodStat, rangeStat } from '../lib/budget'
 import { upcoming, STATUS_PILL } from '../lib/recurring'
 import { cashCalendar, burn, runwayProjection, netWorthSeries } from '../lib/forecast'
 import { cashOnHand, netWorth, liabilities, debtDueState, acctLabel, debtBal } from '../lib/accounts'
+import { accountState, type RTxn } from '../lib/reconcile'
 import { debtTotals } from '../lib/debts'
 import { goalProgress } from '../lib/goals'
 import { payDates } from '../lib/paySchedule'
@@ -29,6 +30,8 @@ export function Dashboard() {
   const goals = data.goals.filter(g => g.status === 'Active').map(g => ({ g, p: goalProgress(data, g) })).sort((a, b) => a.g.priority - b.g.priority).slice(0, 4)
   const attention: Array<{ c: string; t: string; m: string; d?: string }> = []
   over.forEach(u => attention.push({ c: 'crit', t: `${u.r.name} is overdue`, m: `${fmtMoney(u.amount)} was due ${fmtDY(u.date)}`, d: 'Bills' }))
+  { const fail = data.audit.find(e => e.kind === 'sync' || e.kind === 'sync_failure'); if (fail && fail.kind === 'sync_failure') attention.push({ c: 'crit', t: 'Bank sync failed', m: fail.summary.replace(/^Bank sync failed: /, '') + ' — balances kept from the last good sync', d: 'Cash & Account Operations' }) }
+  data.accounts.filter(a => a.status === 'Active' && a.bank_balance != null).forEach(a => { const s = accountState(a, data.transactions as unknown as RTxn[]); if (Math.abs(s.variance) >= 1) attention.push({ c: 'warn', t: `${acctLabel(a, data.accounts)}: book differs from verified balance`, m: `${fmtMoney(Math.abs(s.variance))} unexplained — reconcile`, d: 'Reconcile' }); else if (s.outstandingChecksCount && s.outstandingChecks > 0 && !a.last_reconciled_on) attention.push({ c: 'info', t: `${acctLabel(a, data.accounts)}: ${s.outstandingChecksCount} outstanding`, m: `${fmtMoney(s.outstandingChecks)} not yet at the bank`, d: 'Reconcile' }) })
   liabilities(data).filter(a => debtDueState(a).cls === 'crit').forEach(a => attention.push({ c: 'crit', t: `${acctLabel(a, data.accounts)} payment overdue`, m: `minimum ${fmtMoney(a.minimum_payment)} was due ${fmtDY(a.due_date!)}`, d: 'Accounts' }))
   data.emailItems.filter(x => (isOpenItem(x) && ['pastdue', 'declined'].includes(x.kind)) || (x.kind === 'alert' && x.status === 'Alert')).forEach(x => attention.push({ c: 'crit', t: `${x.payee}: ${x.kind === 'declined' ? 'payment declined' : x.kind === 'alert' ? 'bank alert' : 'past due'}`, m: x.amount != null ? fmtMoney(x.amount) : 'see the email', d: 'Email' }))
   if (cal.firstZero) attention.push({ c: 'crit', t: `Cash runs out ${fmtDY(cal.firstZero)}`, m: 'in the 30-day calendar — move a bill or add income', d: 'Forecast' }); else if (cal.firstFloor) attention.push({ c: 'warn', t: `Below your reserve floor on ${fmtDY(cal.firstFloor)}`, m: `lowest point ${fmtMoney(cal.low.bal)}`, d: 'Forecast' })

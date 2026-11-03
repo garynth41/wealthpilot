@@ -31,8 +31,8 @@ export function simulate(accts: Account[], extra: number, strategy: Strategy = '
 }
 export function debtTotals(d: Data) {
   const a = liabilities(d), m = curMonth()
-  const balance = sum(a.map(debtBal)), minimum = sum(a.map(x => +x.minimum_payment || 0)), planned = sum(a.map(debtPlanned)), paidMonth = sum(a.map(x => debtPaidInRange(d, x, monthStart(m), monthEnd(m))))
-  const rev = a.filter(x => isRevolving(x) && +(x.credit_limit || 0) > 0); const limit = sum(rev.map(x => +x.credit_limit!)), cardBal = sum(rev.map(debtBal))
+  const balance = sum(a.map(x => debtBal(x, d))), minimum = sum(a.map(x => +x.minimum_payment || 0)), planned = sum(a.map(debtPlanned)), paidMonth = sum(a.map(x => debtPaidInRange(d, x, monthStart(m), monthEnd(m))))
+  const rev = a.filter(x => isRevolving(x) && +(x.credit_limit || 0) > 0); const limit = sum(rev.map(x => +x.credit_limit!)), cardBal = sum(rev.map(x => debtBal(x, d)))
   const wApr = balance ? sum(a.map(x => debtBal(x) * (+x.apr || 0))) / balance : 0, interestMonth = sum(a.map(x => debtBal(x) * (+x.apr || 0) / 100 / 12))
   const income = monthlyIncome(d.paySchedules)
   return { count: a.length, balance, minimum, planned, paidMonth, limit, cardBal, util: limit ? cardBal / limit : 0, wApr, interestMonth, dti: income ? planned / income : null }

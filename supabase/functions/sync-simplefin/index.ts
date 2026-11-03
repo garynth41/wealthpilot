@@ -9,6 +9,7 @@
 // The access URL contains the SimpleFIN credentials: it is only ever in sync_secrets (no browser access), never logged, never returned.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { planDedupe, type DTxn } from './dedupe.ts'
+import { verifiedBalance, type RTxn } from './reconcile.ts'
 import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
@@ -21,8 +22,11 @@ interface Result { ok: boolean; accounts: number; added: number; skipped: number
 
 async function fetchAccounts(accessUrl: string, lastSyncUnix: number | null, withTxns: boolean, backDays?: number): Promise<SfinResponse> {
   const { base, authorization } = splitAccessUrl(accessUrl)
-  const get = async (q: string) => {
-    const r = await fetch(`${base}/accounts${q}`, { headers: { Authorization: authorization, Accept: 'application/json' } })
+  const get = async (q: string, attempt = 1): Promise<SfinResponse> => {
+    let r: Response
+    try { r = await fetch(`${base}/accounts${q}`, { headers: { Authorization: authorization, Accept: 'application/json' }, signal: AbortSignal.timeout(45000) }) }
+    catch (e) { if (attempt < 3) { await new Promise(res => setTimeout(res, 1500 * attempt)); return get(q, attempt + 1) } throw new Error(`Could not reach SimpleFIN after ${attempt} attempts: ${(e as Error).message}`) }
+    if (r.status >= 500 && attempt < 3) { await new Promise(res => setTimeout(res, 1500 * attempt)); return get(q, attempt + 1) }
     if (r.status === 403) throw new Error('SimpleFIN refused the access URL (403) — the token may have been revoked; reconnect from Bank Connections')
     if (r.status === 402) throw new Error('SimpleFIN says payment is required (402) — check your SimpleFIN Bridge subscription')
     if (!r.ok) throw new Error(`SimpleFIN replied ${r.status}`)
@@ -36,12 +40,14 @@ async function fetchAccounts(accessUrl: string, lastSyncUnix: number | null, wit
   return mergeResponses(out)
 }
 
-const TXN_COLS = 'id, date, kind, amount, account_id, to_account_id, payee, memo, source, external_id, status, category_id, recurring_id, goal_id, pay_schedule_id, email_item_id, duplicate_of, dedupe_ok, created_at'
+const audit = (hh: string, kind: string, summary: string, detail: Record<string, unknown> = {}, account_id: string | null = null) =>
+  admin.from('audit_events').insert({ household_id: hh, account_id, kind, summary: summary.slice(0, 300), detail, user_email: 'bank sync' }).then(({ error }) => { if (error && !/audit_events/.test(error.message)) console.error(error.message) })
+
 type Brief = { date: string; amount: number; kind: string; payee: string | null; source: string | null; account_id: string | null }
 /** Merge every clear-cut duplicate in the household (same rules as the app). Returns merged rows and pairs left for review; dryRun only previews. */
 async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: number; review: number; preview?: unknown }> {
   const since = new Date(Date.now() - 400 * 86400000).toISOString().slice(0, 10)
-  const { data, error } = await admin.from('transactions').select(TXN_COLS).eq('household_id', hh).gte('date', since).limit(20000)
+  const { data, error } = await admin.from('transactions').select('*').eq('household_id', hh).gte('date', since).limit(20000)
   if (error) throw new Error('Reading transactions for de-duplication failed: ' + error.message)
   const rows = (data || []).map(t => ({ ...t, amount: Number(t.amount) })) as DTxn[]
   const plan = planDedupe(rows); let merged = 0
@@ -63,6 +69,7 @@ async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise
     const m = redactUrl(message).slice(0, 400)
     await admin.from('sync_connections').update({ status: 'error', last_error: m }).eq('household_id', hh)
     await admin.from('sync_log').insert({ household_id: hh, started_at: started, finished_at: new Date().toISOString(), trigger, ok: false, message: m })
+    await audit(hh, 'sync_failure', 'Bank sync failed: ' + m, { trigger, error: m })   // balances are left exactly as they were
     return { ok: false, accounts: 0, added: 0, skipped: 0, unmapped: 0, merged: 0, review: 0, earliest: {}, message: m }
   }
   try {
@@ -74,7 +81,7 @@ async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise
     const resp = await fetchAccounts(sec.access_url, last, true, backDays)
     const { accounts: bank, errors } = normaliseResponse(resp)
     const map = (conn.account_map || {}) as Record<string, string>
-    const { data: locals } = await admin.from('accounts').select('id, kind').eq('household_id', hh)
+    const { data: locals } = await admin.from('accounts').select('id, kind, balance').eq('household_id', hh)
     const kindOf = new Map((locals || []).map(a => [a.id as string, a.kind as string]))
     let added = 0, skipped = 0, unmapped = 0, synced = 0; const earliest: Record<string, string> = {}
     for (const sf of bank) {
@@ -95,7 +102,12 @@ async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise
         }
         added += fresh.length
       }
-      await admin.from('accounts').update({ balance: balanceFor(sf, kind), balance_as_of: sf.balanceDate }).eq('id', localId)
+      // the bank's figure is the verified balance; the book follows it plus whatever the household recorded that the bank has not shown yet
+      const bankBal = balanceFor(sf, kind)
+      const { data: open } = await admin.from('transactions').select('id, date, kind, amount, account_id, to_account_id, status, external_id, duplicate_of').eq('household_id', hh).or(`account_id.eq.${localId},to_account_id.eq.${localId}`).eq('status', 'pending').is('duplicate_of', null).is('external_id', null)
+      const book = verifiedBalance({ id: localId, kind, balance: bankBal, bank_balance: bankBal }, (open || []).map(t => ({ ...t, amount: Number(t.amount) })) as RTxn[])
+      const { error: ue } = await admin.from('accounts').update({ bank_balance: bankBal, bank_balance_as_of: sf.balanceDate, balance: book, balance_as_of: sf.balanceDate }).eq('id', localId)
+      if (ue && /bank_balance/.test(ue.message)) await admin.from('accounts').update({ balance: bankBal, balance_as_of: sf.balanceDate }).eq('id', localId)   // migration 0008 not applied yet
     }
     const discovered = bank.map(a => ({ id: a.id, name: a.name, org: a.org, last4: a.last4, balance: a.balance }))
     const dd = await dedupeHousehold(hh)
@@ -103,6 +115,7 @@ async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise
     const message = [`${synced} account${synced === 1 ? '' : 's'} synced`, `${added} new transaction${added === 1 ? '' : 's'}`, skipped ? `${skipped} already present` : '', dd.merged ? `${dd.merged} duplicate${dd.merged === 1 ? '' : 's'} merged` : '', dd.review ? `${dd.review} possible duplicate${dd.review === 1 ? '' : 's'} to review` : '', fromDate && oldest ? `history from ${fromDate} requested; the bank feed reaches back to ${oldest}` : '', unmapped ? `${unmapped} account${unmapped === 1 ? '' : 's'} not mapped` : '', errors.length ? `bank notes: ${errors.join('; ')}` : ''].filter(Boolean).join(' · ')
     await admin.from('sync_connections').update({ status: 'connected', last_error: errors.length ? errors.join('; ').slice(0, 400) : null, last_sync_at: new Date().toISOString(), discovered }).eq('household_id', hh)
     await admin.from('sync_log').insert({ household_id: hh, started_at: started, finished_at: new Date().toISOString(), trigger, ok: true, accounts: synced, added, skipped, message })
+    await audit(hh, 'sync', `Bank sync (${trigger}): ${message}`, { trigger, accounts: synced, added, skipped, merged: dd.merged })
     return { ok: true, accounts: synced, added, skipped, unmapped, merged: dd.merged, review: dd.review, earliest, message }
   } catch (e) { return await fail((e as Error).message) }
 }

@@ -1,6 +1,7 @@
 // Portfolio engine (0.6.0): holdings → value, gain/loss, allocation by asset class / sector / risk, concentration. Pure functions.
 import type { Data, Holding, AssetClass } from '../app/data/types'
 import { round2, sum } from './money'
+import { balanceOf } from './accounts'
 
 export const holdingValue = (h: Holding) => round2((+h.quantity || 0) * (+h.price || 0))
 export const holdingGain = (h: Holding) => round2(holdingValue(h) - (+h.cost_basis || 0))
@@ -32,6 +33,6 @@ export function portfolio(d: Data, accountId?: string | null): Portfolio {
 export function retirementAssets(d: Data) {
   const ret = d.accounts.filter(a => a.status === 'Active' && a.kind === 'retirement'); const inv = d.accounts.filter(a => a.status === 'Active' && a.kind === 'investment')
   const held = (ids: string[]) => round2(sum(d.holdings.filter(h => h.account_id && ids.includes(h.account_id)).map(holdingValue)))
-  const bal = (list: typeof ret) => round2(sum(list.map(a => +a.balance || 0)))
+  const bal = (list: typeof ret) => round2(sum(list.map(a => balanceOf(a, d))))
   return { retirement: Math.max(bal(ret), held(ret.map(a => a.id))), taxable: Math.max(bal(inv), held(inv.map(a => a.id))), total: Math.max(bal(ret), held(ret.map(a => a.id))) + Math.max(bal(inv), held(inv.map(a => a.id))) }
 }

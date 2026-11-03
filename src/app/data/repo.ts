@@ -1,4 +1,4 @@
-import type { Collection, Data, Household, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult } from './types'
+import type { Collection, Data, Household, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult, Reconciliation, ReconciliationInput, AuditEvent, AuditKind } from './types'
 
 /** Every read and write goes through a Repo. Two implementations: Supabase (real) and Memory (offline demo + tests). */
 export interface Repo {
@@ -25,6 +25,10 @@ export interface Repo {
   syncBackfill(from: string): Promise<SyncResult>
   syncSetMap(map: Record<string, string>): Promise<void>
   syncDisconnect(): Promise<void>
+  /** complete a statement reconciliation atomically: record it, tick the items, set the account's bank/book balances, write the audit event */
+  completeReconciliation(input: ReconciliationInput): Promise<Reconciliation>
+  /** append to the immutable audit trail */
+  logAudit(kind: AuditKind, summary: string, detail?: Record<string, unknown>, accountId?: string | null): Promise<AuditEvent>
   exportJson(): Promise<Record<string, unknown>>
   importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<number>
   /** Called with a change notification (realtime); returns an unsubscribe. */

@@ -2,7 +2,7 @@
 import type { Data, Settings } from '../app/data/types'
 import { addDays, addMonthsClamp, diffDays, iso, parse, today, monthStart, monthEnd, curMonth, mAdd } from './dates'
 import { sum } from './money'
-import { cashOnHand, liabilities, debtPlanned, debtBal, debtDueState, acctLabel, assets } from './accounts'
+import { cashOnHand, liabilities, debtPlanned, debtBal, debtDueState, acctLabel, assets, balanceOf } from './accounts'
 import { payDates, monthlyIncome } from './paySchedule'
 import { upcoming, recMonthly, recActive, isOutflow } from './recurring'
 import { rangeStat, monthlyDebt } from './budget'
@@ -68,6 +68,6 @@ export function runwayProjection(d: Data, s: Settings, opts?: { months?: number;
   return { xs, ys, inc, out, zeroAt, floorAt, floor, minCash: Math.min(...ys), essentials, spend: b.fixed + b.variable, burn: b }
 }
 /** Net-worth series from snapshots plus today's live figure. */
-export function netWorthSeries(d: Data) { const live = { date: today(), assets: sum(assets(d).map(a => +a.balance || 0)), liabilities: sum(liabilities(d).map(debtBal)) }; const rows = [...d.snapshots.map(s => ({ date: s.date.slice(0, 10), assets: +s.assets, liabilities: +s.liabilities })), live].sort((a, b) => a.date.localeCompare(b.date)); return rows.map(r => ({ ...r, net: r.assets - r.liabilities })) }
+export function netWorthSeries(d: Data) { const live = { date: today(), assets: sum(assets(d).map(a => balanceOf(a, d))), liabilities: sum(liabilities(d).map(a => debtBal(a, d))) }; const rows = [...d.snapshots.map(s => ({ date: s.date.slice(0, 10), assets: +s.assets, liabilities: +s.liabilities })), live].sort((a, b) => a.date.localeCompare(b.date)); return rows.map(r => ({ ...r, net: r.assets - r.liabilities })) }
 export const monthsAhead = (n: number) => { const out: string[] = []; for (let i = 0; i < n; i++) out.push(mAdd(curMonth(), i)); return out }
 export const monthRange = (m: string) => ({ from: monthStart(m), to: monthEnd(m) })

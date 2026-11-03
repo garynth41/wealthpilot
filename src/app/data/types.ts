@@ -13,6 +13,8 @@ export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { checking: 'Chec
 export interface Account extends Stamped {
   ref?: string | null; name: string; kind: AccountKind; institution?: string | null; last4?: string | null
   balance: number; balance_as_of?: ISODate | null
+  /** what the institution last reported (bank feed, statement or reconciliation); null = no bank figure, the book balance is all there is */
+  bank_balance?: number | null; bank_balance_as_of?: ISODate | null; last_reconciled_on?: ISODate | null; last_reconciled_balance?: number | null
   credit_limit?: number | null; apr: number
   statement_date?: ISODate | null; statement_balance?: number | null; minimum_payment: number; due_date?: ISODate | null; planned_payment?: number | null
   autopay: boolean; autopay_account_id?: UUID | null; last_paid_due?: ISODate | null
@@ -56,7 +58,20 @@ export interface Transaction extends Stamped {
   duplicate_of?: UUID | null
   /** the owner said this row is not a duplicate — never merge it automatically */
   dedupe_ok?: boolean
+  /** check register: the check number; cleared_on = the bank date it cleared; reconciliation_id = the completed reconciliation it was ticked in */
+  check_number?: string | null; cleared_on?: ISODate | null; reconciliation_id?: UUID | null
 }
+
+/** One completed statement reconciliation for an account (immutable once completed). */
+export interface Reconciliation extends Stamped {
+  ref?: string | null; account_id: UUID; statement_date: ISODate; statement_balance: number; opening_balance: number
+  cleared_deposits: number; cleared_payments: number; item_count: number; book_balance: number; outstanding_checks: number; deposits_in_transit: number; reconciled_balance: number; variance: number
+  adjustment: number; adjustment_reason?: string | null; status: 'completed' | 'completed_with_adjustment'; notes?: string | null; completed_at: string; completed_by?: UUID | null; completed_by_email?: string | null
+}
+export interface ReconciliationInput { account_id: UUID; statement_date: ISODate; statement_balance: number; opening_balance: number; cleared_ids: UUID[]; book_balance: number; cleared_deposits: number; cleared_payments: number; outstanding_checks: number; deposits_in_transit: number; reconciled_balance: number; variance: number; adjustment: number; adjustment_reason: string | null; notes: string | null }
+export type AuditKind = 'import' | 'sync' | 'sync_failure' | 'adjustment' | 'override' | 'reconciliation' | 'correction' | 'balance_change' | 'match' | 'unmatch' | 'register'
+/** Immutable audit trail (cash operations): never updated or deleted. */
+export interface AuditEvent { id: UUID; household_id: UUID; account_id?: UUID | null; kind: AuditKind; summary: string; detail?: Record<string, unknown> | null; user_id?: UUID | null; user_email?: string | null; created_at: string }
 
 export type RecurringKind = 'bill' | 'subscription' | 'debt_payment' | 'income' | 'transfer' | 'savings'
 export type RecurringFreq = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'every_2_months' | 'quarterly' | 'every_6_months' | 'yearly' | 'irregular'
@@ -141,15 +156,17 @@ export interface PayeeRule { id: string; pattern: string; match: 'contains' | 's
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings'
-export const TABLE: Record<Collection, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings' }
+export type Collection = 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
+export const TABLE: Record<Collection, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
   transactions: Transaction[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
-  planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]
+  planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
+  /** immutable cash-operations audit trail, newest first */
+  audit: AuditEvent[]
   emailLedger: EmailLedgerRow[]; members: Member[]; invites: Invite[]; activity: ActivityRow[]
   /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
   duplicates: Transaction[]
 }
-export const emptyData = (): Data => ({ duplicates: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]
