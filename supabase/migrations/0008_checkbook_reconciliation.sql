@@ -47,7 +47,7 @@ create index if not exists audit_events_hh_idx on public.audit_events (household
 alter table public.audit_events enable row level security;
 create policy audit_events_select on public.audit_events for select to authenticated using (is_member(household_id));
 create policy audit_events_insert on public.audit_events for insert to authenticated with check (can_edit(household_id));
-create or replace function public.audit_immutable() returns trigger language plpgsql as $$ begin raise exception 'audit_events are immutable'; end $$;
+create or replace function public.audit_immutable() returns trigger language plpgsql set search_path = '' as $$ begin raise exception 'audit_events are immutable'; end $$;
 create trigger trg_audit_events_immutable before update or delete on public.audit_events for each row execute function public.audit_immutable();
 
 -- every balance change on an account is recorded, whoever or whatever made it
