@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useData } from '../app/hooks'
 import type { Account, ImportLog } from '../app/data/types'
 import { Card, KPI, Note, Btn, Field, Pill, Empty, Banner } from '../components/ui'
-import { parseCsv, detectMapping, mapRows, parseOfx, sniffFormat, dedupe, DUP_LABEL, type Mapping, type Proposed, type ImportRow } from '../lib/import'
+import { parseCsv, detectMapping, mapRows, parseOfx, sniffFormat, dedupe, DUP_LABEL, trimPreamble, parseExcel, isExcelName, type Mapping, type Proposed, type ImportRow, type SheetRows } from '../lib/import'
 import { post } from '../lib/ledger'
 import { suggest, applySuggestion } from '../lib/rules'
 import { fm2, fmtMoney, round2 } from '../lib/money'
@@ -23,11 +23,14 @@ export function ConnectionsPage() {
   const [skipDups, setSkipDups] = useState(true); const [setBalance, setSetBalance] = useState(true); const [result, setResult] = useState<ImportLog | null>(null); const [err, setErr] = useState('')
   const [sync, setSync] = useState<SyncStatus | null>(null); const sk = syncKpi(sync)
   const account = data.accounts.find(a => a.id === acctId) as Account | undefined
-  const format = file ? sniffFormat(file.name, file.text) : 'csv'
+  const format = file ? (isExcelName(file.name) ? 'csv' : sniffFormat(file.name, file.text)) : 'csv'
+  const [sheets, setSheets] = useState<SheetRows[] | null>(null); const [sheetIx, setSheetIx] = useState(0)
+  const pickSheet = (list: SheetRows[], ix: number) => { const sh = list[ix]; if (!sh) return; setSheetIx(ix); setRows(sh.rows); setMap(sh.mapping ? { ...sh.mapping, negativeIsOutflow: !(account && isLiability(account)) ? true : sh.mapping.negativeIsOutflow } : null); setStage('map'); setErr(sh.mapping ? '' : `Could not recognise the columns on sheet "${sh.name}" — pick them below or choose another sheet.`) }
 
-  const onFile = (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setErr(''); setResult(null)
+  const onFile = (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (!f) return; setErr(''); setResult(null); setSheets(null)
+    if (isExcelName(f.name)) { f.arrayBuffer().then(async buf => { const list = await parseExcel(buf); if (!list.length) throw new Error('The workbook has no sheets'); setFile({ name: f.name, text: '' }); setOfx(null); setSheets(list); const best = Math.max(0, list.findIndex(s => s.mapping)); pickSheet(list, best) }).catch(ex => setErr('Could not read the Excel file: ' + String((ex as Error).message || ex))); return }
     f.text().then(text => { setFile({ name: f.name, text }); if (sniffFormat(f.name, text) === 'ofx') { const r = parseOfx(text); setOfx(r); setRows([]); setMap(null); if (r.acctId) { const last4 = r.acctId.replace(/\D/g, '').slice(-4); const hit = data.accounts.find(a => a.last4 && last4 && a.last4 === last4); if (hit) setAcctId(hit.id) } setStage('review') }
-      else { const rs = parseCsv(text); const m = detectMapping(rs); setRows(rs); setOfx(null); setMap(m ? { ...m, negativeIsOutflow: !(account && isLiability(account)) ? true : m.negativeIsOutflow } : null); setStage(m ? 'map' : 'map'); if (!m) setErr('Could not recognise the columns — pick them below.') } }).catch(ex => setErr(String(ex))) }
+      else { const rs = trimPreamble(parseCsv(text)); const m = detectMapping(rs); setRows(rs); setOfx(null); setMap(m ? { ...m, negativeIsOutflow: !(account && isLiability(account)) ? true : m.negativeIsOutflow } : null); setStage(m ? 'map' : 'map'); if (!m) setErr('Could not recognise the columns — pick them below.') } }).catch(ex => setErr(String(ex))) }
 
   const imported: ImportRow[] = useMemo(() => (ofx ? ofx.rows : map ? mapRows(rows, map, { card: !!account && isLiability(account), source: 'csv' }) : []), [ofx, map, rows, account])
   const proposed: Proposed[] = useMemo(() => (account ? dedupe(data, account, imported).map(p => { if (p.txn.kind === 'transfer') return p; const sg = suggest(data, settings, { payee: p.txn.payee, kind: p.txn.kind as 'expense' | 'income' }); const patch = applySuggestion(p.txn, sg); return patch ? { ...p, txn: { ...p.txn, ...patch }, how: sg.how } : p }) : []), [data, settings, account, imported])
@@ -46,7 +49,7 @@ export function ConnectionsPage() {
     const log: ImportLog = { at: new Date().toISOString(), file: file.name, format, account_id: account.id, rows: proposed.length, added: made.length, skipped: proposed.length - made.length, balance: ofx?.balance ?? null }
     await saveSettings({ imports: [log, ...(settings.imports || [])].slice(0, 50) }); setResult(log); setStage('done')
   }, 'Statement imported')
-  const reset = () => { setFile(null); setRows([]); setMap(null); setOfx(null); setStage('pick'); setErr('') }
+  const reset = () => { setFile(null); setRows([]); setMap(null); setOfx(null); setStage('pick'); setErr(''); setSheets(null) }
   const history = settings.imports || []
   const lastByAcct = (a: Account) => history.find(h => h.account_id === a.id)
 
@@ -62,16 +65,17 @@ export function ConnectionsPage() {
       <BankSyncCard onKpi={setSync} />
       <YtdCoverageCard />
       <DataSourcesCard />
-      <Card span={7} title="Import a statement" hint="CSV, OFX or QFX from your bank or card — duplicates are detected before anything is written">
+      <Card span={7} title="Import a statement" hint="CSV, Excel (.xlsx / .xls), OFX or QFX from your bank or card — duplicates are detected before anything is written">
         {!canEdit && <Banner cls="warn">You have read-only access — imports are disabled.</Banner>}
         {stage === 'pick' && <>
           <Field label="Into account"><select className="inp" value={acctId} onChange={e => setAcctId(e.target.value)}>{accts.map(a => <option key={a.id} value={a.id}>{acctLabel(a, data.accounts)}</option>)}</select></Field>
-          <Field label="Statement file" hint="exported from online banking; nothing leaves your browser except the transactions you approve"><input className="inp" type="file" accept=".csv,.txt,.ofx,.qfx,.xml" onChange={onFile} disabled={!canEdit || !acctId} /></Field>
+          <Field label="Statement file" hint="exported from online banking; nothing leaves your browser except the transactions you approve"><input className="inp" type="file" accept=".csv,.txt,.ofx,.qfx,.xml,.xlsx,.xlsm,.xls" onChange={onFile} disabled={!canEdit || !acctId} /></Field>
           {err && <div className="msg crit">{err}</div>}
           <Note>How to get the file: most banks have <b>Download / Export</b> on the account activity page; pick <b>CSV</b> or <b>Quicken (QFX)</b>. QFX / OFX files carry a transaction id, which makes re-imports exact; CSVs are de-duplicated by date, amount and payee.</Note>
         </>}
         {stage === 'map' && file && <>
-          <p className="note" style={{ marginTop: 0 }}><b>{file.name}</b> · {rows.length} rows · {map?.hasHeader ? 'header row detected' : 'no header row'} · into <b>{account ? acctLabel(account, data.accounts) : '—'}</b> <Btn sm onClick={reset}>Change file</Btn></p>
+          {sheets && sheets.length > 1 && <Field label="Worksheet" hint="the workbook has several sheets — pick the one with the transactions"><select className="inp" value={sheetIx} onChange={e => pickSheet(sheets, +e.target.value)}>{sheets.map((sh, i) => <option key={i} value={i}>{sh.name} · {Math.max(0, sh.rows.length - 1)} rows{sh.mapping ? ' · columns recognised' : ''}</option>)}</select></Field>}
+          <p className="note" style={{ marginTop: 0 }}><b>{file.name}</b>{sheets ? ` · sheet "${sheets[sheetIx]?.name}"` : ''} · {rows.length} rows · {map?.hasHeader ? 'header row detected' : 'no header row'} · into <b>{account ? acctLabel(account, data.accounts) : '—'}</b> <Btn sm onClick={reset}>Change file</Btn></p>
           {err && <div className="msg warn">{err}</div>}
           <div className="grid g12">{COLS.map(([k, label]) => <div key={k} style={{ gridColumn: 'span 4' }}><Field label={label}><select className="inp" value={map && typeof map[k] === 'number' ? String(map[k]) : ''} onChange={e => setMap(m => ({ ...(m || { date: -1, payee: -1, hasHeader: true, negativeIsOutflow: true }), [k]: e.target.value === '' ? undefined : +e.target.value }))}><option value="">—</option>{rows[0]?.map((h, i) => <option key={i} value={i}>{map?.hasHeader ? h || `col ${i + 1}` : `col ${i + 1}: ${h.slice(0, 18)}`}</option>)}</select></Field></div>)}</div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', margin: '6px 0 12px' }}>
@@ -125,7 +129,8 @@ function DataSourcesCard() {
   const rows: Array<[string, string, string, string]> = [
     ['SimpleFIN Bridge (bank feed)', 'good', 'Live', 'Read-only feed from your banks — balances and posted transactions daily at 5:17 am and on demand. SimpleFIN itself is built on the MX aggregator.'],
     ['OFX / QFX statement files', 'good', 'Live', 'Quicken / Money format downloads; each row carries the bank\'s transaction id, so re-imports are no-ops.'],
-    ['CSV statement files', 'good', 'Live', 'Any bank CSV — columns are detected; rows get a stable id so a re-import is a no-op.'],
+    ['CSV statement files', 'good', 'Live', 'Any bank CSV — preamble lines skipped, columns detected; rows get a stable id so a re-import is a no-op.'],
+    ['Excel statement files (.xlsx / .xls)', 'good', 'Live', 'Workbook downloads from online banking — pick the sheet, columns are detected the same way as CSV.'],
     ['Email capture (Gmail / Outlook)', 'good', 'Live', 'Bills, payments, deposits and alerts read from your mail; you approve, the app files.'],
     ['Manual entry / check register', 'good', 'Live', 'Checks, payments and deposits you record yourself; outstanding until the bank shows them.'],
     ['Plaid · MX · Teller · Open Banking APIs', 'idle', 'On request', 'Direct aggregator connections need a developer account and keys with each provider; the bank feed above already covers the same banks through MX.'],

@@ -41,6 +41,26 @@ export interface Mapping { date: number; payee: number; amount?: number; debit?:
 const H = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '')
 const find = (hs: string[], ...names: string[]) => { for (const n of names) { const i = hs.findIndex(h => h === n); if (i >= 0) return i } for (const n of names) { const i = hs.findIndex(h => h.includes(n)); if (i >= 0) return i } return -1 }
 /** Guess which column is which from the header row (or from the data when there is no header). */
+/** Many bank exports start with a preamble (account name, date range, blank lines) before the real header row. Drop it. */
+export function trimPreamble(rows: string[][]): string[][] {
+  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+    const hs = rows[i].map(H); const cells = rows[i].filter(c => c.trim()).length
+    if (cells >= 2 && hs.filter(h => /date|amount|desc|payee|memo|debit|credit|balance|type|check|withdraw|deposit/.test(h)).length >= 2) return rows.slice(i).map(r => r.length < rows[i].length ? [...r, ...Array(rows[i].length - r.length).fill('')] : r)
+  }
+  return rows
+}
+export interface SheetRows { name: string; rows: string[][]; mapping: Mapping | null }
+/** Excel workbook (.xlsx / .xls / .xlsm): every sheet as text rows (dates as YYYY-MM-DD), with the column mapping detected per sheet. */
+export async function parseExcel(buf: ArrayBuffer): Promise<SheetRows[]> {
+  const XLSX = await import('xlsx')
+  const wb = XLSX.read(buf, { type: 'array', cellDates: true })
+  return wb.SheetNames.map(name => {
+    const ws = wb.Sheets[name]; const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, raw: false, defval: '', dateNF: 'yyyy-mm-dd' })
+    const rows = trimPreamble(aoa.map(r => r.map(c => c instanceof Date ? c.toISOString().slice(0, 10) : String(c ?? '').trim())).filter(r => r.some(c => c)))
+    return { name, rows, mapping: rows.length > 1 ? detectMapping(rows) : null }
+  })
+}
+export const isExcelName = (name: string) => /\.(xlsx|xlsm|xls)$/i.test(name)
 export function detectMapping(rows: string[][]): Mapping | null {
   if (!rows.length) return null
   const hs = rows[0].map(H); const hasHeader = hs.some(h => /date|amount|desc|payee|memo|debit|credit|balance|type/.test(h))

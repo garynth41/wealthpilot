@@ -7,6 +7,8 @@ import { Btn, Note, Pill, MHead, MBody, MFoot } from '../components/ui'
 import { planDedupe, keeperOrder, keeperPatch, origin, type DTxn } from '../lib/dedupe'
 import { fmtD } from '../lib/dates'
 import { fm2 } from '../lib/money'
+import { Link } from 'react-router-dom'
+import { linkTo } from '../lib/focus'
 
 const ORIGIN: Record<string, [string, string]> = { bank: ['bank feed', 'good'], file: ['statement file', 'info'], typed: ['typed / email', 'idle'] }
 const srcPill = (t: Transaction) => { const o = origin(t as unknown as DTxn); const [l, c] = ORIGIN[o]; return <Pill cls={c}>{t.source === 'email' ? 'email' : l}</Pill> }
@@ -21,7 +23,7 @@ export function DuplicatesReview({ onDone }: { onDone: () => void }) {
   const plan = useMemo(() => planDedupe(data.transactions as unknown as DTxn[]), [data.transactions])
   const byId = useMemo(() => new Map([...data.transactions, ...data.duplicates].map(t => [t.id, t])), [data.transactions, data.duplicates])
   const line = (t?: Transaction) => t ? <div style={{ display: 'grid', gridTemplateColumns: '92px 1fr 150px 92px 110px', gap: 8, alignItems: 'center', fontSize: 13 }}>
-    <span>{fmtD(t.date)}</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.payee || ''}>{t.payee || <i style={{ color: 'var(--ink-3)' }}>no payee</i>}</span>
+    <span>{fmtD(t.date)}</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.payee || ''}><Link to={linkTo('/transactions', t.id)} onClick={onDone}>{t.payee || <i style={{ color: 'var(--ink-3)' }}>no payee</i>}</Link></span>
     <span style={{ color: 'var(--ink-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.account_id ? acctLabels[t.account_id] : t.to_account_id ? '→ ' + acctLabels[t.to_account_id] : 'no account'}</span>
     <b className="num" style={{ textAlign: 'right' }}>{t.kind === 'income' ? '+' : '−'}{fm2(t.amount)}</b><span>{srcPill(t)}</span></div> : null
   const merge = (a: string, b: string) => guarded(async () => {

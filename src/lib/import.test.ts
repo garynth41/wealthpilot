@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { setToday } from './dates'
 import { demoSeed } from '../app/data/demoSeed'
-import { parseCsv, parseDate, detectMapping, mapRows, parseOfx, sniffFormat, dedupe, rowHash } from './import'
+import { parseCsv, parseDate, detectMapping, mapRows, parseOfx, sniffFormat, dedupe, rowHash, trimPreamble, parseExcel, isExcelName } from './import'
 
 beforeAll(() => setToday('2026-11-04'))
 
@@ -66,5 +66,26 @@ describe('import: de-duplication', () => {
     const p = dedupe(withExt, chk, rows); expect(p.map(x => x.dup)).toEqual(['same_day_amount_payee', 'near_match', 'external_id', null, 'in_file']); expect(p[0].match?.id).toBe(logged.id)
     const c = dedupe(data, card, [{ date: '2026-10-07', payee: 'PAYMENT THANK YOU', memo: '', amount: 250, kind: 'income', external_id: 'csv:p', raw: [], line: 1 }])[0]
     expect(c.txn.kind).toBe('transfer'); expect(c.txn.to_account_id).toBe(card.id); expect(c.txn.account_id).toBeNull()
+  })
+})
+
+describe('import: Excel workbooks and preambles (0.15.0)', () => {
+  it('skips a bank preamble before the header row', () => {
+    const rows = parseCsv('Account: Adv Plus Banking 0224\nFrom 10/01/2026 to 10/31/2026\n\nDate,Description,Amount,Running Bal.\n10/02/2026,KROGER #123,-42.10,1200.00\n10/03/2026,PAYROLL,1500,2700.00\n')
+    const t = trimPreamble(rows); expect(t[0]).toEqual(['Date', 'Description', 'Amount', 'Running Bal.']); expect(t).toHaveLength(3)
+    const m = detectMapping(t)!; expect(m.date).toBe(0); expect(m.amount).toBe(2)
+    expect(mapRows(t, m).map(r => [r.date, r.amount, r.kind])).toEqual([['2026-10-02', 42.1, 'expense'], ['2026-10-03', 1500, 'income']])
+  })
+  it('reads every sheet of a workbook, formats dates, and detects the columns per sheet', async () => {
+    const XLSX = await import('xlsx')
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Summary'], ['Opening', 1000]]), 'Summary')
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Statement for account ending 0224'], [], ['Posted Date', 'Description', 'Debit', 'Credit'], [new Date(2026, 9, 5), 'AEP OHIO BILL PAY', 150, ''], [new Date(2026, 9, 6), 'DIRECT DEPOSIT', '', 2865]]), 'Transactions')
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const sheets = await parseExcel(buf)
+    expect(sheets.map(s => s.name)).toEqual(['Summary', 'Transactions']); expect(sheets[0].mapping).toBeNull()
+    const tx = sheets[1]; expect(tx.rows[0]).toEqual(['Posted Date', 'Description', 'Debit', 'Credit']); expect(tx.mapping).not.toBeNull()
+    const rows = mapRows(tx.rows, tx.mapping!); expect(rows.map(r => [r.date, r.amount, r.kind, r.payee])).toEqual([['2026-10-05', 150, 'expense', 'AEP OHIO BILL PAY'], ['2026-10-06', 2865, 'income', 'DIRECT DEPOSIT']])
+    expect(isExcelName('Oct.xlsx') && isExcelName('a.XLS') && !isExcelName('a.csv')).toBe(true)
   })
 })

@@ -12,6 +12,8 @@ import { suggest, applySuggestion, planAutoCategorise, learnRule, upsertRule } f
 import { spanFor } from '../lib/periods'
 import { isLiability } from '../lib/accounts'
 import { DuplicatesReview, duplicateCounts } from './Duplicates'
+import { focusIdFrom, highlight } from '../lib/focus'
+import { useEffect } from 'react'
 
 const SRC_PILL: Record<string, string> = { manual: 'info', email: 'wait', import: 'idle', recurring: 'good', statement: 'idle', adjustment: 'idle' }
 export function TransactionsPage() {
@@ -24,6 +26,9 @@ export function TransactionsPage() {
   const to = range === 'period' ? sp.end : '9999'
   const [params, setParams] = useSearchParams(); const ids = useMemo(() => new Set((params.get('ids') || '').split(',').filter(Boolean)), [params])
   const rows = useMemo(() => data.transactions.filter(x => (ids.size ? ids.has(x.id) : x.date >= from && x.date <= to) && (kind === 'all' || (kind === 'uncat' ? !x.category_id && x.kind !== 'transfer' : x.kind === kind)) && (!acct || x.account_id === acct || x.to_account_id === acct)).sort((a, b) => b.date.localeCompare(a.date) || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.transactions, from, to, kind, acct, ids])
+  const focusId = focusIdFrom(params.toString() ? '?' + params.toString() : '')
+  useEffect(() => { if (focusId && !rows.some(r => r.id === focusId) && data.transactions.some(t => t.id === focusId)) { setRange('all'); setKind('all'); setAcct('') } }, [focusId, rows, data.transactions])   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { const first = [...ids][0]; if (first && !focusId) setTimeout(() => highlight(first), 200) }, [ids, focusId])
   const inc = sum(rows.filter(x => x.kind === 'income' && x.status !== 'void').map(x => x.amount)), exp = sum(rows.filter(x => x.kind === 'expense' && x.status !== 'void').map(x => x.amount)), tr = sum(rows.filter(x => x.kind === 'transfer' && x.status !== 'void').map(x => x.amount))
   const uncat = data.transactions.filter(x => !x.category_id && x.kind !== 'transfer' && x.status !== 'void').length
   const change = (row: Transaction, k: string, v: unknown) => guarded(async () => {

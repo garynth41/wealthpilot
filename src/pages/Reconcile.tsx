@@ -11,6 +11,7 @@ import { fmtD, fmtDY, today, ago } from '../lib/dates'
 import { fm2, fmtMoney, parseNum } from '../lib/money'
 import { acctLabel, isLiability } from '../lib/accounts'
 import { post } from '../lib/ledger'
+import { linkTo } from '../lib/focus'
 
 const KIND_LABEL: Record<string, string> = { check: 'Check', payment: 'Payment', deposit: 'Deposit', transfer: 'Transfer' }
 const AUDIT_PILL: Record<string, string> = { sync: 'good', import: 'info', sync_failure: 'crit', override: 'warn', adjustment: 'warn', reconciliation: 'good', match: 'info', unmatch: 'warn', balance_change: 'idle', correction: 'warn', register: 'idle' }
@@ -128,7 +129,7 @@ export function ReconcilePage() {
     </div>}
 
     {tab === 'issues' && <Card span={12} title="Issues" hint="timing differences, anomalies, data integrity, long-outstanding items">
-      {issues.length === 0 ? <Empty>Nothing to report for this account.</Empty> : <div className="alist"><ul>{issues.map((i, k) => <li key={k}><Pill cls={i.severity}>{i.kind.replace(/_/g, ' ')}</Pill><span><span className="t">{i.title}</span><div className="m">{i.detail}</div></span></li>)}</ul></div>}
+      {issues.length === 0 ? <Empty>Nothing to report for this account.</Empty> : <div className="alist"><ul>{issues.map((i, k) => <li key={k}><Pill cls={i.severity}>{i.kind.replace(/_/g, ' ')}</Pill><span><span className="t">{i.txnId ? <Link to={linkTo('/transactions', i.txnId)}>{i.title}</Link> : i.title}</span><div className="m">{i.detail}</div></span></li>)}</ul></div>}
       <Note>Duplicate imports are handled in <Link to="/transactions">Transactions → Duplicates</Link>; sync failures and connection problems show on <Link to="/connections">Cash & Account Operations</Link> and in the audit trail here.</Note>
     </Card>}
 

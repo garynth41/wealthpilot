@@ -9,6 +9,7 @@ import { isOpenItem } from '../lib/email/apply'
 import { Toasts, useModal, MHead, MBody, Btn } from './ui'
 import { sb } from '../app/supabase'
 import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
+import { focusIdFrom, highlight } from '../lib/focus'
 
 export interface View { path: string; title: string; sub: string; zone: string; icon: string; tab?: string }
 export const VIEWS: View[] = [
@@ -45,12 +46,21 @@ export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules } = useStore()
   const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path)) }, [mode, modules])
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS('rail')) === 'collapsed' } catch { return false } })
+  // sections fold; the one holding the current page is always open; the choice is remembered per browser
+  const [closedZones, setClosedZones] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(LS('navClosed')) || '[]')) } catch { return new Set() } })
+  const toggleZone = (z: string) => setClosedZones(s => { const n = new Set(s); if (n.has(z)) n.delete(z); else n.add(z); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
+  const setAllZones = (open: boolean) => setClosedZones(() => { const n = new Set(open ? [] : zonesRef.current); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
+  const zonesRef = { current: [] as string[] }
   const [drawer, setDrawer] = useState(false); const badges = useBadges(); const { open } = useModal(); const online = useOnline()
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
   const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname)
   useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
   useEffect(() => { try { localStorage.setItem(LS('rail'), collapsed ? 'collapsed' : 'open') } catch { /* */ } }, [collapsed])
-  const zones = [...new Set(visible.map(v => v.zone))]
+  const zones = [...new Set(visible.map(v => v.zone))]; zonesRef.current = zones
+  const focusId = focusIdFrom(loc.search)
+  useEffect(() => { if (focusId) setTimeout(() => highlight(focusId), 120) }, [focusId, loc.pathname])
+  const activeZone = visible.find(v => v.path === loc.pathname)?.zone
+  const allOpen = zones.every(z => !closedZones.has(z) || z === activeZone)
   const about = () => open(<><MHead title={`About ${APP_NAME}`} /><MBody><p><b>{APP_NAME}</b> v{APP_VERSION} · build <code>{APP_BUILD}</code></p><StatusPanel /><p className="note">Personal budgeting, savings and financial planning. Data lives in your own Supabase project; email bodies are never stored — only amounts, dates, payees and the last four digits of an account.</p></MBody></>)
   const tabs = visible.filter(v => v.tab)
   if (blocked) return <Navigate to="/" replace />
@@ -59,8 +69,15 @@ export function Layout({ children }: { children: ReactNode }) {
     <header className="mbar"><button onClick={() => setDrawer(d => !d)} aria-label="Menu">☰</button><button onClick={() => nav(-1)} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><ThemeBtn /></header>
     <div className={`backdrop ${drawer ? 'show' : ''}`} onClick={() => setDrawer(false)} />
     <aside className={`rail ${drawer ? 'open' : ''}`}>
-      <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'}>{collapsed ? '›' : '‹'}</button></div>
-      <nav className="nav">{zones.map(z => <div key={z}><div className="zone">{z}</div>{visible.filter(v => v.zone === z).map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span>{badges[v.path]?.n ? <span className="badge" title={badges[v.path].why}>{badges[v.path].n}</span> : null}</NavLink>)}</div>)}</nav>
+      <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo size={28} /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'}>{collapsed ? '›' : '‹'}</button></div>
+      <nav className="nav">
+        <div className="navtools"><button onClick={() => setAllZones(!allOpen)} title={allOpen ? 'Collapse all sections' : 'Expand all sections'}>{allOpen ? '⊟ Collapse all' : '⊞ Expand all'}</button></div>
+        {zones.map(z => { const items = visible.filter(v => v.zone === z); const open = collapsed || !closedZones.has(z) || z === activeZone; const n = items.reduce((s, v) => s + (badges[v.path]?.n || 0), 0)
+          return <div key={z} className={`zoneblock ${open ? 'open' : 'closed'}`}>
+            <button className="zone" onClick={() => toggleZone(z)} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}><span className="chev">{open ? '▾' : '▸'}</span><span className="zt">{z}</span>{!open && n > 0 && <span className="badge">{n}</span>}<span className="zc">{items.length}</span></button>
+            {open && items.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span>{badges[v.path]?.n ? <span className="badge" title={badges[v.path].why}>{badges[v.path].n}</span> : null}</NavLink>)}
+          </div> })}
+      </nav>
       <div className="me"><span className="avatar">{(mode === 'demo' ? 'D' : (user?.email?.[0] || '?')).toUpperCase()}</span><span className="who"><b>{mode === 'demo' ? 'demo' : user?.email}</b><span>{access ? (accessLevel(access) === 'owner' ? 'owner' : accessLevel(access) === 'full' ? 'full access' : accessLevel(access) === 'readonly' ? 'read-only' : 'limited access') : role}</span></span><Btn sm onClick={() => (mode === 'demo' ? exitDemo() : signOut())}>Sign out</Btn></div>
       <div className="railfoot" onClick={about}>{APP_NAME} <b>v{APP_VERSION}</b> · <span className={`envtag env-${envName()}`}>{envName()}</span><br />build {APP_BUILD}</div>
     </aside>
