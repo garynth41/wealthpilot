@@ -31,12 +31,12 @@ export function demoSeed(): { household: Household; data: Data } {
 
   // accounts
   const acc = (p: Partial<Data['accounts'][number]>) => { const a = { id: demoId(), household_id: hh, ref: 'A-' + String(d.accounts.length + 1).padStart(3, '0'), name: 'x', kind: 'checking', balance: 0, apr: 0, minimum_payment: 0, autopay: false, include_in_cash: true, include_in_net_worth: true, status: 'Active', sort_order: d.accounts.length + 1, balance_as_of: t, ...p } as Data['accounts'][number]; d.accounts.push(a); return a }
-  const chk = acc({ name: 'Huntington Checking', kind: 'checking', institution: 'Huntington', last4: '4410', balance: 3184.22, color: '#2a78d6' })
-  const sav = acc({ name: 'Ally Savings', kind: 'savings', institution: 'Ally', last4: '9921', balance: 8650, color: '#1a8c4e' })
-  acc({ name: 'Fidelity 401(k)', kind: 'retirement', institution: 'Fidelity', balance: 42300, include_in_cash: false, color: '#6b5bd6' })
-  const chase = acc({ name: 'Chase Freedom', kind: 'credit_card', institution: 'Chase', last4: '4821', balance: 1362.55, credit_limit: 5000, apr: 24.99, statement_date: addDays(t, -6), statement_balance: 1362.55, minimum_payment: 41, due_date: addDays(t, 19), planned_payment: 250, color: '#1c5cab' })
-  const amex = acc({ name: 'Amex Blue Cash', kind: 'credit_card', institution: 'American Express', last4: '1007', balance: 2840.2, credit_limit: 8000, apr: 27.49, statement_date: addDays(t, -12), statement_balance: 2840.2, minimum_payment: 85, due_date: addDays(t, 13), planned_payment: 300, autopay: true, autopay_account_id: chk.id, notes: 'Highest APR — pay first' })
-  const auto = acc({ name: 'Auto loan', kind: 'auto_loan', institution: 'Huntington', last4: '2210', balance: 9420, apr: 6.4, minimum_payment: 312, due_date: addDays(t, 4), planned_payment: 312, autopay: true, autopay_account_id: chk.id })
+  const chk = acc({ name: 'Huntington Checking', kind: 'checking', institution: 'Huntington', last4: '4410', balance: 3184.22, color: '#3b4f7a' })
+  const sav = acc({ name: 'Ally Savings', kind: 'savings', institution: 'Ally', last4: '9921', balance: 8650, color: '#2f6b3a' })
+  acc({ name: 'Fidelity 401(k)', kind: 'retirement', institution: 'Fidelity', balance: 42300, include_in_cash: false, color: '#5a4a7a' })
+  const chase = acc({ name: 'Chase Freedom', kind: 'credit_card', institution: 'Chase', last4: '4821', balance: 1362.55, credit_limit: 5000, apr: 24.99, statement_date: addDays(t, -6), statement_balance: 1362.55, minimum_payment: 41, due_date: addDays(t, 19), planned_payment: 250, color: '#2b4b8a' })
+  const amex = acc({ name: 'Amex Blue Cash', kind: 'credit_card', color: '#8b2e2e', institution: 'American Express', last4: '1007', balance: 2840.2, credit_limit: 8000, apr: 27.49, statement_date: addDays(t, -12), statement_balance: 2840.2, minimum_payment: 85, due_date: addDays(t, 13), planned_payment: 300, autopay: true, autopay_account_id: chk.id, notes: 'Highest APR — pay first' })
+  const auto = acc({ name: 'Auto loan', kind: 'auto_loan', color: '#6b6257', institution: 'Huntington', last4: '2210', balance: 9420, apr: 6.4, minimum_payment: 312, due_date: addDays(t, 4), planned_payment: 312, autopay: true, autopay_account_id: chk.id })
   // statements history for Chase
   ;[-66, -36, -6].forEach((k, i) => d.statements.push({ id: demoId(), household_id: hh, account_id: chase.id, statement_date: addDays(t, k), statement_balance: [1180.4, 1302.1, 1362.55][i], minimum_payment: [36, 40, 41][i], due_date: addDays(t, k + 25), paid_on: i < 2 ? addDays(t, k + 20) : null, paid_amount: i < 2 ? 250 : null, source: 'manual' }))
 
@@ -105,14 +105,14 @@ export function demoSeed(): { household: Household; data: Data } {
   tx(addDays(t, -1), 'expense', 68.4, { payee: 'Kroger', category_id: cat('Food', 'Groceries').id, account_id: amex.id, status: 'pending' })
 
   // goals
-  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-001', name: 'Emergency fund (6 months)', kind: 'emergency_fund', target_amount: 18000, target_date: addDays(t, 540), account_id: sav.id, starting_amount: 7150, monthly_contribution: 300, priority: 1, status: 'Active', color: '#1a8c4e', sort_order: 1 })
-  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-002', name: 'Pay off Amex', kind: 'debt_payoff', target_amount: 2840.2, target_date: addDays(t, 300), account_id: amex.id, starting_amount: 0, monthly_contribution: 300, priority: 2, status: 'Active', color: '#d99000', sort_order: 2 })
-  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-003', name: 'Spring break trip', kind: 'purchase', target_amount: 2400, target_date: addDays(t, 150), account_id: sav.id, starting_amount: 600, monthly_contribution: 200, priority: 3, status: 'Active', color: '#2a78d6', sort_order: 3 })
+  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-001', name: 'Emergency fund (6 months)', kind: 'emergency_fund', target_amount: 18000, target_date: addDays(t, 540), account_id: sav.id, starting_amount: 7150, monthly_contribution: 300, priority: 1, status: 'Active', color: '#2f6b3a', sort_order: 1 })
+  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-002', name: 'Pay off Amex', kind: 'debt_payoff', target_amount: 2840.2, target_date: addDays(t, 300), account_id: amex.id, starting_amount: 0, monthly_contribution: 300, priority: 2, status: 'Active', color: '#c9a24a', sort_order: 2 })
+  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-003', name: 'Spring break trip', kind: 'purchase', target_amount: 2400, target_date: addDays(t, 150), account_id: sav.id, starting_amount: 600, monthly_contribution: 200, priority: 3, status: 'Active', color: '#3b4f7a', sort_order: 3 })
   d.transactions.filter(x => x.kind === 'transfer' && x.to_account_id === sav.id).forEach(x => d.contributions.push({ id: demoId(), household_id: hh, goal_id: d.goals[0].id, date: x.date, amount: x.amount, transaction_id: x.id }))
 
   // holdings: the 401(k) is a target-date fund + bond fund; add a small brokerage account with a few positions
   const k401 = d.accounts.find(a => a.name === 'Fidelity 401(k)')!
-  const brok = acc({ name: 'Schwab brokerage', kind: 'investment', institution: 'Schwab', last4: '7730', balance: 11860, include_in_cash: false, color: '#2a78d6' })
+  const brok = acc({ name: 'Schwab brokerage', kind: 'investment', institution: 'Schwab', last4: '7730', balance: 11860, include_in_cash: false, color: '#3b4f7a' })
   const hold = (o: Partial<Holding> & { name: string; quantity: number; price: number; cost_basis: number }) => d.holdings.push({ id: demoId(), household_id: hh, ref: `I-${String(d.holdings.length + 1).padStart(3, '0')}`, asset_class: 'etf', risk: 'medium', sort_order: d.holdings.length + 1, price_as_of: t, value: Math.round(o.quantity * o.price * 100) / 100, ...o })
   hold({ account_id: k401.id, symbol: 'FFFHX', name: 'Fidelity Freedom 2050', asset_class: 'mutual_fund', sector: 'Diversified', risk: 'medium', quantity: 1210.5, price: 28.4, cost_basis: 29800, expense_ratio: 0.75 })
   hold({ account_id: k401.id, symbol: 'FXNAX', name: 'Fidelity US Bond Index', asset_class: 'bond', sector: 'Fixed income', risk: 'low', quantity: 760.2, price: 10.4, cost_basis: 8100, expense_ratio: 0.025, yield_pct: 4.1 })
@@ -129,9 +129,9 @@ export function demoSeed(): { household: Household; data: Data } {
   d.hardship.push({ id: demoId(), household_id: hh, ref: 'H-001', entity: 'American Express', type: 'Credit card', account_id: amex.id, monthly_obligation: null, phone: '800-555-0199', contact_name: '', status: 'Called — waiting', program: 'Interest / APR reduction', relief_monthly: 0, last_contact: addDays(t, -3), next_followup: addDays(t, 1), reference: '', outcome: 'Hardship team to call back within 3 business days', notes: 'Ask for 12-month reduced APR program', sort_order: 1 })
 
   // more sample accounts so the demo covers every account type the spec lists: a second debit card, a cash wallet, a third credit card (Discover)
-  const chaseChk = acc({ name: 'Chase Total Checking', kind: 'checking', institution: 'Chase', last4: '7730', balance: 1240.18, color: '#117aca' })
-  const wallet = acc({ name: 'Cash wallet', kind: 'cash', balance: 86, color: '#8b95a1' })
-  const disc = acc({ name: 'Discover it', kind: 'credit_card', institution: 'Discover', last4: '3391', balance: 412.6, credit_limit: 4000, apr: 22.99, statement_date: addDays(t, -9), statement_balance: 388.1, minimum_payment: 35, due_date: addDays(t, 16), planned_payment: 120, color: '#e26a2c' })
+  const chaseChk = acc({ name: 'Chase Total Checking', kind: 'checking', institution: 'Chase', last4: '7730', balance: 1240.18, color: '#4d6a9c' })
+  const wallet = acc({ name: 'Cash wallet', kind: 'cash', balance: 86, color: '#8a7f70' })
+  const disc = acc({ name: 'Discover it', kind: 'credit_card', institution: 'Discover', last4: '3391', balance: 412.6, credit_limit: 4000, apr: 22.99, statement_date: addDays(t, -9), statement_balance: 388.1, minimum_payment: 35, due_date: addDays(t, 16), planned_payment: 120, color: '#b5542a' })
   ;([[3, 'Target', 54.18, 'Personal', 'Shopping', chaseChk], [9, 'Walgreens', 23.47, 'Health', 'Pharmacy', chaseChk], [16, 'Chipotle', 14.85, 'Food', 'Dining out', chaseChk], [24, 'Shell', 48.9, 'Transport', 'Fuel', chaseChk], [38, 'Target', 61.02, 'Personal', 'Shopping', chaseChk], [45, 'Speedway', 44.3, 'Transport', 'Fuel', chaseChk],
      [2, 'Worthington Farmers Market', 22, 'Food', 'Groceries', wallet], [6, 'Parking — Short North', 8, 'Transport', 'Parking / tolls / transit', wallet], [13, 'Lunch money', 15, 'Personal', 'Kids & family', wallet], [27, 'Barber tip', 10, 'Personal', 'Personal care', wallet],
      [4, 'The Home Depot', 136.42, 'Housing', 'Home maintenance', disc], [11, 'Amazon', 38.99, 'Personal', 'Shopping', disc], [19, 'Condado Tacos', 47.8, 'Food', 'Dining out', disc], [33, 'Lowe’s', 189.39, 'Housing', 'Home maintenance', disc]] as Array<[number, string, number, string, string, { id: string }]>)

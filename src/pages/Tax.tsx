@@ -75,7 +75,7 @@ export function TaxPage() {
         <Note>Look up your city and school-district rates on the Ohio Department of Taxation "The Finder". Lewis Center addresses can fall in different municipalities and school districts.</Note>
       </Card>
 
-      <Card span={8} title="Income, deductions & payments" hint="auto rows come from the rest of the app; add W-2 box 2 / 1099 figures as you receive them" right={canEdit ? <span className="btnrow"><select className="inp" style={{ width: 'auto' }} value="" onChange={x => x.target.value && addItem(x.target.value as TaxItemKind)}><option value="">+ Add item…</option>{[...INCOME, ...OTHER].map(k => <option key={k} value={k}>{TAX_ITEM_LABEL[k]}</option>)}</select></span> : undefined}>
+      <Card span={8} title="Income, deductions & payments" hint="auto rows come from the rest of the app; add W-2 box 2 / 1099 figures as you receive them" right={canEdit ? <span className="btnrow"><select className="inp" style={{ width: 150, maxWidth: '100%' }} value="" onChange={x => x.target.value && addItem(x.target.value as TaxItemKind)}><option value="">+ Add item…</option>{[...INCOME, ...OTHER].map(k => <option key={k} value={k}>{TAX_ITEM_LABEL[k]}</option>)}</select></span> : undefined}>
         {items.length === 0 ? <Empty>No income yet. Add pay schedules on Income &amp; Pay Periods or add items here.</Empty> :
           <Table rows={items} cols={cols} name="tax-items" editable={canEdit} search={false} pageSize={25}
             onChange={(r, k, v) => { if (r.source === 'auto') return; setP(x => ({ ...x, items: x.items.map(i => i.id === r.id ? { ...i, [k]: k === 'amount' ? (+(v as number) || 0) : v } : i) })) }}
