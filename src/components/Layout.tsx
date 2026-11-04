@@ -97,7 +97,13 @@ export function Layout({ children }: { children: ReactNode }) {
 export type ThemeMode = 'light' | 'dark' | 'system'
 const sysTheme = () => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 export const themeMode = (): ThemeMode => { try { const v = localStorage.getItem(LS('theme')); return v === 'light' || v === 'dark' || v === 'system' ? v : 'system' } catch { return 'system' } }
-export function setThemeMode(m: ThemeMode) { try { localStorage.setItem(LS('theme'), m) } catch { /* */ } document.documentElement.dataset.theme = m === 'system' ? sysTheme() : m }
+export function setThemeMode(m: ThemeMode) {
+  try { localStorage.setItem(LS('theme'), m) } catch { /* */ }
+  const t = m === 'system' ? sysTheme() : m
+  document.documentElement.dataset.theme = t
+  // phones paint the status bar / address bar from theme-color, so keep it in step with the theme (white rail in light, near-black in dark)
+  try { const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', t === 'dark' ? '#0b0d10' : '#ffffff') } catch { /* */ }
+}
 /** Light / dark / system (follows the OS). Persisted in localStorage; "system" re-applies live when the OS switches. */
 export function ThemeBtn() {
   const [m, setM] = useState<ThemeMode>(themeMode)
