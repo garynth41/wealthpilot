@@ -5,7 +5,9 @@ on:
   push: { branches: [main] }
   pull_request: { branches: [main] }
   workflow_dispatch:
-concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 permissions: { contents: write }
 jobs:
   check:
@@ -14,7 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci
       - run: npm run engines:sync -- --check
       - run: npm run typecheck
@@ -24,10 +28,16 @@ jobs:
       - run: npm run e2e
       - uses: actions/upload-artifact@v4
         if: failure()
-        with: { name: smoke-shots, path: e2e/shots, if-no-files-found: ignore }
+        with:
+          name: smoke-shots
+          path: e2e/shots
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        with: { name: dist, path: dist, retention-days: 3 }
+        with:
+          name: dist
+          path: dist
+          retention-days: 3
   deploy:
     needs: check
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -36,7 +46,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
-        with: { name: dist, path: dist }
+        with:
+          name: dist
+          path: dist
       - name: Publish dist/ to gh-pages
         run: |
           git config user.name "wealthpilot-ci"; git config user.email "ci@users.noreply.github.com"
