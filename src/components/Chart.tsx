@@ -30,18 +30,19 @@ function readable(el: HTMLElement, data: Data, layout: Layout, big: boolean): { 
   if ((L.margin?.l as number) > W * 0.4) L.margin = { ...L.margin, l: Math.round(W * 0.4) }
   return { data: d, layout: L }
 }
-export function Chart({ data, layout = {}, height = 260, title, expand = true, className = '' }: { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string }) {
+export function Chart({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false }: { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean }) {
   const ref = useRef<HTMLDivElement>(null); const { open } = useModal()
   // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
   // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)
   const latest = useRef({ data, layout, height }); latest.current = { data, layout, height }
   const P = useRef<typeof Plotly | null>(null); const alive = useRef(true)
-  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current; const r = readable(el, data, { height, ...layout }, false); el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
+  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current; const h = fill ? Math.max(height, Math.floor(el.parentElement?.clientHeight || 0)) : height; const r = readable(el, data, { height: h, ...layout }, false); if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
   useEffect(() => { const el = ref.current; if (!el) return; alive.current = true; loadPlotly().then(p => { P.current = p; draw() })
-    const ro = new ResizeObserver(() => draw()); ro.observe(el); return () => { alive.current = false; ro.disconnect(); try { P.current?.purge(el) } catch { /* */ } } }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+    const ro = new ResizeObserver(() => draw()); ro.observe(fill && el.parentElement ? el.parentElement : el); return () => { alive.current = false; ro.disconnect(); try { P.current?.purge(el) } catch { /* */ } } }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { draw() }, [data, layout, height])   // eslint-disable-line react-hooks/exhaustive-deps
   const big = () => open(<BigChart data={data} layout={layout} title={title || ''} />, { xwide: true })
-  return <div className={className}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}<div ref={ref} className="chart" style={{ minHeight: height }} /></div>
+  // fill: the chart grows with its card (the card must be a flex column, e.g. <Card className="fill">), so a chart beside a taller card never leaves a blank strip under it
+  return <div className={className} style={fill ? { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: height } : undefined}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}{fill ? <div style={{ flex: '1 1 auto', position: 'relative', minHeight: height }}><div ref={ref} className="chart" style={{ position: 'absolute', inset: 0, minHeight: 0 }} /></div> : <div ref={ref} className="chart" style={{ minHeight: height }} />}</div>
 }
 function BigChart({ data, layout, title }: { data: Data; layout: Layout; title: string }) {
   const ref = useRef<HTMLDivElement>(null)

@@ -71,7 +71,7 @@ select:disabled{color:var(--ink-3);background:var(--surface-2)}
 /* ---- cards & grid ---- */
 .grid{display:grid;gap:16px} .g12{grid-template-columns:repeat(12,minmax(0,1fr))}
 .span12{grid-column:span 12} .span8{grid-column:span 8} .span7{grid-column:span 7} .span6{grid-column:span 6} .span5{grid-column:span 5} .span4{grid-column:span 4} .span3{grid-column:span 3}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;min-width:0} .card.fill{display:flex;flex-direction:column} .card.fill > h3{flex:none}
 .card h3{font-family:var(--display);font-size:16px;font-weight:700;letter-spacing:-.015em;text-transform:none;color:var(--ink);margin:0 0 10px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .card h3 > span:last-child:not(.hint){flex-wrap:wrap} .card h3 .hint{font-family:var(--sans);font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-3);font-size:12px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}

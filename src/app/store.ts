@@ -39,6 +39,7 @@ interface State {
   guarded: <T>(fn: () => Promise<T>, ok?: string) => Promise<T | undefined>
   /** merge every clear-cut duplicate (see lib/dedupe.ts); returns how many rows were merged */
   autoDedupe: (quiet?: boolean) => Promise<number>
+  checkLatest: () => Promise<void>
   mergeDuplicates: (keeper: string, dups: string[], patch?: Partial<Transaction>) => Promise<void>
   restoreDuplicate: (id: string) => Promise<void>
   notDuplicates: (ids: string[]) => Promise<void>
@@ -91,8 +92,9 @@ export const useStore = create<State>((set, get) => ({
   async openHousehold(id) {
     unsub?.(); const repo = new SupabaseRepo(id); localStorage.setItem(LS('household'), id)
     set({ mode: 'db', repo }); await get().refresh(); attach(repo)
-    try { const { data } = await sb().from('app_meta').select('value').eq('key', 'latest_version').maybeSingle(); if (data?.value) set({ latest: data.value }) } catch { /* optional */ }
+    void get().checkLatest(); startVersionWatch(get)
   },
+  async checkLatest() { try { const { data } = await sb().from('app_meta').select('value').eq('key', 'latest_version').maybeSingle(); if (data?.value) set({ latest: data.value }) } catch { /* optional */ } },
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
@@ -156,5 +158,12 @@ async function loadHouseholds(user: User) {
   const want = localStorage.getItem(LS('household'))
   const pick = list.find(h => h.id === want) || list[0]
   if (pick) await useStore.getState().openHousehold(pick.id)
+}
+// A tab left open across a release keeps running the old bundle (hash navigation never reloads), so re-check the registered version every 10 minutes and whenever the tab comes back into view; Layout shows the reload banner.
+let versionTimer: number | null = null
+function startVersionWatch(get: () => { checkLatest: () => Promise<void>; mode: Mode }) {
+  if (versionTimer != null || typeof window === 'undefined') return
+  versionTimer = window.setInterval(() => { if (get().mode === 'db' && document.visibilityState === 'visible') void get().checkLatest() }, 10 * 60 * 1000)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && get().mode === 'db') void get().checkLatest() })
 }
 export const outdated = () => { const l = useStore.getState().latest; return !!l && cmpVer(APP_VERSION, l) < 0 }
