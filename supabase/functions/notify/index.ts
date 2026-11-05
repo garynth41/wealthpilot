@@ -16,7 +16,8 @@ const url = Deno.env.get('SUPABASE_URL')!, anon = Deno.env.get('SUPABASE_ANON_KE
 const admin = createClient(url, service, { auth: { persistSession: false } })
 const APP_URL = Deno.env.get('APP_URL') || 'https://garynth41.github.io/wealthpilot/'
 let VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') || '', VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') || ''; const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:garynthomas@gmail.com'
-const RESEND = Deno.env.get('RESEND_API_KEY') || '', EMAIL_FROM = Deno.env.get('EMAIL_FROM') || 'WealthPilot <onboarding@resend.dev>'
+// read at send time (not module load) so a secret added after the instance booted is seen on the next call
+const resendKey = () => Deno.env.get('RESEND_API_KEY') || '', emailFrom = () => Deno.env.get('EMAIL_FROM') || 'WealthPilot <onboarding@resend.dev>'
 /** VAPID keys come from Vault (migration 0012, vapid_keys() is service-role only) unless set as function secrets. */
 async function vapid() {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) { const { data } = await admin.rpc('vapid_keys'); const row = Array.isArray(data) ? data[0] : data; if (row?.public_key && row?.private_key) { VAPID_PUBLIC = row.public_key; VAPID_PRIVATE = row.private_key } }
@@ -57,8 +58,8 @@ async function sendPush(hh: string, userIds: string[] | null, title: string, bod
   return { sent, failed, detail: errs.join(', ') }
 }
 async function sendEmail(to: string, subject: string, html: string, text: string): Promise<{ ok: boolean; detail: string }> {
-  if (!RESEND) return { ok: false, detail: 'email not configured (RESEND_API_KEY)' }
-  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${RESEND}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: EMAIL_FROM, to: [to], subject, html, text }) })
+  const key = resendKey(); if (!key) return { ok: false, detail: 'email not configured (RESEND_API_KEY)' }
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: emailFrom(), to: [to], subject, html, text }) })
   if (!r.ok) return { ok: false, detail: `Resend ${r.status}: ${(await r.text()).slice(0, 200)}` }
   return { ok: true, detail: 'sent' }
 }
@@ -125,7 +126,9 @@ Deno.serve(async (req) => {
     const { data: hhs, error } = await admin.from('households').select('id'); if (error) return json(500, { error: error.message })
     const out: unknown[] = []
     for (const h of hhs || []) { try { out.push(b.action === 'digest' ? await runDigest(h.id) : await runDaily(h.id)) } catch (e) { await logError(h.id, (e as Error).message, { action: b.action }); out.push({ household_id: h.id, error: (e as Error).message }) } }
-    return json(200, { ok: true, results: out })
+    // config: which delivery secrets the function can see — names only, never values — so a mis-typed secret name shows up in the cron log
+    const seen = Object.keys(Deno.env.toObject()).filter(k => /RESEND|VAPID|EMAIL/i.test(k)).sort()
+    return json(200, { ok: true, results: out, config: { push: await vapid(), email: !!resendKey(), secrets_seen: seen } })
   }
   // signed-in actions
   const auth = req.headers.get('Authorization') || ''; if (!auth.startsWith('Bearer ')) return json(401, { error: 'sign in first' })
@@ -133,7 +136,7 @@ Deno.serve(async (req) => {
   const { data: me } = await user.auth.getUser(); if (!me?.user) return json(401, { error: 'sign in first' })
   const hh = String(b.household_id || ''); if (!hh) return json(400, { error: 'household_id required' })
   const { data: m } = await admin.from('household_members').select('role, email').eq('household_id', hh).eq('user_id', me.user.id).maybeSingle(); if (!m) return json(403, { error: 'not a member' })
-  if (b.action === 'preview') { try { const { input } = await loadHousehold(hh); return json(200, { today: input.today, alerts: computeAlerts(input), push: await vapid(), email: !!RESEND }) } catch (e) { return json(500, { error: (e as Error).message }) } }
+  if (b.action === 'preview') { try { const { input } = await loadHousehold(hh); return json(200, { today: input.today, alerts: computeAlerts(input), push: await vapid(), email: !!resendKey() }) } catch (e) { return json(500, { error: (e as Error).message }) } }
   if (b.action === 'test') {
     const push = await sendPush(hh, [me.user.id], 'WealthPilot test', 'Push notifications are working on this device.', '/settings', 'test')
     const { prefs } = await loadHousehold(hh); const to = prefs.email_to || m.email
