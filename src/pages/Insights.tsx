@@ -10,7 +10,14 @@ import { addDays, fmtD, monthEnd, monthStart, curMonth, mAdd, today } from '../l
 const WASTE_LABEL: Record<WasteKind, string> = { duplicate: 'Duplicate charge', rising_subscription: 'Subscription went up', bank_fee: 'Bank / card fee', late_fee: 'Late fee', unused_subscription: 'Dormant subscription', spike: 'Spending spike', outlier: 'Unusually large' }
 
 export function InsightsPage() {
-  const { data, settings } = useData(); const c = C(); const pal = PALETTE()
+  const { data, settings, insert, guarded, canEdit } = useData(); const c = C(); const pal = PALETTE()
+  // Add to Bills (0.19.0): a detected recurring charge becomes a recurring item with the amount, cadence, next date, account and category of its last charge
+  const addToBills = (r: { name: string; amount: number; cadence: string; next: string; last: string; lastAmount: number }) => guarded(async () => {
+    const lastTx = data.transactions.filter(t => t.kind === 'expense' && (t.payee || '').trim().toLowerCase() === r.name.trim().toLowerCase()).sort((a, b) => b.date.localeCompare(a.date))[0]
+    const freq = r.cadence === 'weekly' ? 'weekly' : r.cadence === 'biweekly' ? 'biweekly' : r.cadence === 'quarterly' ? 'quarterly' : r.cadence === 'yearly' ? 'yearly' : 'monthly'
+    const next = r.next >= today() ? r.next : today()
+    await insert('recurring', { name: r.name, payee: r.name, kind: 'subscription', amount: Math.round((r.lastAmount || r.amount) * 100) / 100, amount_varies: false, frequency: freq, day_of_month: freq === 'monthly' || freq === 'quarterly' || freq === 'yearly' ? +next.slice(8) : null, next_due: next, account_id: lastTx?.account_id || null, category_id: lastTx?.category_id || null, autopay: true, reminder_days: 3, status: 'Active', sort_order: data.recurring.length + 1 })
+  }, `${r.name} added to Bills & Subscriptions`)
   const [win, setWin] = useState<'30' | 'month' | '90'>('30'); const [look, setLook] = useState<3 | 6>(3)
   const [from, to] = useMemo(() => (win === 'month' ? [monthStart(curMonth()), monthEnd(curMonth())] : [addDays(today(), -(+win) + 1), today()]), [win])
   const merchants = useMemo(() => merchantAnalysis(data, from, to), [data, from, to])
@@ -61,7 +68,10 @@ export function InsightsPage() {
           {subs.items.map((s, i) => <tr key={i}><td><b>{s.name}</b>{s.rising && <> <Pill cls="warn">↑ price</Pill></>}</td><td className="num">{fm2(s.monthly)}</td><td className="num">{fm2(s.annual)}</td><td>{s.lastCharged ? fmtD(s.lastCharged) : '—'}</td><td>{s.source === 'detected' ? <Pill cls="info">detected</Pill> : null}</td></tr>)}
           <tr><td><b>Total</b></td><td className="num"><b>{fm2(subs.monthly)}</b></td><td className="num"><b>{fm2(subs.annual)}</b></td><td colSpan={2}></td></tr>
         </tbody></table></div>
-        {subs.detectedUnknown.length > 0 && <Note>{subs.detectedUnknown.length} recurring charge{subs.detectedUnknown.length === 1 ? '' : 's'} found in your transactions that are not in Bills &amp; Subscriptions — add them there so the forecast and reminders include them. <Link to="/bills"><Btn sm>Open Bills</Btn></Link></Note>}
+        {subs.detectedUnknown.length > 0 && <div style={{ marginTop: 10 }}><div className="gm-h">Recurring charges not in Bills &amp; Subscriptions <span className="hint">add them so the forecast, reminders and alerts include them</span></div>
+          <div className="tblwrap"><table className="tbl"><caption className="sr-only">Detected recurring charges</caption><thead><tr><th scope="col">Charge</th><th scope="col">Every</th><th scope="col" className="num">Amount</th><th scope="col">Next expected</th><th scope="col" /></tr></thead><tbody>
+            {subs.detectedUnknown.map(r => <tr key={r.key}><td><b>{r.name}</b> <span className="note" style={{ display: 'inline', margin: 0 }}>seen {r.count}×</span></td><td>{r.cadence === 'other' ? `${r.everyDays} days` : r.cadence}</td><td className="num">{fm2(r.lastAmount || r.amount)}</td><td>{fmtD(r.next)}</td><td>{canEdit ? <Btn sm primary onClick={() => addToBills(r)}>+ Add to Bills</Btn> : <Link to="/bills">Bills</Link>}</td></tr>)}
+          </tbody></table></div></div>}
         <Chart title="Subscription cost by service" data={[{ type: 'bar', x: subs.items.slice(0, 10).map(s => s.name), y: subs.items.slice(0, 10).map(s => s.monthly), marker: { color: c.blue }, hovertemplate: '%{x}: $%{y:,.2f}/mo<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={200} />
       </Card>
     </div>

@@ -13,6 +13,7 @@ import { spanFor } from '../lib/periods'
 import { isLiability } from '../lib/accounts'
 import { splitsFor, validateSplits, splitRemaining, isSplit } from '../lib/splits'
 import { DuplicatesReview, duplicateCounts } from './Duplicates'
+import { AttachmentsModal, attachmentsFor } from './Attachments'
 import { focusIdFrom, highlight } from '../lib/focus'
 import { useEffect } from 'react'
 
@@ -62,6 +63,7 @@ export function TransactionsPage() {
     guarded(async () => { for (const r of rows) { await post(data, acctUpd, r, -1); await remove('transactions', r.id) } setSelected(new Set()); pushUndo({ label: 'delete', run: async () => { for (const r of rows) await reinsert(r) } }) }, `${rows.length} deleted`) }
   // split (0.19.0)
   const openSplit = (row: Transaction) => open(<SplitEditor txn={row} onDone={close} />, { wide: true })
+  const openFiles = (row: Transaction) => open(<AttachmentsModal txn={row} onDone={close} />, { wide: true })
   // saved views (0.19.0): a named filter pinned above the ledger, kept in household settings
   const views = settings.savedViews || []
   const applyView = (v: SavedView) => { setViewId(v.id); setRange(v.range); setKind(v.kind); setAcct(v.account_id || ''); setTag(v.tag || '') }
@@ -90,7 +92,7 @@ export function TransactionsPage() {
     {(dupN.review > 0 || dupN.pendingAuto > 0) && <div className="banner" style={{ marginBottom: 12 }}>{dupN.pendingAuto > 0 ? `${dupN.pendingAuto} duplicate${dupN.pendingAuto === 1 ? '' : 's'} found` : ''}{dupN.pendingAuto > 0 && dupN.review > 0 ? ' · ' : ''}{dupN.review > 0 ? `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check` : ''} <button className="btn sm" onClick={openDups}>Review</button></div>}
     <Card title="Ledger" hint="click any cell to edit · amounts are always positive, the type gives the direction · every transaction appears once: duplicates are merged" right={<span className="btnrow"><Btn sm onClick={openDups}>Duplicates{dupN.merged ? ` (${dupN.merged} merged)` : ''}</Btn>{canEdit && <Btn primary sm onClick={addForm}>+ Add transaction</Btn>}</span>}>
       {canEdit && selected.size > 0 && <BulkBar n={selected.size} catOpts={catOpts(['expense', 'income', 'transfer']).map(c => [c.id, catLabels[c.id]] as [string, string])} allTags={allTags} onCategory={id => bulk({ category_id: id || null }, 'Category set')} onBudget={on => bulk({ exclude_from_budget: !on }, on ? 'Counted in budget' : 'Excluded from budget')} onTag={bulkTag} onDelete={bulkDel} onClear={() => setSelected(new Set())} />}
-      <Table rows={rows} cols={cols} onChange={change} onDelete={del} editable={canEdit} caption="Transactions" selected={canEdit ? selected : undefined} onSelect={canEdit ? setSelected : undefined} actions={r => r.kind !== 'transfer' && canEdit ? <Btn sm onClick={() => openSplit(r)} title="Split this transaction across categories">{isSplit(data, r) ? `Split (${splitsFor(data, r.id).length})` : 'Split'}</Btn> : isSplit(data, r) ? <Pill cls="info">split</Pill> : null} rowCls={r => r.status === 'void' ? 'st-idle ex-off' : r.status === 'pending' ? 'st-wait' : r.kind === 'income' ? 'st-good' : r.kind === 'transfer' ? 'st-info' : !r.category_id ? 'st-warn' : ''} empty="No transactions in this range. Add one, or sync your email on the Email page." />
+      <Table rows={rows} cols={cols} onChange={change} onDelete={del} editable={canEdit} caption="Transactions" selected={canEdit ? selected : undefined} onSelect={canEdit ? setSelected : undefined} actions={r => <>{r.kind !== 'transfer' && canEdit ? <Btn sm onClick={() => openSplit(r)} title="Split this transaction across categories">{isSplit(data, r) ? `Split (${splitsFor(data, r.id).length})` : 'Split'}</Btn> : isSplit(data, r) ? <Pill cls="info">split</Pill> : null}<Btn sm onClick={() => openFiles(r)} title="Receipts and documents">{attachmentsFor(data, r.id).length ? `📎 ${attachmentsFor(data, r.id).length}` : '📎'}</Btn></>} rowCls={r => r.status === 'void' ? 'st-idle ex-off' : r.status === 'pending' ? 'st-wait' : r.kind === 'income' ? 'st-good' : r.kind === 'transfer' ? 'st-info' : !r.category_id ? 'st-warn' : ''} empty="No transactions in this range. Add one, or sync your email on the Email page." />
       <div className="note">Expenses reduce the account they were paid from (a card's balance owed goes up); income adds to it; a transfer moves money between accounts and a transfer to a card or loan is a debt payment. Budget actuals are the sum of expenses by category for the period, so categorize everything.</div>
     </Card>
   </>

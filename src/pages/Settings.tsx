@@ -8,6 +8,8 @@ import { Card, Btn, Pill, Note, Field, useConfirm, Seg, useModal, MHead, MBody, 
 import { Table, type Col } from '../components/Table'
 import { MailSetup } from './Email'
 import { fmtMoney, parseNum } from '../lib/money'
+import { NOTIFY_DEFAULTS, computeAlerts, type Alert } from '../lib/notify'
+import type { NotifyPrefs } from '../app/data/types'
 import { fmtDY, today, ago } from '../lib/dates'
 import { hasSupabase, sb } from '../app/supabase'
 import { ruleHits, planAutoCategorise, type PayeeRule } from '../lib/rules'
@@ -16,14 +18,14 @@ import type { Member, InviteResult } from '../app/data/types'
 
 export function SettingsPage() {
   const { data, household, settings, saveSettings, insert, update, remove, guarded, canEdit, isOwner, repo, refresh, mode, user, groups } = useData(); const confirm = useConfirm(); const { open, close } = useModal()
-  const [tab, setTab] = useState<'general' | 'categories' | 'rules' | 'members' | 'security' | 'data' | 'activity'>('general')
+  const [tab, setTab] = useState<'general' | 'categories' | 'rules' | 'members' | 'notifications' | 'security' | 'data' | 'activity'>('general')
   const [name, setName] = useState(household?.name || ''); const [s, setS] = useState({ ...settings }); const fileRef = useRef<HTMLInputElement>(null)
   const saveGeneral = () => guarded(async () => { if (name !== household?.name) await repo!.renameHousehold(name); await saveSettings({ periodType: s.periodType, periodAnchor: s.periodAnchor || null, semimonthlyDays: s.semimonthlyDays, reserveFloor: +s.reserveFloor || 0, runwayGreen: +s.runwayGreen || 6, runwayYellow: +s.runwayYellow || 3, dueSoonDays: +s.dueSoonDays || 7, budgetCritPct: +s.budgetCritPct || 10, savingsTargetPct: +s.savingsTargetPct || 20, includeRetirementInCash: !!s.includeRetirementInCash, payFrequencyDefault: s.payFrequencyDefault }); await refresh() }, 'Settings saved')
   const catCols: Col<Category>[] = [{ k: 'group', label: 'Group', type: 'select', opts: [...groups, 'Income', 'Housing', 'Transport', 'Food', 'Health', 'Bills', 'Debt', 'Personal', 'Savings', 'Other'].filter((v, i, a) => a.indexOf(v) === i), w: 110 }, { k: 'name', label: 'Category', type: 'text', w: 160 }, { k: 'kind', label: 'Kind', type: 'select', opts: ['expense', 'income', 'transfer'], w: 100 }, { k: 'priority', label: 'Priority', type: 'select', opts: ['Essential', 'Important', 'Discretionary'], w: 120 }, { k: 'cost_type', label: 'Cost type', type: 'select', opts: ['Fixed', 'Variable', 'Irregular'], w: 100 }, { k: 'default_budget', label: 'Default budget', type: 'money', cls: 'num' }, { k: 'budget_cadence', label: 'Cadence', type: 'select', opts: ['period', 'monthly', 'yearly'], labels: { period: 'per period', monthly: 'per month', yearly: 'per year (sinking fund)' }, w: 150 }, { k: 'rollover', label: 'Rollover', type: 'bool' }, { k: 'sort_order', label: 'Order', type: 'int', w: 60 }, { k: 'archived', label: 'Archived', type: 'bool' }, { k: 'notes', label: 'Notes', type: 'text', w: 160 }, { k: 'ref', label: 'ID', type: 'ro', cls: 'id' }]
   const exportJson = () => guarded(async () => { const j = await repo!.exportJson(); const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `wealthpilot-backup-${today()}.json`; a.click() }, 'Backup downloaded')
   const exportCsv = () => { const rows = data.transactions.map(t => [t.date, t.kind, t.amount, t.payee || '', data.categories.find(c => c.id === t.category_id)?.name || '', data.accounts.find(a => a.id === t.account_id)?.name || '', data.accounts.find(a => a.id === t.to_account_id)?.name || '', t.status, t.source, (t.memo || '').replace(/"/g, '""')]); const csv = ['date,kind,amount,payee,category,account,to_account,status,source,memo', ...rows.map(r => r.map(v => `"${String(v)}"`).join(','))].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `wealthpilot-transactions-${today()}.csv`; a.click() }
   const importJson = (modeI: 'merge' | 'replace') => { const f = fileRef.current?.files?.[0]; if (!f) return useStore.getState().toast('Choose a backup file first', true); const r = new FileReader(); r.onload = () => guarded(async () => { const j = JSON.parse(String(r.result)); if (modeI === 'replace' && !(await confirm('Replace EVERYTHING in this household with the backup? This cannot be undone.', 'Replace'))) return; const n = await repo!.importJson(j, modeI); await refresh(); useStore.getState().toast(`${n} rows imported`) }); r.readAsText(f) }
-  const tabs: Array<[typeof tab, string]> = [['general', 'General'], ['categories', 'Categories'], ['rules', 'Payee rules'], ['members', 'Members'], ['security', 'Security'], ['data', 'Backup & data'], ['activity', 'Activity log']]
+  const tabs: Array<[typeof tab, string]> = [['general', 'General'], ['categories', 'Categories'], ['rules', 'Payee rules'], ['members', 'Members'], ['notifications', 'Notifications'], ['security', 'Security'], ['data', 'Backup & data'], ['activity', 'Activity log']]
   return <>
     <div style={{ marginBottom: 14 }}><Seg value={tab} options={tabs} onChange={setTab} /></div>
     {tab === 'general' && <div className="grid g12">
@@ -43,6 +45,7 @@ export function SettingsPage() {
       <Note>Total default budget: <b>{fmtMoney(data.categories.filter(c => !c.archived && c.kind === 'expense').reduce((n, c) => n + c.default_budget, 0))}</b>/period · income {fmtMoney(data.categories.filter(c => !c.archived && c.kind === 'income').reduce((n, c) => n + c.default_budget, 0))}</Note></Card>}
     {tab === 'rules' && <RulesTab />}
     {tab === 'security' && <SecurityTab />}
+    {tab === 'notifications' && <NotificationsTab />}
     {tab === 'members' && <MembersTab />}
     {tab === 'data' && <div className="grid g12">
       <Card span={6} title="Backup" hint="everything in this household as one JSON file"><div className="btnrow"><Btn primary onClick={exportJson}>Download JSON backup</Btn><Btn onClick={exportCsv}>Transactions as CSV</Btn></div><Note>Keep a backup before big changes. The JSON restores into any household (ids are remapped).</Note></Card>
@@ -225,4 +228,59 @@ function NightlyBackups() {
     </tbody></table></div>}
     <Note>A backup is the same JSON as the export above and restores through Restore. Backups live in Supabase Storage with row-level security; nobody can write there from the browser.</Note>
   </Card>
+}
+
+const b64ToBytes = (b64: string) => { const pad = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, c => c.charCodeAt(0)) }
+/** Settings → Notifications (0.19.0): push on this device, email, which rules fire, the weekly digest, a test button, what was sent. */
+function NotificationsTab() {
+  const { data, settings, mode, household, user, guarded, saveSettings, canEdit } = useData(); const toast = useStore.getState().toast
+  const prefs: NotifyPrefs = { push: true, email: false, digest: true, ...NOTIFY_DEFAULTS, ...(settings.notify || {}) }
+  const set = (patch: Partial<NotifyPrefs>) => guarded(() => saveSettings({ notify: { ...prefs, ...patch } }), 'Saved')
+  const [sub, setSub] = useState<'checking' | 'on' | 'off' | 'unsupported' | 'denied'>('checking'); const [recent, setRecent] = useState<Array<{ id: string; at: string; kind: string; title: string; channel: string; status: string; detail: string | null }> | null>(null)
+  const [preview, setPreview] = useState<Alert[] | null>(null)
+  const supported = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+  const reg = async () => (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready)
+  const check = async () => { if (!supported) return setSub('unsupported'); if (Notification.permission === 'denied') return setSub('denied'); try { const r = await reg(); const s = await r.pushManager.getSubscription(); setSub(s ? 'on' : 'off') } catch { setSub('off') } }
+  const loadRecent = async () => { if (mode !== 'db' || !household) return; const { data: rows } = await sb().from('notifications').select('id, at, kind, title, channel, status, detail').eq('household_id', household.id).order('at', { ascending: false }).limit(25); setRecent((rows || []) as typeof recent) }
+  useEffect(() => { void check(); void loadRecent() }, [mode, household?.id])   // eslint-disable-line react-hooks/exhaustive-deps
+  const enablePush = () => guarded(async () => {
+    if (!supported) throw new Error('This browser does not support push notifications'); if (mode !== 'db' || !household || !user) throw new Error('Sign in to a household first')
+    const perm = await Notification.requestPermission(); if (perm !== 'granted') { setSub(perm === 'denied' ? 'denied' : 'off'); throw new Error('Notifications were not allowed in the browser') }
+    const { data: meta } = await sb().from('app_meta').select('value').eq('key', 'vapid_public').maybeSingle(); if (!meta?.value) throw new Error('Push is not set up on the server yet (vapid_public missing)')
+    const r = await reg(); const s = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(meta.value) }); const j = s.toJSON()
+    const { error } = await sb().from('push_subscriptions').upsert({ household_id: household.id, user_id: user.id, endpoint: s.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, user_agent: navigator.userAgent.slice(0, 200) }, { onConflict: 'endpoint' }); if (error) throw new Error(/push_subscriptions/.test(error.message) ? 'Push needs migration 0011' : error.message)
+    setSub('on'); if (prefs.push === false) await saveSettings({ notify: { ...prefs, push: true } }) }, 'Push notifications are on for this device')
+  const disablePush = () => guarded(async () => { const r = await reg(); const s = await r.pushManager.getSubscription(); if (s) { await sb().from('push_subscriptions').delete().eq('endpoint', s.endpoint); await s.unsubscribe() } setSub('off') }, 'Push is off on this device')
+  const test = () => guarded(async () => { const { data: r, error } = await sb().functions.invoke('notify', { body: { action: 'test', household_id: household!.id } }); if (error) throw error; toast(`Push: ${r.push.sent ? 'sent to ' + r.push.sent + ' device(s)' : r.push.detail} · Email: ${r.email.detail}`, !r.push.sent && !r.email.ok); await loadRecent() })
+  const runPreview = () => guarded(async () => { const t = today(); const alerts = computeAlerts({ today: t, now: new Date().toISOString(), accounts: data.accounts, recurring: data.recurring, occurrences: data.occurrences, transactions: data.transactions, paySchedules: data.paySchedules, sync: null, reserveFloor: +settings.reserveFloor || 0, includeRetirementInCash: !!settings.includeRetirementInCash, prefs }); setPreview(alerts) })
+  const Toggle = ({ k, label, hint }: { k: keyof NotifyPrefs; label: string; hint?: string }) => <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', cursor: 'pointer' }}><input type="checkbox" checked={!!prefs[k]} onChange={e => set({ [k]: e.target.checked } as Partial<NotifyPrefs>)} disabled={!canEdit} style={{ marginTop: 3 }} /><span><b style={{ fontWeight: 500 }}>{label}</b>{hint && <span className="note" style={{ display: 'block', margin: 0 }}>{hint}</span>}</span></label>
+  return <div className="grid g12">
+    <Card span={6} title="Push notifications" hint="to this phone or computer, even when the app is closed" right={<Pill cls={sub === 'on' ? 'good' : sub === 'denied' ? 'crit' : 'idle'}>{sub === 'checking' ? '…' : sub === 'on' ? 'on here' : sub === 'denied' ? 'blocked' : sub === 'unsupported' ? 'not supported' : 'off here'}</Pill>}>
+      {mode !== 'db' ? <Note>Push and email alerts work for a signed-in household; the offline demo only shows the rules below.</Note> : <>
+        <div className="btnrow">{sub === 'on' ? <Btn onClick={disablePush}>Turn off on this device</Btn> : <Btn primary onClick={enablePush} disabled={sub === 'unsupported' || sub === 'denied'}>Enable on this device</Btn>}<Btn onClick={test} disabled={sub !== 'on' && !prefs.email}>Send a test</Btn></div>
+        {sub === 'denied' && <div className="msg warn" style={{ marginTop: 8 }}>Notifications are blocked for this site in the browser settings — allow them there, then try again.</div>}
+        {sub === 'unsupported' && <div className="msg warn" style={{ marginTop: 8 }}>On iPhone, install the app first (Share → Add to Home Screen) and open it from the home screen; push works from the installed app on iOS 16.4 and later.</div>}
+        <Note>Alerts are checked every morning at 07:30 Eastern. Each device opts in separately; turn one off here or in the browser.</Note></>}
+    </Card>
+    <Card span={6} title="Email" hint="the same alerts and the Monday digest by email">
+      <Toggle k="email" label="Email me" hint={prefs.email_to || user?.email ? `to ${prefs.email_to || user?.email}` : 'set an address below'} />
+      <Field label="Send to" hint="leave blank for the household owner's address"><input className="inp" type="email" defaultValue={prefs.email_to || ''} placeholder={user?.email || 'you@example.com'} onBlur={e => { const v = e.target.value.trim() || null; if (v !== (prefs.email_to || null)) set({ email_to: v }) }} disabled={!canEdit} /></Field>
+      <Note>Email needs the Resend key on the server (Settings → Security → Errors shows "email not configured" until it is there). Push works without it.</Note>
+    </Card>
+    <Card span={6} title="What to alert on" hint="each rule has a stable key, so the same thing is never sent twice">
+      <Toggle k="bills" label="Bills due today or tomorrow, and anything overdue" hint="overdue items repeat every 3 days until paid; autopay items are informational" />
+      <Toggle k="low_cash" label="Cash below the reserve floor, or bills this week exceed cash" hint={`floor ${fmtMoney(settings.reserveFloor || 0)} — change it under General`} />
+      <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0' }}><input type="checkbox" checked={!!prefs.large} onChange={e => set({ large: e.target.checked ? NOTIFY_DEFAULTS.large : 0 })} disabled={!canEdit} /><span><b style={{ fontWeight: 500 }}>Large charges at or above</b></span><input className="inp" inputMode="decimal" style={{ width: 110 }} defaultValue={prefs.large || ''} onBlur={e => { const v = parseNum(e.target.value) || 0; if (v !== (prefs.large || 0)) set({ large: v }) }} disabled={!canEdit || !prefs.large} aria-label="Large charge threshold" /></label>
+      <Toggle k="paycheck" label="A paycheck that did not arrive on its pay date" />
+      <Toggle k="sync" label="Bank sync failed, or no sync for 3 days" />
+      <Toggle k="digest" label="Monday digest: the week ahead, last week's spending, what is overdue" hint="email, plus a short push" />
+      <div className="btnrow" style={{ marginTop: 8 }}><Btn sm onClick={runPreview}>Preview today's alerts</Btn></div>
+      {preview && (preview.length === 0 ? <div className="msg good" style={{ marginTop: 8 }}>Nothing would be sent right now.</div> : <ul className="alist" style={{ marginTop: 8 }}>{preview.map(a => <li key={a.key}><span className={`dot ${a.severity}`} /><span><span className="t">{a.title}</span><div className="m">{a.body}</div></span></li>)}</ul>)}
+    </Card>
+    <Card span={6} title="Sent recently" hint="the last 25 — push and email, with why one was skipped" right={mode === 'db' ? <Btn sm onClick={loadRecent}>Refresh</Btn> : undefined}>
+      {mode !== 'db' ? <div className="empty">Sign in to see the log.</div> : !recent ? <div className="empty">Loading…</div> : recent.length === 0 ? <div className="empty">Nothing sent yet.</div> : <div className="tblwrap" style={{ maxHeight: 320 }}><table className="tbl"><caption className="sr-only">Notifications</caption><thead><tr><th scope="col">When</th><th scope="col">Channel</th><th scope="col">Status</th><th scope="col">What</th></tr></thead><tbody>
+        {recent.map(r => <tr key={r.id}><td style={{ whiteSpace: 'nowrap' }}>{new Date(r.at).toLocaleString()}</td><td>{r.channel}</td><td><Pill cls={r.status === 'sent' ? 'good' : r.status === 'failed' ? 'crit' : 'idle'}>{r.status}</Pill></td><td>{r.title}{r.status !== 'sent' && r.detail ? <div className="note" style={{ margin: 0 }}>{r.detail}</div> : null}</td></tr>)}
+      </tbody></table></div>}
+    </Card>
+  </div>
 }
