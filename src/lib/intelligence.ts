@@ -6,6 +6,7 @@ import { round2, sum } from './money'
 import { recActive, recMonthly } from './recurring'
 import { cashOnHand } from './accounts'
 import { inRange } from './budget'
+import { categoryLines } from './splits'
 
 /** Normalised merchant key: lower-case, punctuation and trailing store numbers / card suffixes removed. "KROGER #1234 COLUMBUS OH" → "kroger" */
 export function merchantKey(payee?: string | null) {
@@ -113,7 +114,7 @@ export function healthIndicators(d: Data, s: Settings, months = 3, asOf = today(
   const tx = d.transactions.filter(t => inRange(t, from, to) && !t.exclude_from_budget)
   const spend = sum(tx.filter(t => t.kind === 'expense').map(t => t.amount)), income = sum(tx.filter(t => t.kind === 'income').map(t => t.amount))
   const debt = sum(tx.filter(t => t.kind === 'transfer' && t.to_account_id && d.accounts.some(a => a.id === t.to_account_id && ['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability'].includes(a.kind))).map(t => t.amount))
-  const pri = (p: string) => sum(tx.filter(t => t.kind === 'expense' && d.categories.find(c => c.id === t.category_id)?.priority === p).map(t => t.amount))
+  const pri = (p: string) => sum(categoryLines(d, tx.filter(t => t.kind === 'expense')).filter(l => d.categories.find(c => c.id === l.category_id)?.priority === p).map(l => l.amount))
   const burn = round2((spend + debt) / months), inc = round2(income / months)
   const savingsRate = inc > 0 ? round2((inc - burn) / inc) : null, expenseRatio = inc > 0 ? round2(burn / inc) : null
   const ess = spend > 0 ? round2(pri('Essential') / spend) : null, disc = spend > 0 ? round2(pri('Discretionary') / spend) : null

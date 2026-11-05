@@ -5,13 +5,15 @@ import { round2, sum } from './money'
 import { elapsed, daysIn } from './periods'
 import { expectedIncome } from './paySchedule'
 import { liabilities, debtPlanned, debtPaidInRange } from './accounts'
+import { categoryLines } from './splits'
 
 export const inRange = (t: Transaction, from: string, to: string) => t.date >= from && t.date <= to && t.status !== 'void'
 export const budgetable = (t: Transaction) => !t.exclude_from_budget
 /** Spend in a category over a date range (expenses, plus transfers that carry the category — e.g. savings / debt payments budgeted as a line). */
-export function spentIn(d: Data, catId: string, from: string, to: string) { return sum(d.transactions.filter(t => t.category_id === catId && (t.kind === 'expense' || t.kind === 'transfer') && inRange(t, from, to) && budgetable(t)).map(t => t.amount)) }
-export function receivedIn(d: Data, catId: string, from: string, to: string) { return sum(d.transactions.filter(t => t.category_id === catId && t.kind === 'income' && inRange(t, from, to) && budgetable(t)).map(t => t.amount)) }
-export function uncategorized(d: Data, from: string, to: string) { return d.transactions.filter(t => !t.category_id && t.kind !== 'transfer' && inRange(t, from, to)) }
+export function spentIn(d: Data, catId: string, from: string, to: string) { return sum(categoryLines(d, d.transactions.filter(t => (t.kind === 'expense' || t.kind === 'transfer') && inRange(t, from, to) && budgetable(t))).filter(l => l.category_id === catId).map(l => l.amount)) }
+export function receivedIn(d: Data, catId: string, from: string, to: string) { return sum(categoryLines(d, d.transactions.filter(t => t.kind === 'income' && inRange(t, from, to) && budgetable(t))).filter(l => l.category_id === catId).map(l => l.amount)) }
+const splitTouches = (d: Data, t: Transaction) => d.splits.some(s => s.transaction_id === t.id)
+export function uncategorized(d: Data, from: string, to: string) { return d.transactions.filter(t => !t.category_id && t.kind !== 'transfer' && inRange(t, from, to) && !splitTouches(d, t)) }
 
 export interface LineStat { cat: Category; planned: number; rollover: number; available: number; actual: number; left: number; pct: number | null; state: 'good' | 'warn' | 'crit' | 'idle'; lineId?: string; notes?: string | null }
 export interface PeriodStat { period: BudgetPeriod; lines: LineStat[]; income: LineStat[]; incB: number; incA: number; spB: number; spA: number; left: number; net: number; rate: number | null; ess: number; imp: number; disc: number; fixed: number; variable: number; elapsed: number; pace: number | null; uncat: number; expectedPay: number; days: number }
@@ -37,9 +39,10 @@ export function rangeStat(d: Data, from: string, to: string) {
   const income = sum(tx.filter(t => t.kind === 'income').map(t => t.amount)), spend = sum(tx.filter(t => t.kind === 'expense').map(t => t.amount))
   const debt = sum(d.transactions.filter(t => t.kind === 'transfer' && inRange(t, from, to) && liabilities(d).some(a => a.id === t.to_account_id)).map(t => t.amount))
   const saved = sum(d.transactions.filter(t => t.kind === 'transfer' && inRange(t, from, to) && d.accounts.some(a => a.id === t.to_account_id && (a.kind === 'savings' || a.kind === 'investment' || a.kind === 'retirement'))).map(t => t.amount))
-  const byCat: Record<string, number> = {}; tx.filter(t => t.kind === 'expense').forEach(t => { const k = cat(t.category_id)?.name || 'Uncategorized'; byCat[k] = (byCat[k] || 0) + t.amount })
-  const byGroup: Record<string, number> = {}; tx.filter(t => t.kind === 'expense').forEach(t => { const k = cat(t.category_id)?.group || 'Other'; byGroup[k] = (byGroup[k] || 0) + t.amount })
-  const pr = (p: string) => sum(tx.filter(t => t.kind === 'expense' && cat(t.category_id)?.priority === p).map(t => t.amount))
+  const lines = categoryLines(d, tx.filter(t => t.kind === 'expense'))   // split transactions count each slice against its own category
+  const byCat: Record<string, number> = {}; lines.forEach(l => { const k = cat(l.category_id)?.name || 'Uncategorized'; byCat[k] = (byCat[k] || 0) + l.amount })
+  const byGroup: Record<string, number> = {}; lines.forEach(l => { const k = cat(l.category_id)?.group || 'Other'; byGroup[k] = (byGroup[k] || 0) + l.amount })
+  const pr = (p: string) => sum(lines.filter(l => cat(l.category_id)?.priority === p).map(l => l.amount))
   return { income, spend, debt, saved, out: spend + debt, net: income - spend - debt, byCat, byGroup, ess: pr('Essential'), imp: pr('Important'), disc: pr('Discretionary'), count: tx.length }
 }
 /** Series for trends: week / month / year buckets from the first transaction to now. */

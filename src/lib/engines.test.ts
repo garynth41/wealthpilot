@@ -464,3 +464,40 @@ describe('visuals', () => {
     expect(h.cells.filter(c => c.amount > 0 && c.amount === h.max).every(c => c.level === 4 || h.thresholds[2] === h.max)).toBe(true)
   })
 })
+
+// ---------------- split transactions (0.19.0) ----------------
+import { categoryLines, validateSplits, splitRemaining, isSplit } from './splits'
+import { round2 } from './money'
+import { spentIn, uncategorized } from './budget'
+describe('split transactions', () => {
+  it('a split transaction counts each slice against its own category; an unsplit one counts whole', () => {
+    const { data } = seed(); const t = data.transactions.find(x => x.kind === 'expense' && x.category_id && x.amount >= 20)!; const other = data.categories.find(c => c.kind === 'expense' && c.id !== t.category_id)!
+    const before = spentIn(data, t.category_id!, t.date, t.date), beforeOther = spentIn(data, other.id, t.date, t.date)
+    const d2 = { ...data, splits: [{ id: 's1', household_id: t.household_id, transaction_id: t.id, category_id: t.category_id, amount: round2(t.amount - 5), sort_order: 0 }, { id: 's2', household_id: t.household_id, transaction_id: t.id, category_id: other.id, amount: 5, sort_order: 1 }] } as typeof data
+    expect(spentIn(d2, t.category_id!, t.date, t.date)).toBeCloseTo(before - 5, 2); expect(spentIn(d2, other.id, t.date, t.date)).toBeCloseTo(beforeOther + 5, 2)
+    expect(isSplit(d2, t)).toBe(true); expect(categoryLines(d2, [t])).toHaveLength(2); expect(categoryLines(data, [t])).toHaveLength(1)
+    const st = rangeStat(d2, t.date, t.date); expect(st.byCat[other.name]).toBeGreaterThanOrEqual(5)
+  })
+  it('a split with an uncategorized slice is not itself "uncategorized"; the slices must sum to the parent', () => {
+    const { data } = seed(); const t = data.transactions.find(x => x.kind === 'expense' && x.amount >= 20)!
+    const d2 = { ...data, splits: [{ id: 's1', household_id: t.household_id, transaction_id: t.id, category_id: null, amount: 1, sort_order: 0 }, { id: 's2', household_id: t.household_id, transaction_id: t.id, category_id: t.category_id, amount: round2(t.amount - 1), sort_order: 1 }] } as typeof data
+    expect(uncategorized(d2, t.date, t.date).some(x => x.id === t.id)).toBe(false)
+    expect(validateSplits(50, [{ amount: 20 }, { amount: 30 }])).toBeNull()
+    expect(validateSplits(50, [{ amount: 20 }, { amount: 29.99 }])).toMatch(/add up to \$49\.99/)
+    expect(validateSplits(50, [{ amount: 50 }])).toMatch(/at least two/)
+    expect(validateSplits(50, [{ amount: 0 }, { amount: 50 }])).toMatch(/above zero/)
+    expect(splitRemaining(50, [{ amount: 20 }])).toBe(30)
+  })
+})
+
+// ---------------- safe to spend (0.19.0) ----------------
+import { safeToSpend } from './forecast'
+describe('safe to spend', () => {
+  it('is cash minus commitments before the next paycheck minus the floor, never negative, with a per-day figure', () => {
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings }
+    const r = safeToSpend(data, s); expect(r.cash).toBeCloseTo(cashOnHand(data, s), 2); expect(r.committed).toBeGreaterThan(0)
+    expect(r.safe).toBeCloseTo(Math.max(0, r.cash - r.committed - (+s.reserveFloor || 0)), 2); expect(r.perDay).toBeCloseTo(r.safe / r.days, 6); expect(r.days).toBeGreaterThan(0)
+    expect(r.items.every(i => i.amt < 0 && i.src !== 'flex')).toBe(true)
+    const broke = safeToSpend({ ...data, accounts: data.accounts.map(a => ({ ...a, balance: 0, bank_balance: null })) }, s); expect(broke.safe).toBe(0); expect(broke.short).toBeGreaterThan(0)
+  })
+})

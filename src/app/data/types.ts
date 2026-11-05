@@ -45,6 +45,8 @@ export type PeriodType = 'month' | 'week' | 'biweekly' | 'semimonthly' | 'pay' |
 export interface BudgetPeriod extends Stamped { ref?: string | null; period_type: PeriodType; start_date: ISODate; end_date: ISODate; label?: string | null; status: 'planned' | 'open' | 'closed'; expected_income: number; notes?: string | null }
 export interface BudgetLine extends Stamped { period_id: UUID; category_id: UUID; planned: number; rollover_in: number; notes?: string | null }
 
+/** One slice of a split transaction (0.19.0): the slice's category and amount; all slices sum to the parent's amount. */
+export interface TransactionSplit extends Stamped { ref?: string | null; transaction_id: UUID; category_id?: UUID | null; amount: number; memo?: string | null; sort_order: number }
 export type TxnKind = 'expense' | 'income' | 'transfer'
 export type TxnSource = 'manual' | 'email' | 'import' | 'recurring' | 'statement' | 'adjustment'
 export interface Transaction extends Stamped {
@@ -150,17 +152,22 @@ export interface Settings {
   retirement?: RetirementInputs     // planner inputs (see lib/retirement.ts)
   tax?: Partial<import('../../lib/tax').TaxProfile>   // tax planner profile and manual items (see lib/tax.ts)
   learnRules?: boolean              // create a rule when a category is set by hand (default true)
+  savedViews?: SavedView[]          // Transactions filter presets (0.19.0)
+  notify?: NotifyPrefs              // alert channels and thresholds (0.19.0, see lib/notify.ts)
 }
+/** A Transactions filter preset pinned above the ledger. */
+export interface SavedView { id: string; name: string; range: 'period' | '30' | 'month' | '90' | 'all'; kind: 'all' | 'expense' | 'income' | 'transfer' | 'uncat'; account_id?: string | null; tag?: string | null; q?: string | null }
+export interface NotifyPrefs { push?: boolean; email?: boolean; email_to?: string | null; bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; digest?: boolean; quiet_from?: number; quiet_to?: number }
 export interface RetirementInputs { currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number; socialSecurity: number; currentIncome: number }
 export interface PayeeRule { id: string; pattern: string; match: 'contains' | 'starts' | 'exact' | 'regex'; category_id?: string | null; account_id?: string | null; rename?: string | null; exclude_from_budget?: boolean; kind?: 'expense' | 'income' | null; enabled: boolean; hits?: number; created_at?: string; source?: 'manual' | 'learned' }
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
-export const TABLE: Record<Collection, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
+export type Collection = 'splits' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
+export const TABLE: Record<Collection, string> = { splits: 'transaction_splits', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
-  transactions: Transaction[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
+  transactions: Transaction[]; splits: TransactionSplit[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
   planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
   /** immutable cash-operations audit trail, newest first */
   audit: AuditEvent[]
@@ -168,5 +175,5 @@ export interface Data {
   /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
   duplicates: Transaction[]
 }
-export const emptyData = (): Data => ({ duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ splits: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

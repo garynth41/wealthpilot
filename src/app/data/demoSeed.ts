@@ -136,6 +136,8 @@ export function demoSeed(): { household: Household; data: Data } {
      [2, 'Worthington Farmers Market', 22, 'Food', 'Groceries', wallet], [6, 'Parking — Short North', 8, 'Transport', 'Parking / tolls / transit', wallet], [13, 'Lunch money', 15, 'Personal', 'Kids & family', wallet], [27, 'Barber tip', 10, 'Personal', 'Personal care', wallet],
      [4, 'The Home Depot', 136.42, 'Housing', 'Home maintenance', disc], [11, 'Amazon', 38.99, 'Personal', 'Shopping', disc], [19, 'Condado Tacos', 47.8, 'Food', 'Dining out', disc], [33, 'Lowe’s', 189.39, 'Housing', 'Home maintenance', disc]] as Array<[number, string, number, string, string, { id: string }]>)
     .forEach(([k, payee, amount, g, c, a]) => tx(addDays(t, -k), 'expense', amount, { payee, category_id: cat(g, c).id, account_id: a.id }))
+  // one split transaction (0.19.0): the Target run three days ago was part groceries, part household goods
+  { const target = d.transactions.find(x => x.payee === 'Target' && x.amount === 54.18); if (target) { d.splits.push({ id: demoId(), household_id: hh, transaction_id: target.id, category_id: cat('Food', 'Groceries').id, amount: 31.18, memo: 'food', sort_order: 0 }, { id: demoId(), household_id: hh, transaction_id: target.id, category_id: cat('Personal', 'Shopping').id, amount: 23, memo: 'household', sort_order: 1 }) } }
   tx(addDays(t, -20), 'transfer', 200, { payee: 'Cash withdrawal (ATM)', account_id: chk.id, to_account_id: wallet.id, category_id: cat('Other', 'Transfer').id })
   tx(addDays(t, -7), 'transfer', 150, { payee: 'Discover payment', account_id: chaseChk.id, to_account_id: disc.id, category_id: cat('Debt', 'Credit card payments').id })
   // sample audit / security log (the real app fills this from a database trigger on every change)

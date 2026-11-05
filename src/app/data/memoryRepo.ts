@@ -46,6 +46,7 @@ export class MemoryRepo implements Repo {
     const arr = this.data[coll] as Array<{ id: string }>; const i = arr.findIndex(x => x.id === id); if (i < 0) return; arr.splice(i, 1)
     // cascades mirroring the schema
     if (coll === 'periods') this.data.lines = this.data.lines.filter(l => l.period_id !== id)
+    if (coll === 'transactions') this.data.splits = (this.data.splits || []).filter(s => s.transaction_id !== id)
     if (coll === 'recurring') this.data.occurrences = this.data.occurrences.filter(o => o.recurring_id !== id)
     if (coll === 'goals') this.data.contributions = this.data.contributions.filter(c => c.goal_id !== id)
     if (coll === 'accounts') { this.data.statements = this.data.statements.filter(s => s.account_id !== id); this.data.transactions.forEach(x => { if (x.account_id === id) x.account_id = null; if (x.to_account_id === id) x.to_account_id = null }) }

@@ -6,7 +6,7 @@ import { Chart, cssVar, C, Gauge } from '../components/Chart'
 import { spanFor, findPeriod } from '../lib/periods'
 import { periodStat, rangeStat } from '../lib/budget'
 import { upcoming, STATUS_PILL } from '../lib/recurring'
-import { cashCalendar, burn, runwayProjection, netWorthSeries } from '../lib/forecast'
+import { cashCalendar, burn, runwayProjection, netWorthSeries, safeToSpend } from '../lib/forecast'
 import { cashOnHand, netWorth, liabilities, debtDueState, acctLabel, debtBal } from '../lib/accounts'
 import { accountState, type RTxn } from '../lib/reconcile'
 import { debtTotals } from '../lib/debts'
@@ -23,7 +23,7 @@ export function Dashboard() {
   const [view, setView] = useState<'overview' | 'balances'>('overview')
   const { data, settings, canEdit } = useData(); const { open, close } = useModal(); const t = today(); const c = C()
   const sp = spanFor(data, settings); const period = findPeriod(data, sp); const ps = useMemo(() => (period ? periodStat(data, settings, period) : null), [data, settings, period])
-  const cash = cashOnHand(data, settings); const nw = netWorth(data); const b = useMemo(() => burn(data, settings), [data, settings]); const cal = useMemo(() => cashCalendar(data, settings, 30), [data, settings]); const proj = useMemo(() => runwayProjection(data, settings), [data, settings])
+  const cash = cashOnHand(data, settings); const nw = netWorth(data); const b = useMemo(() => burn(data, settings), [data, settings]); const sts = useMemo(() => safeToSpend(data, settings), [data, settings]); const cal = useMemo(() => cashCalendar(data, settings, 30), [data, settings]); const proj = useMemo(() => runwayProjection(data, settings), [data, settings])
   const pm = proj.zeroAt ? diffDays(proj.zeroAt, t) / 30.44 : Infinity; const cls = pm >= settings.runwayGreen ? 'good' : pm >= settings.runwayYellow ? 'warn' : 'crit'
   const up = useMemo(() => upcoming(data, addDays(t, -30), addDays(t, 14)).filter(u => !['paid', 'skipped'].includes(u.status)), [data, t]); const over = up.filter(u => u.status === 'overdue')
   const dt = debtTotals(data); const nws = netWorthSeries(data); const prev = nws.length > 1 ? nws[nws.length - 2] : null
@@ -50,6 +50,7 @@ export function Dashboard() {
     </div>}
     {view === 'overview' && <>
     <div className="kpis" style={{ marginBottom: 16 }}>
+      <KPI l="Safe to spend" v={fmtMoney(sts.safe)} cls={sts.short > 0 ? 'crit' : sts.safe < sts.perDay * 3 ? 'warn' : 'good'} s={sts.short > 0 ? `${fmtMoney(sts.short)} short of what is committed before ${sts.payday ? 'payday ' + fmtDY(sts.payday) : fmtDY(sts.until)}` : `${fmtMoney(Math.round(sts.perDay))}/day for ${sts.days} day${sts.days === 1 ? '' : 's'} · ${fmtMoney(sts.committed)} committed${sts.payday ? ' until payday ' + fmtDY(sts.payday) : ''}`} />
       <KPI l="Cash on hand" v={fmtMoney(cash)} cls="good" s={settings.reserveFloor ? `${cash >= settings.reserveFloor ? fmtMoney(cash - settings.reserveFloor) + ' above' : fmtMoney(settings.reserveFloor - cash) + ' below'} the ${fmtMoney(settings.reserveFloor)} floor` : 'checking + savings + cash'} />
       <KPI l={ps ? `Left to spend · ${sp.label}` : 'Budget'} v={ps ? fmtMoney(ps.left) : '—'} cls={!ps ? 'idle' : ps.left < 0 ? 'crit' : ps.pace != null && ps.pace > 1 ? 'warn' : 'good'} s={ps ? `${fmtMoney(ps.spA)} of ${fmtMoney(ps.spB)} spent · ${Math.round(ps.elapsed * 100)}% of period gone` : 'start a period on the Budget page'} />
       <KPI l="Due next 14 days" v={fmtMoney(sum(up.filter(u => u.date >= t && u.r.kind !== 'income').map(u => u.amount)))} cls={over.length ? 'crit' : up.length ? 'warn' : 'good'} s={over.length ? `${over.length} overdue` : `${up.filter(u => u.date >= t).length} payments`} />

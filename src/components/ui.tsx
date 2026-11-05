@@ -1,4 +1,4 @@
-import { Component, createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { Component, cloneElement, createContext, isValidElement, useContext, useEffect, useId, useState, type ReactNode, type ReactElement } from 'react'
 import { useStore } from '../app/store'
 import { fmtMoney } from '../lib/money'
 import { captureError } from '../lib/errors'
@@ -13,7 +13,12 @@ export const Note = ({ children }: { children: ReactNode }) => <div className="n
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>
 export const Btn = ({ onClick, children, primary, sm, danger, disabled, title, type = 'button', block }: { onClick?: () => void; children: ReactNode; primary?: boolean; sm?: boolean; danger?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; block?: boolean }) => <button type={type} className={`btn ${primary ? 'primary' : ''} ${sm ? 'sm' : ''} ${danger ? 'danger' : ''} ${block ? 'block' : ''}`} onClick={onClick} disabled={disabled} title={title}>{children}</button>
 export const Seg = <T extends string>({ value, options, onChange }: { value: T; options: Array<[T, string]>; onChange: (v: T) => void }) => <span className="seg">{options.map(([v, l]) => <button key={v} className={v === value ? 'on' : ''} onClick={() => onChange(v)} type="button">{l}</button>)}</span>
-export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => <div className="field"><label>{label}{hint && <span className="hint" style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 6 }}>{hint}</span>}</label>{children}</div>
+/** A labelled control. A single native input/select/textarea child is tied to the label by id (screen readers and axe see the label); anything else keeps the visible label only. */
+export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => {
+  const id = useId(); const native = isValidElement(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type) && !(children.props as { id?: string }).id
+  const child = native ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children
+  return <div className="field"><label htmlFor={native ? id : undefined}>{label}{hint && <span className="hint" style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 6 }}>{hint}</span>}</label>{child}</div>
+}
 export const Banner = ({ cls = '', children }: { cls?: string; children: ReactNode }) => <div className={`banner ${cls}`}>{children}</div>
 export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => <ul className="alist">{items.map((i, k) => <li key={k}><span className={`dot ${i.c}`}></span><span><span className="t">{i.t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li>)}</ul>
 
@@ -40,5 +45,5 @@ export const MFoot = ({ children }: { children: ReactNode }) => <div className="
 /** A yes/no confirmation that resolves to a boolean. */
 export function useConfirm() { const { open, close } = useModal(); return (text: string, okLabel = 'Delete') => new Promise<boolean>(res => { open(<><MHead title="Are you sure?" /><MBody><p style={{ margin: 0 }}>{text}</p></MBody><MFoot><Btn onClick={() => { close(); res(false) }}>Cancel</Btn><Btn danger onClick={() => { close(); res(true) }}>{okLabel}</Btn></MFoot></>) }) }
 
-export function Toasts() { const toasts = useStore(s => s.toasts); return <div className="toasts">{toasts.map(t => <div key={t.id} className={`toast ${t.err ? 'err' : ''}`}>{t.text}</div>)}</div> }
+export function Toasts() { const toasts = useStore(s => s.toasts); return <div className="toasts" aria-live="polite" role="status">{toasts.map(t => <div key={t.id} className={`toast ${t.err ? 'err' : ''}`}>{t.text}{t.action && <button className="toast-act" onClick={t.action.run}>{t.action.label}</button>}</div>)}</div> }
 export const classOf = (n: number, warn: number, crit: number, inverse = false) => (inverse ? (n >= crit ? 'crit' : n >= warn ? 'warn' : 'good') : n <= crit ? 'crit' : n <= warn ? 'warn' : 'good')

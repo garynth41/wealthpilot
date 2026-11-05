@@ -15,7 +15,9 @@ export const splitDups = (d: Data): Data => { const all = [...d.transactions, ..
 
 import { setErrorSink } from '../lib/errors'
 export type Mode = 'db' | 'demo' | null
-export interface Toast { id: number; text: string; err?: boolean }
+export interface Toast { id: number; text: string; err?: boolean; action?: { label: string; run: () => void } }
+/** One reversible step (0.19.0): what it was, and how to put it back. */
+export interface UndoEntry { label: string; run: () => Promise<void> }
 
 interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
@@ -36,7 +38,14 @@ interface State {
   update: <C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) => Promise<RowOf<C>>
   remove: (coll: Collection, id: string) => Promise<void>
   saveSettings: (patch: Partial<Settings>) => Promise<void>
-  toast: (text: string, err?: boolean) => void
+  toast: (text: string, err?: boolean, action?: { label: string; run: () => void }) => void
+  /** last 10 reversible changes, newest last */
+  undo: UndoEntry[]
+  pushUndo: (e: UndoEntry) => void
+  undoLast: () => Promise<void>
+  /** the same patch on many rows, undone as one step — for fields that do not move balances (category, tags, memo, exclude_from_budget) */
+  bulkUpdate: <C extends Collection>(coll: C, ids: string[], patch: Partial<RowOf<C>>) => Promise<number>
+  bulkRemove: (coll: Collection, ids: string[]) => Promise<number>
   guarded: <T>(fn: () => Promise<T>, ok?: string) => Promise<T | undefined>
   /** merge every clear-cut duplicate (see lib/dedupe.ts); returns how many rows were merged */
   autoDedupe: (quiet?: boolean) => Promise<number>
@@ -52,7 +61,7 @@ let deduping = false
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, loadError: null, toasts: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   canEdit: () => { const s = get(); return s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly) },
   isOwner: () => get().mode === 'demo' || get().role === 'owner',
@@ -129,7 +138,8 @@ export const useStore = create<State>((set, get) => ({
   async update(coll, id, patch) {
     const repo = need(get); const before = get().data[coll] as unknown as Array<{ id: string }>
     set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? { ...x, ...patch } : x) } }))   // optimistic
-    try { const r = await repo.update(coll, id, patch); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } })); return r }
+    try { const r = await repo.update(coll, id, patch); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } }))
+      return r }
     catch (e) { set(s => ({ data: { ...s.data, [coll]: before } })); throw e }
   },
   async remove(coll, id) {
@@ -137,12 +147,30 @@ export const useStore = create<State>((set, get) => ({
     set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).filter(x => x.id !== id) } }))
     try { await repo.remove(coll, id); if (repo.mode === 'demo') await get().refresh() } catch (e) { set({ data: before }); throw e }
   },
+  // Undo (0.19.0): only handlers that know how to put balances back push entries (Transactions page edits, bulk edits); generic writes never do.
+  pushUndo(e) { set(s => ({ undo: [...s.undo.slice(-9), e] })) },
+  async undoLast() { const e = get().undo.at(-1); if (!e) { get().toast('Nothing to undo'); return } set(s => ({ undo: s.undo.slice(0, -1) })); const n = get().undo.length; await e.run(); set(s => ({ undo: s.undo.slice(0, n) })) },   // the undo's own write may push an entry: drop it so Ctrl-Z does not ping-pong
+  async bulkUpdate(coll, ids, patch) {
+    const repo = need(get); const before = get().data[coll] as unknown as Array<Record<string, unknown>>; let n = 0; const inverses: Array<{ id: string; inverse: Record<string, unknown> }> = []
+    for (const id of ids) { const prev = before.find(x => x.id === id); if (!prev) continue; const inverse: Record<string, unknown> = {}; for (const k of Object.keys(patch)) inverse[k] = prev[k] ?? null; inverses.push({ id, inverse })
+      const r = await repo.update(coll, id, patch); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } })); n++ }
+    if (n) get().pushUndo({ label: `edit ${n} ${coll}`, run: async () => { for (const { id, inverse } of inverses) { const r = await repo.update(coll, id, inverse as Partial<RowOf<typeof coll>>); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } })) } } })
+    return n
+  },
+  async bulkRemove(coll, ids) {
+    const repo = need(get); const rows = (get().data[coll] as unknown as Array<Record<string, unknown>>).filter(x => ids.includes(String(x.id))); let n = 0
+    for (const r of rows) { await repo.remove(coll, String(r.id)); n++ }
+    set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).filter(x => !ids.includes(x.id)) } })); if (repo.mode === 'demo') await get().refresh()
+    if (n) get().pushUndo({ label: `delete ${n} ${coll}`, run: async () => { const back = rows.map(({ id: _id, created_at: _c, updated_at: _u, created_by: _cb, updated_by: _ub, ref: _r, ...rest }) => { void _id; void _c; void _u; void _cb; void _ub; void _r; return rest }); const ins = await repo.insertMany(coll, back as Partial<RowOf<Collection>>[]); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...ins] } })) } })
+    return n
+  },
   async saveSettings(patch) { const repo = need(get); const settings = await repo.saveSettings(patch); set(s => ({ household: s.household ? { ...s.household, settings } : s.household })) },
-  toast(text, err) { const id = ++toastSeq; set(s => ({ toasts: [...s.toasts.slice(-3), { id, text, err }] })); setTimeout(() => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), err ? 6500 : 2200) },
+  toast(text, err, action) { const id = ++toastSeq; set(s => ({ toasts: [...s.toasts.slice(-3), { id, text, err, action }] })); setTimeout(() => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), err ? 6500 : action ? 5000 : 2200) },
   async guarded(fn, ok) {
     if (get().busy > 2) return undefined
     set(s => ({ busy: s.busy + 1 }))
-    try { const r = await fn(); if (ok) get().toast(ok); return r }
+    const undoBefore = get().undo.length
+    try { const r = await fn(); if (ok) { const grew = get().undo.length > undoBefore; get().toast(ok, false, grew ? { label: 'Undo', run: () => { void get().guarded(() => get().undoLast(), 'Undone') } } : undefined) } return r }
     catch (e) { console.error(e); get().toast((e as Error).message || String(e), true); return undefined }
     finally { set(s => ({ busy: Math.max(0, s.busy - 1) })) }
   },

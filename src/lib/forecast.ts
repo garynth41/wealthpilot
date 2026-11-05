@@ -28,6 +28,17 @@ export function cashCalendar(d: Data, s: Settings, days = 60) {
   for (let dd = t; dd <= to; dd = addDays(dd, 1)) { items.filter(x => x.date === dd).forEach(x => { bal += x.amt; x.bal = bal }); daily.push({ d: dd, bal }); if (bal < low.bal) low = { bal, date: dd }; if (floor && bal < floor && !firstFloor) firstFloor = dd; if (bal < 0 && !firstZero) firstZero = dd }
   return { start, items, daily, low, firstFloor, firstZero, floor, inTot: sum(items.filter(x => x.amt > 0).map(x => x.amt)), outTot: -sum(items.filter(x => x.amt < 0).map(x => x.amt)), end: bal }
 }
+/** Safe to spend (0.19.0): cash on hand minus everything committed before the next paycheck (bills, debt and planned items — not everyday
+ *  spending, which is what this number is for) minus the reserve floor; also per day until payday. No paycheck ahead → the next 30 days. */
+export function safeToSpend(d: Data, s: Settings) {
+  const cal = cashCalendar(d, s, 45); const t = today()
+  const nextPay = cal.items.find(x => x.src === 'pay' && x.amt > 0 && x.date > t)?.date || null
+  const until = nextPay || addDays(t, 30); const days = Math.max(1, diffDays(until, t))
+  const committedItems = cal.items.filter(x => x.amt < 0 && x.src !== 'flex' && x.date <= until && (x.date > t || x.date === t))
+  const committed = -sum(committedItems.map(x => x.amt)); const floor = +s.reserveFloor || 0
+  const safe = Math.max(0, cal.start - committed - floor)
+  return { safe, perDay: safe / days, days, until, payday: nextPay, committed, cash: cal.start, floor, items: committedItems, short: cal.start - committed - floor < 0 ? -(cal.start - committed - floor) : 0 }
+}
 /** Monthly burn = committed bills + recent variable spend + debt payments − income. */
 export function burn(d: Data, s: Settings) {
   const t = today(); const last90 = rangeStat(d, addDays(t, -90), addDays(t, -1)); const monthsSeen = Math.max(1, Math.min(3, d.transactions.length ? (diffDays(t, d.transactions.map(x => x.date).sort()[0]) + 1) / 30.44 : 1))
