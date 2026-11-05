@@ -70,6 +70,7 @@ async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise
     await admin.from('sync_connections').update({ status: 'error', last_error: m }).eq('household_id', hh)
     await admin.from('sync_log').insert({ household_id: hh, started_at: started, finished_at: new Date().toISOString(), trigger, ok: false, message: m })
     await audit(hh, 'sync_failure', 'Bank sync failed: ' + m, { trigger, error: m })   // balances are left exactly as they were
+    try { await admin.from('app_errors').insert({ household_id: hh, source: 'sync', message: m, context: { trigger } }) } catch { /* 0009 not applied yet */ }
     return { ok: false, accounts: 0, added: 0, skipped: 0, unmapped: 0, merged: 0, review: 0, earliest: {}, message: m }
   }
   try {

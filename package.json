@@ -12,9 +12,10 @@
     "test:watch": "vitest",
     "e2e": "node e2e/smoke.mjs",
     "e2e:db": "node e2e/db.mjs",
-    "check": "npm run typecheck && npm run test && npm run build && npm run e2e",
+    "check": "npm run engines:sync -- --check && npm run typecheck && npm run test && npm run build && npm run e2e",
     "deploy": "npm run build && gh-pages -d dist --dotfiles --nojekyll",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "engines:sync": "node scripts/sync-engines.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

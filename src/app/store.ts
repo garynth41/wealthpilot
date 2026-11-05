@@ -13,6 +13,7 @@ import type { Transaction } from './data/types'
 /** Merged duplicates live in data.duplicates, everything else in data.transactions — so every page and engine sees each transaction once. */
 export const splitDups = (d: Data): Data => { const all = [...d.transactions, ...(d.duplicates || [])]; return { ...d, transactions: all.filter(t => !t.duplicate_of), duplicates: all.filter(t => !!t.duplicate_of) } }
 
+import { setErrorSink } from '../lib/errors'
 export type Mode = 'db' | 'demo' | null
 export interface Toast { id: number; text: string; err?: boolean }
 
@@ -73,7 +74,7 @@ export const useStore = create<State>((set, get) => ({
   },
   async enterDemo() {
     const repo = new MemoryRepo(); localStorage.setItem(LS('mode'), 'demo')
-    set({ mode: 'demo', repo, role: 'owner', readOnly: false, booting: false })
+    set({ mode: 'demo', repo, role: 'owner', readOnly: false, booting: false }); setErrorSink(async r => { console.warn('[demo] error captured', r.message) })
     await get().refresh(); attach(repo)
   },
   exitDemo() { localStorage.removeItem(LS('mode')); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) },
@@ -81,7 +82,7 @@ export const useStore = create<State>((set, get) => ({
   async signIn(email, password) { const { error } = await sb().auth.signInWithPassword({ email, password }); if (error) throw error; if (await needsMfa()) { set({ mfaPending: true }); return } const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async verifyMfa(code) { const { data: f, error: e1 } = await sb().auth.mfa.listFactors(); if (e1) throw e1; const factor = f.totp.find(x => x.status === 'verified') || f.totp[0]; if (!factor) throw new Error('No authenticator is enrolled'); const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s+/g, '') }); if (error) throw error; set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
-  async signOut() { await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
+  async signOut() { setErrorSink(null); await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -92,6 +93,8 @@ export const useStore = create<State>((set, get) => ({
   async openHousehold(id) {
     unsub?.(); const repo = new SupabaseRepo(id); localStorage.setItem(LS('household'), id)
     set({ mode: 'db', repo }); await get().refresh(); attach(repo)
+    // error monitoring: browser errors go to app_errors for this household (migration 0009); the table missing is not itself an error
+    setErrorSink(async r => { const uid = get().user?.id; if (!uid) return; const { error } = await sb().from('app_errors').insert({ household_id: id, user_id: uid, source: r.source, version: r.version, message: r.message, stack: r.stack || null, url: r.url, user_agent: r.user_agent, context: r.context || {} }); if (error && !/app_errors/.test(error.message)) throw error })
     void get().checkLatest(); startVersionWatch(get)
   },
   async checkLatest() { try { const { data } = await sb().from('app_meta').select('value').eq('key', 'latest_version').maybeSingle(); if (data?.value) set({ latest: data.value }) } catch { /* optional */ } },

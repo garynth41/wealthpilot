@@ -1,6 +1,7 @@
 import { Component, createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useStore } from '../app/store'
 import { fmtMoney } from '../lib/money'
+import { captureError } from '../lib/errors'
 
 export const Card = ({ title, hint, span = 12, children, right, className = '', id }: { title?: ReactNode; hint?: ReactNode; span?: number; children?: ReactNode; right?: ReactNode; className?: string; id?: string }) => (
   <div className={`card span${span} ${className}`} id={id}>{title != null && <h3>{title}{hint && <span className="hint">{hint}</span>}{right && <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{right}</span>}</h3>}{children}</div>
@@ -30,7 +31,7 @@ export function ModalHost({ children }: { children: ReactNode }) {
 class ModalGuard extends Component<{ children: ReactNode; onClose: () => void }, { err: string | null }> {
   state = { err: null as string | null }
   static getDerivedStateFromError(e: unknown) { return { err: e instanceof Error ? e.message : String(e) } }
-  componentDidCatch(e: unknown) { console.error('dialog failed to render', e) }
+  componentDidCatch(e: unknown) { console.error('dialog failed to render', e); captureError(e, { kind: 'dialog' }) }
   render() { return this.state.err ? <><div className="mhead"><b>Something went wrong</b><button className="mclose" onClick={this.props.onClose} aria-label="Close">×</button></div><div className="mbody"><div className="msg crit">This dialog could not be shown: {this.state.err}</div><div className="note">Reload the page and try again. If it keeps happening, copy the message above into a bug report.</div></div><div className="mfoot"><button className="btn" onClick={this.props.onClose}>Close</button></div></> : this.props.children }
 }
 export const MHead = ({ title }: { title: ReactNode }) => { const { close } = useModal(); return <div className="mhead"><b>{title}</b><button className="mclose" onClick={close} aria-label="Close">×</button></div> }

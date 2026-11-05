@@ -46,6 +46,7 @@ export function SettingsPage() {
     {tab === 'members' && <MembersTab />}
     {tab === 'data' && <div className="grid g12">
       <Card span={6} title="Backup" hint="everything in this household as one JSON file"><div className="btnrow"><Btn primary onClick={exportJson}>Download JSON backup</Btn><Btn onClick={exportCsv}>Transactions as CSV</Btn></div><Note>Keep a backup before big changes. The JSON restores into any household (ids are remapped).</Note></Card>
+      <NightlyBackups />
       <Card span={6} title="Restore" hint="from a JSON backup"><input type="file" ref={fileRef} accept="application/json" className="inp" /><div className="btnrow" style={{ marginTop: 8 }}><Btn onClick={() => importJson('merge')} disabled={!canEdit}>Merge into this household</Btn><Btn danger onClick={() => importJson('replace')} disabled={!canEdit}>Replace everything</Btn></div></Card>
       <Card span={12} title="Database" hint="Supabase"><Note>Project: <code>{import.meta.env.VITE_SUPABASE_URL || '(not configured)'}</code> · schema in <code>supabase/migrations/</code>. Row-level security limits every row to household members; email bodies are never stored.</Note></Card>
     </div>}
@@ -128,6 +129,7 @@ function SecurityTab() {
       <div className="kpis"><KPIs items={[['User actions logged', String(actions), 'activity log (immutable, server-side)'], ['Statement imports', String(imports.length), `${imports.reduce((a, i) => a + i.added, 0)} rows added · ${imports.reduce((a, i) => a + i.skipped, 0)} skipped`], ['Email items reviewed', String(emailApplied + emailIgnored), `${emailApplied} applied · ${emailIgnored} ignored`], ['Last successful sync', useStore.getState().lastRefresh ? ago(useStore.getState().lastRefresh!) : '—', 'data refresh from Supabase']]} /></div>
       <Note>Every insert, update and delete on household data is written to the activity log by a database trigger — including balance edits, goal changes and import batches — and cannot be edited from the app.</Note>
     </Card>
+    <ErrorsPanel />
   </div>
 }
 function KPIs({ items }: { items: Array<[string, string, string]> }) { return <>{items.map(([l, v, s]) => <div key={l} className="kpi info"><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>)}</> }
@@ -188,4 +190,39 @@ function MembersTab() {
       <details style={{ marginTop: 8 }}><summary className="note" style={{ cursor: 'pointer', marginTop: 0 }}>Preview the email</summary><pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: 12 }}>{`Subject: ${draft.subject}\n\n${draft.body}`}</pre></details>
     </> : <Note>Only owners can invite people or change access.</Note>}</Card>
   </div>
+}
+
+/** Recent uncaught errors for this household (app_errors, migration 0009): what failed, where, in which build. */
+function ErrorsPanel() {
+  const { mode, household } = useData(); type Row = { id: string; at: string; source: string; version: string | null; message: string; stack: string | null; url: string | null; context: Record<string, unknown> }
+  const [rows, setRows] = useState<Row[] | null>(null); const [err, setErr] = useState(''); const [open, setOpen] = useState<string | null>(null)
+  const load = async () => { if (mode !== 'db' || !household) return; const { data, error } = await sb().from('app_errors').select('id, at, source, version, message, stack, url, context').eq('household_id', household.id).order('at', { ascending: false }).limit(50); if (error) { setErr(/app_errors/.test(error.message) ? 'Error monitoring needs migration 0009.' : error.message); return } setRows((data || []) as Row[]) }
+  useEffect(() => { void load() }, [mode, household?.id])   // eslint-disable-line react-hooks/exhaustive-deps
+  if (mode !== 'db') return null
+  return <Card span={6} title="Errors" hint="uncaught errors from the app, the bank sync and the nightly backup — last 50, kept 90 days" right={<Btn sm onClick={load}>Refresh</Btn>}>
+    {err && <div className="msg warn">{err}</div>}
+    {rows && rows.length === 0 && <div className="empty">No errors recorded.</div>}
+    {rows && rows.length > 0 && <div className="tblwrap" style={{ maxHeight: 320 }}><table className="tbl"><caption className="sr-only">Recent errors</caption><thead><tr><th>When</th><th>Source</th><th>Version</th><th>Message</th></tr></thead><tbody>
+      {rows.map(r => <tr key={r.id} onClick={() => setOpen(open === r.id ? null : r.id)} style={{ cursor: 'pointer' }}><td style={{ whiteSpace: 'nowrap' }}>{new Date(r.at).toLocaleString()}</td><td><Pill cls={r.source === 'browser' ? 'info' : 'warn'}>{r.source}</Pill></td><td className="id">{r.version || '—'}</td><td>{r.message}{open === r.id && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: 'var(--ink-3)', margin: '6px 0 0' }}>{r.url}{'\n'}{r.stack || ''}{'\n'}{JSON.stringify(r.context)}</pre>}</td></tr>)}
+    </tbody></table></div>}
+    <Note>Click a row for the stack trace. Errors are the app's own messages only — never transaction data. Reporting is capped at 20 per session.</Note>
+  </Card>
+}
+/** Nightly backups (migration 0009): list the last 30 days in the private backups bucket, download one, or back up now. */
+function NightlyBackups() {
+  const { mode, household, guarded, canEdit } = useData(); type F = { name: string; updated_at?: string; metadata?: { size?: number } }
+  const [files, setFiles] = useState<F[] | null>(null); const [err, setErr] = useState('')
+  const load = async () => { if (mode !== 'db' || !household) return; const { data, error } = await sb().storage.from('backups').list(household.id, { limit: 60, sortBy: { column: 'name', order: 'desc' } }); if (error) { setErr(/not found|bucket/i.test(error.message) ? 'Nightly backups need migration 0009.' : error.message); return } setFiles((data || []).filter(f => f.name.endsWith('.json')) as F[]) }
+  useEffect(() => { void load() }, [mode, household?.id])   // eslint-disable-line react-hooks/exhaustive-deps
+  const download = (name: string) => guarded(async () => { const { data, error } = await sb().storage.from('backups').download(`${household!.id}/${name}`); if (error) throw error; const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = `wealthpilot-backup-${name}`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000) })
+  const now = () => guarded(async () => { const { data, error } = await sb().functions.invoke('backup-household', { body: { action: 'backup', household_id: household!.id } }); if (error) throw error; if (!data?.ok) throw new Error(data?.message || 'Backup failed'); await load() }, 'Backed up')
+  if (mode !== 'db') return null
+  return <Card span={6} title="Nightly backups" hint="automatic, 03:25 UTC, kept 30 days, private to this household" right={canEdit ? <Btn sm primary onClick={now}>Back up now</Btn> : undefined}>
+    {err && <div className="msg warn">{err}</div>}
+    {files && files.length === 0 && <div className="empty">No backups yet — the first one is taken tonight.</div>}
+    {files && files.length > 0 && <div className="tblwrap" style={{ maxHeight: 240 }}><table className="tbl"><caption className="sr-only">Backups</caption><thead><tr><th>Date</th><th className="num">Size</th><th /></tr></thead><tbody>
+      {files.map(f => <tr key={f.name}><td>{f.name.replace('.json', '')}</td><td className="num">{f.metadata?.size ? Math.round(f.metadata.size / 1024) + ' KB' : '—'}</td><td><Btn sm onClick={() => download(f.name)}>Download</Btn></td></tr>)}
+    </tbody></table></div>}
+    <Note>A backup is the same JSON as the export above and restores through Restore. Backups live in Supabase Storage with row-level security; nobody can write there from the browser.</Note>
+  </Card>
 }

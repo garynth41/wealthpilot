@@ -1,0 +1,43 @@
+# WealthPilot CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards).
+# A push to main that passes also publishes dist/ to gh-pages (the same thing `npm run deploy` does by hand).
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+  workflow_dispatch:
+concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }
+permissions: { contents: write }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run engines:sync -- --check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: smoke-shots, path: e2e/shots, if-no-files-found: ignore }
+      - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        with: { name: dist, path: dist, retention-days: 3 }
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist }
+      - name: Publish dist/ to gh-pages
+        run: |
+          git config user.name "wealthpilot-ci"; git config user.email "ci@users.noreply.github.com"
+          npx --yes gh-pages@6 -d dist --dotfiles --nojekyll -u "wealthpilot-ci <ci@users.noreply.github.com>" -m "ci: deploy ${GITHUB_SHA::7}" -r "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"

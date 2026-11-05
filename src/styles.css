@@ -29,7 +29,7 @@
   --rail:#0b0d10; --rail-ink:#d5d9de; --rail-muted:#8b949e; --rail-line:#23272d; --rail-hover:#171a1e; --rail-active:#e8eaed; --rail-active-ink:#0f1114;
   --shadow:none;
 }
-*{box-sizing:border-box} html,body{margin:0;height:100%} body{font:14px/1.45 var(--sans);color:var(--ink);background:var(--ground);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none;text-size-adjust:100%;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box} .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0} html,body{margin:0;height:100%} body{font:14px/1.45 var(--sans);color:var(--ink);background:var(--ground);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none;text-size-adjust:100%;-webkit-text-size-adjust:100%}
 button,a,input,select,textarea,label{touch-action:manipulation}
 h1,h2,.serif{font-family:var(--display);font-weight:700;letter-spacing:-.025em}
 a{color:var(--link);text-decoration-thickness:1px;text-underline-offset:2px} button{font:inherit} input,select,textarea{font:inherit;color:var(--ink)} h1,h2,h3,h4{margin:0}
