@@ -4,7 +4,7 @@ import { useStore } from '../app/store'
 import type { Category, PeriodType, Role } from '../app/data/types'
 import { PAY_FREQ_LABEL } from '../app/data/types'
 import { APP_NAME, APP_VERSION, APP_BUILD } from '../app/config'
-import { Card, Btn, Pill, Note, Field, useConfirm, Seg, useModal, MHead, MBody, MFoot } from '../components/ui'
+import { Card, Btn, Pill, Note, Field, useConfirm, Seg, useModal, MHead, MBody, MFoot, PasswordInput } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { MailSetup } from './Email'
 import { fmtMoney, parseNum } from '../lib/money'
@@ -122,7 +122,7 @@ function SecurityTab() {
       <div className="btnrow" style={{ marginBottom: 12 }}><Btn onClick={signOutOthers}>Sign out other devices</Btn><Btn danger onClick={signOutAll}>Sign out everywhere</Btn></div>
       <Note>Supabase keeps one refresh token per device; "other devices" revokes every session except this one.</Note>
       <h3 style={{ margin: '12px 0 6px' }}>Change password</h3>
-      <div className="grid2"><Field label="New password" hint="8+ characters"><input className="inp" type="password" autoComplete="new-password" value={pw1} onChange={e => setPw1(e.target.value)} /></Field><Field label="Repeat"><input className="inp" type="password" autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} /></Field></div>
+      <div className="grid2"><Field label="New password" hint="8+ characters"><PasswordInput autoComplete="new-password" value={pw1} onChange={e => setPw1(e.target.value)} /></Field><Field label="Repeat"><PasswordInput autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} /></Field></div>
       <Btn primary onClick={changePw} disabled={!pw1}>Update password</Btn>
     </Card>
     <Card span={6} title="What is stored, and where" hint="there is no secret in this app that would need a vault">

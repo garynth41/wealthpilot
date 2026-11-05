@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useStore } from '../app/store'
 import { APP_NAME, APP_VERSION } from '../app/config'
 import { hasSupabase } from '../app/supabase'
-import { Btn } from '../components/ui'
+import { Btn, PasswordInput } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { passwordProblems } from '../lib/access'
 
@@ -22,7 +22,7 @@ export function AuthPage({ recover }: { recover?: boolean }) {
       <div className="links"><button type="button" onClick={() => signOut()}>← Cancel and sign out</button></div>
     </form> : hasSupabase() ? <form onSubmit={submit}>
       {mode !== 'recover' && <div className="field"><label htmlFor="email">Email</label><input id="email" className="inp" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></div>}
-      {mode !== 'forgot' && <div className="field"><label htmlFor="pw">{mode === 'recover' ? 'New password' : 'Password'}{mode !== 'signin' && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> (8+ characters)</span>}</label><input id="pw" className="inp" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 8} required value={pw} onChange={e => setPw(e.target.value)} /></div>}
+      {mode !== 'forgot' && <div className="field"><label htmlFor="pw">{mode === 'recover' ? 'New password' : 'Password'}{mode !== 'signin' && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> (8+ characters)</span>}</label><PasswordInput id="pw" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 8} required value={pw} onChange={e => setPw(e.target.value)} /></div>}
       <Btn type="submit" primary block disabled={busy}>{{ signin: 'Sign in', signup: 'Create account', forgot: 'Send reset link', recover: 'Update password', mfa: 'Verify' }[mode]}</Btn>
       {msg && <div className={`msg ${msg.cls}`}>{msg.text}</div>}
       <div className="links">{mode === 'signin' ? <><button type="button" onClick={() => setMode('signup')}>Create an account</button><button type="button" onClick={() => setMode('forgot')}>Forgot password?</button></> : <button type="button" onClick={() => setMode('signin')}>← Back to sign in</button>}</div>
@@ -53,8 +53,8 @@ export function FirstSignIn() {
     <h2>Choose your password</h2>
     <p className="note" style={{ marginTop: 0 }}>You signed in with a temporary password. Pick your own now — it replaces the temporary one and is the only password that will work from here on.</p>
     <form onSubmit={submit}>
-      <div className="field"><label htmlFor="npw">New password</label><input id="npw" className="inp" type="password" autoComplete="new-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} /></div>
-      <div className="field"><label htmlFor="npw2">Type it again</label><input id="npw2" className="inp" type="password" autoComplete="new-password" required value={pw2} onChange={e => setPw2(e.target.value)} /></div>
+      <div className="field"><label htmlFor="npw">New password</label><PasswordInput id="npw" autoComplete="new-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} /></div>
+      <div className="field"><label htmlFor="npw2">Type it again</label><PasswordInput id="npw2" autoComplete="new-password" required value={pw2} onChange={e => setPw2(e.target.value)} /></div>
       <ul className="note" style={{ margin: '0 0 10px', paddingLeft: 18 }}>{['at least 10 characters', 'upper- and lower-case letters', 'a number', 'the two entries must match'].map(r => <li key={r} style={{ color: pw && !problems.includes(r) ? 'var(--good)' : undefined }}>{r}</li>)}{problems.filter(p => !['at least 10 characters', 'upper- and lower-case letters', 'a number', 'the two entries must match'].includes(p)).map(p => <li key={p} style={{ color: 'var(--crit)' }}>{p}</li>)}</ul>
       <Btn type="submit" primary block disabled={busy || problems.length > 0}>Save password and continue</Btn>
       {err && <div className="msg crit">{err}</div>}
@@ -74,8 +74,8 @@ export function ResetPassword() {
     <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><Logo /></span><div><b style={{ fontSize: 18 }}>{APP_NAME}</b><small style={{ color: 'var(--ink-3)' }}>{user.email}</small></div></div>
     <h2>Choose a new password</h2>
     <form onSubmit={submit}>
-      <div className="field"><label htmlFor="rpw">New password</label><input id="rpw" className="inp" type="password" autoComplete="new-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} /></div>
-      <div className="field"><label htmlFor="rpw2">Type it again</label><input id="rpw2" className="inp" type="password" autoComplete="new-password" required value={pw2} onChange={e => setPw2(e.target.value)} /></div>
+      <div className="field"><label htmlFor="rpw">New password</label><PasswordInput id="rpw" autoComplete="new-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} /></div>
+      <div className="field"><label htmlFor="rpw2">Type it again</label><PasswordInput id="rpw2" autoComplete="new-password" required value={pw2} onChange={e => setPw2(e.target.value)} /></div>
       <ul className="note" style={{ margin: '0 0 10px', paddingLeft: 18 }}>{basics.map(r => <li key={r} style={{ color: pw && !problems.includes(r) ? 'var(--good)' : undefined }}>{r}</li>)}{problems.filter(p => !basics.includes(p)).map(p => <li key={p} style={{ color: 'var(--crit)' }}>{p}</li>)}</ul>
       <Btn type="submit" primary block disabled={busy || problems.length > 0}>Save new password</Btn>
       {err && <div className="msg crit">{err}</div>}

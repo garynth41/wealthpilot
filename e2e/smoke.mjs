@@ -13,6 +13,8 @@ const b = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: proc
 for (const W of [1400, 390]) {
   const p = await b.newPage({ viewport: { width: W, height: W === 390 ? 844 : 950 }, timezoneId: 'America/New_York' }); const errors = []; p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/favicon|net::ERR|fonts.googleapis|Failed to load resource/.test(m.text())) errors.push(m.text()) })
   await p.goto('http://localhost:4173/'); await p.waitForTimeout(800); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(600)
+  // 0.19.2: show/hide eye on the sign-in password box (hidden by default, toggles both ways, the eye never submits the form)
+  if (await p.locator('#pw').count()) { await p.fill('#pw', 'hunter22'); const t0 = await p.getAttribute('#pw', 'type'); await p.click('.pwtoggle'); const t1 = await p.getAttribute('#pw', 'type'); await p.click('.pwtoggle'); const t2 = await p.getAttribute('#pw', 'type'); ok(t0 === 'password' && t1 === 'text' && t2 === 'password' && await p.inputValue('#pw') === 'hunter22', `${W}: password eye toggles hidden → shown → hidden (${t0}/${t1}/${t2})`); ok((await p.locator('.msg.crit').count()) === 0, `${W}: toggling the eye did not submit the form`); await p.fill('#pw', '') }
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
   const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/tax', '/reports', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']

@@ -1,4 +1,4 @@
-import { Component, cloneElement, createContext, isValidElement, useContext, useEffect, useId, useState, type ReactNode, type ReactElement } from 'react'
+import { Component, cloneElement, createContext, isValidElement, useContext, useEffect, useId, useState, type ReactNode, type ReactElement, type InputHTMLAttributes } from 'react'
 import { useStore } from '../app/store'
 import { fmtMoney } from '../lib/money'
 import { captureError } from '../lib/errors'
@@ -13,9 +13,21 @@ export const Note = ({ children }: { children: ReactNode }) => <div className="n
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>
 export const Btn = ({ onClick, children, primary, sm, danger, disabled, title, type = 'button', block }: { onClick?: () => void; children: ReactNode; primary?: boolean; sm?: boolean; danger?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; block?: boolean }) => <button type={type} className={`btn ${primary ? 'primary' : ''} ${sm ? 'sm' : ''} ${danger ? 'danger' : ''} ${block ? 'block' : ''}`} onClick={onClick} disabled={disabled} title={title}>{children}</button>
 export const Seg = <T extends string>({ value, options, onChange }: { value: T; options: Array<[T, string]>; onChange: (v: T) => void }) => <span className="seg">{options.map(([v, l]) => <button key={v} className={v === value ? 'on' : ''} onClick={() => onChange(v)} type="button">{l}</button>)}</span>
-/** A labelled control. A single native input/select/textarea child is tied to the label by id (screen readers and axe see the label); anything else keeps the visible label only. */
+/** A password box with a show/hide eye (0.19.2). Starts hidden; the eye is a plain button so Enter in the box still submits the form. Everything else (id, autoComplete, required, minLength, autoFocus…) passes straight to the input. */
+export const PasswordInput = ({ className = '', ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) => {
+  const [show, setShow] = useState(false)
+  return <span className="pwwrap">
+    <input {...rest} type={show ? 'text' : 'password'} className={`inp ${className}`} spellCheck={false} autoCapitalize="off" />
+    <button type="button" className="pwtoggle" onClick={() => setShow(s => !s)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show} title={show ? 'Hide password' : 'Show password'}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="3" />{show && <path d="M4 4l16 16" />}
+      </svg>
+    </button>
+  </span>
+}
+/** A labelled control. A single native input/select/textarea (or PasswordInput) child is tied to the label by id (screen readers and axe see the label); anything else keeps the visible label only. */
 export const Field = ({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) => {
-  const id = useId(); const native = isValidElement(children) && typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type) && !(children.props as { id?: string }).id
+  const id = useId(); const native = isValidElement(children) && ((typeof children.type === 'string' && ['input', 'select', 'textarea'].includes(children.type)) || children.type === PasswordInput) && !(children.props as { id?: string }).id
   const child = native ? cloneElement(children as ReactElement<{ id?: string }>, { id }) : children
   return <div className="field"><label htmlFor={native ? id : undefined}>{label}{hint && <span className="hint" style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 6 }}>{hint}</span>}</label>{child}</div>
 }
