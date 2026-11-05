@@ -20,10 +20,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # the public Supabase URL / publishable key live in .env.example (the real .env is git-ignored); without them the build has no backend
+      - run: cp .env.example .env
       - run: npm run engines:sync -- --check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Built bundle must carry the Supabase project URL
+        run: grep -rl "dshswfcpovdpxcidolqb.supabase.co" dist/assets/*.js > /dev/null
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       - uses: actions/upload-artifact@v4
