@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { Component, createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useStore } from '../app/store'
 import { fmtMoney } from '../lib/money'
 
@@ -24,7 +24,14 @@ export function ModalHost({ children }: { children: ReactNode }) {
   const [m, setM] = useState<{ content: ReactNode; wide?: boolean; xwide?: boolean } | null>(null)
   const close = () => setM(null)
   useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }; document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k) }, [])
-  return <MC.Provider value={{ open: (content, opts) => setM({ content, ...(opts || {}) }), close }}>{children}{m && <div className="modalBack" onMouseDown={e => { if (e.target === e.currentTarget) close() }}><div className={`modal ${m.wide ? 'wide' : ''} ${m.xwide ? 'xwide' : ''}`}>{m.content}</div></div>}</MC.Provider>
+  return <MC.Provider value={{ open: (content, opts) => setM({ content, ...(opts || {}) }), close }}>{children}{m && <div className="modalBack" onMouseDown={e => { if (e.target === e.currentTarget) close() }}><div className={`modal ${m.wide ? 'wide' : ''} ${m.xwide ? 'xwide' : ''}`}><ModalGuard onClose={close}>{m.content}</ModalGuard></div></div>}</MC.Provider>
+}
+/** A dialog that throws while rendering shows the error and a Close button instead of silently doing nothing (the whole app used to go blank). */
+class ModalGuard extends Component<{ children: ReactNode; onClose: () => void }, { err: string | null }> {
+  state = { err: null as string | null }
+  static getDerivedStateFromError(e: unknown) { return { err: e instanceof Error ? e.message : String(e) } }
+  componentDidCatch(e: unknown) { console.error('dialog failed to render', e) }
+  render() { return this.state.err ? <><div className="mhead"><b>Something went wrong</b><button className="mclose" onClick={this.props.onClose} aria-label="Close">×</button></div><div className="mbody"><div className="msg crit">This dialog could not be shown: {this.state.err}</div><div className="note">Reload the page and try again. If it keeps happening, copy the message above into a bug report.</div></div><div className="mfoot"><button className="btn" onClick={this.props.onClose}>Close</button></div></> : this.props.children }
 }
 export const MHead = ({ title }: { title: ReactNode }) => { const { close } = useModal(); return <div className="mhead"><b>{title}</b><button className="mclose" onClick={close} aria-label="Close">×</button></div> }
 export const MBody = ({ children }: { children: ReactNode }) => <div className="mbody">{children}</div>

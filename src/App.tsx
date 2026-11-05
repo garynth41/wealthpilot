@@ -36,9 +36,9 @@ export default function App() {
   if (user && mustChangePassword()) return <FirstSignIn />
   if (!mode) { if (user) return <Onboarding />; return <AuthPage /> }
   if (!household) return <div className="auth"><div className="box">{loadError ? <div className="msg crit">{loadError}</div> : <div className="note">Opening your household…</div>}</div></div>
-  return <ModalHost><HashRouter><Layout><Routes>
+  return <HashRouter><ModalHost><Layout><Routes>
     <Route path="/" element={<Dashboard />} /><Route path="/forecast" element={<ForecastPage />} /><Route path="/budget" element={<BudgetPage />} /><Route path="/transactions" element={<TransactionsPage />} /><Route path="/bills" element={<BillsPage />} /><Route path="/income" element={<IncomePage />} />
     <Route path="/reconcile" element={<ReconcilePage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/debts" element={<DebtsPage />} /><Route path="/goals" element={<GoalsPage />} /><Route path="/trends" element={<TrendsPage />} /><Route path="/insights" element={<InsightsPage />} /><Route path="/tax" element={<TaxPage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/connections" element={<ConnectionsPage />} /><Route path="/investments" element={<InvestmentsPage />} /><Route path="/hardship" element={<HardshipPage />} /><Route path="/email" element={<EmailPage />} /><Route path="/settings" element={<SettingsPage />} />
     <Route path="*" element={<Navigate to="/" replace />} />
-  </Routes></Layout></HashRouter></ModalHost>
+  </Routes></Layout></ModalHost></HashRouter>
 }

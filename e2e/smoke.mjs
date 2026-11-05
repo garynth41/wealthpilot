@@ -89,6 +89,12 @@ for (const W of [1400, 390]) {
     ok((await p.locator('.kpi:has-text("After changes") .v').textContent()) !== after0, 'withholding slider changes the projected balance')
     // 0.8.0 reports + navigation
     await p.goto('http://localhost:4173/#/reports'); await p.waitForTimeout(1200); const rp = await p.locator('main').textContent(); ok(/monthly report/i.test(rp) && /Spending by category/.test(rp) && /Net worth/.test(rp), 'reports page builds a monthly report with every section')
+    // 0.18.0: report packs, custom ranges and the ten new sections
+    await p.click('.noprint .opts button:has-text("Everything")'); await p.waitForTimeout(900); const rpAll = await p.locator('main').textContent()
+    ok(['Cash flow statement', 'Income', 'Top payees', 'Budget vs actual', 'Bills & subscriptions', '12-month trend', 'Account activity', 'Debt', 'Savings goals', 'Transaction detail'].every(t => rpAll.includes(t)) && (await p.locator('.report .card').count()) === 16, 'the "Everything" pack builds all 16 sections')
+    await p.click('.seg button:has-text("Custom range")'); await p.waitForTimeout(300); await p.click('.noprint button:has-text("Last 90 days")'); await p.waitForTimeout(900)
+    ok(/custom-range report/i.test(await p.locator('main').textContent()) && (await p.locator('input[type=date]').count()) === 2, 'a custom date range with quick picks builds a custom-range report')
+    await p.click('.noprint .opts button:has-text("Monthly review")'); await p.waitForTimeout(600); ok((await p.locator('.report .card').count()) === 7, 'the "Monthly review" pack picks seven sections')
     const [dlR] = await Promise.all([p.waitForEvent('download'), p.click('.noprint button:has-text("CSV")')]); ok(/\.csv$/.test(dlR.suggestedFilename()), 'report CSV downloads'); const [dlRx] = await Promise.all([p.waitForEvent('download'), p.click('.noprint button:has-text("Excel")')]); ok(/\.xlsx$/.test(dlRx.suggestedFilename()), 'report Excel downloads')
     await p.click('button:has-text("Annual")'); await p.waitForTimeout(500); ok(/annual report/i.test(await p.locator('main').textContent()), 'switching to an annual report rebuilds it')
     const zones = (await p.locator('.nav .zone .zt').allTextContents()); ok(['Spending Intelligence', 'Account Balances', 'Cash & Account Operations', 'Investments & Retirement', 'Tax Planning & Compliance', 'Goals & Financial Planning', 'Reports & Analytics', 'Security & Settings'].every(z => zones.map(x => x.toLowerCase()).includes(z.toLowerCase())), 'navigation has the eight primary sections')
@@ -146,6 +152,11 @@ for (const W of [1400, 390]) {
     // 0.13.0: duplicates review + year-to-date coverage
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500); await p.click('button:has-text("Duplicates")'); await p.waitForTimeout(300)
     ok(/Needs your decision/.test(await p.locator('.modal').textContent()) && /Merged — hidden from every total/.test(await p.locator('.modal').textContent()), 'Transactions → Duplicates opens the review with decisions and undo'); await p.click('.modal button:has-text("Close")'); await p.waitForTimeout(200)
+    // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
+    await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
+    await p.reload(); await p.waitForTimeout(900); await p.click('button:has-text("Review")'); await p.waitForTimeout(400)
+    ok(/Needs your decision \(1\)/.test(await p.locator('.modal').textContent()) && (await p.locator('.modal a[href*="focus="]').count()) >= 2, 'a possible duplicate shows in the dialog with links to both rows'); await p.click('.modal button:has-text("Two different transactions")'); await p.waitForTimeout(400)
+    ok(/Needs your decision \(0\)/.test(await p.locator('.modal').textContent()), '"Two different transactions" settles the pair'); await p.click('.modal button:has-text("Close")'); await p.waitForTimeout(200)
     await p.goto('http://localhost:4173/#/connections'); await p.waitForTimeout(500); ok(/Year-to-date coverage \(\d{4}\)/.test(await p.locator('main').textContent()) && /90 days/.test(await p.locator('main').textContent()), 'Bank Connections shows year-to-date coverage per account and month')
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500)
     // 0.11.2: email-capture settings live in Settings → General, and dialogs/toasts stay readable in both themes
@@ -161,7 +172,9 @@ for (const W of [1400, 390]) {
     ok(cLight >= 4.5 && cDark >= 4.5, `dialog, toast, banner and message text meet 4.5:1 in light (${cLight.toFixed(1)}) and dark (${cDark.toFixed(1)})`)
     await p.click('.modal button:has-text("Cancel")'); await p.waitForTimeout(200)
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
-    await p.click('.asof button.btn'); await p.waitForTimeout(300); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })
+    const tickBefore = await p.evaluate(() => getComputedStyle(document.querySelector('.js-plotly-plot .ytick text')).fill)
+    await p.click('.asof button.btn'); await p.waitForTimeout(900); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })
+    const tickAfter = await p.evaluate(() => getComputedStyle(document.querySelector('.js-plotly-plot .ytick text')).fill); ok(tickBefore !== tickAfter, 'charts redraw in the new theme\'s colours when the theme changes (axis text ' + tickBefore + ' → ' + tickAfter + ')')
     await p.goBack(); await p.waitForTimeout(500); ok((await p.locator('h1').first().textContent()) === 'Settings', 'browser back returns to the previous page')
   }
   ok(!errors.length, `${W}: no page errors ${errors.slice(0, 3).join(' | ')}`); await p.close()

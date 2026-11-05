@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { useStore, outdated } from '../app/store'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
@@ -88,7 +88,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
       {!online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes will fail until you are back online.'}</div>}
       {access && accessLevel(access) !== 'owner' && accessLevel(access) !== 'full' && <div className="banner info">{describeAccess(access)}{accessLevel(access) === 'limited' ? ' — other sections are hidden.' : '.'}</div>}
-      <div className={useStore.getState().canEdit() ? '' : 'ro'}>{children}</div>
+      <div className={useStore.getState().canEdit() ? '' : 'ro'} key={useThemeName()}>{children}</div>
     </main>
     <nav className="tabbar">{tabs.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')}><Icon n={v.icon} /><span>{v.tab}</span></NavLink>)}<button onClick={() => setDrawer(true)}><Icon n="menu" /><span>Menu</span></button></nav>
     <Toasts />
@@ -97,10 +97,15 @@ export function Layout({ children }: { children: ReactNode }) {
 export type ThemeMode = 'light' | 'dark' | 'system'
 const sysTheme = () => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 export const themeMode = (): ThemeMode => { try { const v = localStorage.getItem(LS('theme')); return v === 'light' || v === 'dark' || v === 'system' ? v : 'system' } catch { return 'system' } }
+// Charts bake the theme's colours into their data when a page renders, so a theme change re-mounts the page (key below) and every chart redraws in the new colours.
+const themeSubs = new Set<() => void>()
+export const useThemeName = () => useSyncExternalStore(cb => { themeSubs.add(cb); return () => { themeSubs.delete(cb) } }, () => document.documentElement.dataset.theme || 'light')
 export function setThemeMode(m: ThemeMode) {
   try { localStorage.setItem(LS('theme'), m) } catch { /* */ }
   const t = m === 'system' ? sysTheme() : m
+  const changed = document.documentElement.dataset.theme !== t
   document.documentElement.dataset.theme = t
+  if (changed) themeSubs.forEach(cb => cb())
   // phones paint the status bar / address bar from theme-color, so keep it in step with the theme (white rail in light, near-black in dark)
   try { const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', t === 'dark' ? '#0b0d10' : '#ffffff') } catch { /* */ }
 }

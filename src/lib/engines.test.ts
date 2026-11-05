@@ -361,7 +361,7 @@ describe('tax: remaining deadlines and paydays', () => {
 })
 
 // ---------------- reports (0.8.0) ----------------
-import { periodRange, buildReport, reportRows, changeText } from './reports'
+import { periodRange, buildReport, reportRows, changeText, ALL_SECTIONS, plannedInRange, accountFlows } from './reports'
 describe('reports', () => {
   it('period ranges: month / quarter / year, previous period, month-to-date when the period is still running', () => {
     expect(periodRange('month', '2026-10-15', '2026-11-04')).toMatchObject({ from: '2026-10-01', to: '2026-10-31', prevFrom: '2026-09-01', prevTo: '2026-09-30', partial: false, label: 'October 2026' })
@@ -376,6 +376,39 @@ describe('reports', () => {
     expect(rep.sections.map(x => x.id)).toEqual(['summary', 'spending', 'cashflow', 'networth', 'investments', 'tax'])
     const rows = reportRows(rep); expect(rows[0][0]).toContain('October 2026'); for (const sec of rep.sections) expect(rows.some(r => r[0] === sec.title.toUpperCase())).toBe(true)
     const q = buildReport(data, s, 'quarter', '2026-10-01', ['cashflow'], T0); expect(q.sections[0].table!.rows.map(r => r[0])).toEqual(['2026-10', '2026-11'])   // Q4 to date
+  })
+})
+describe('reports (0.18.0): custom ranges, statement, income, budget, bills, trend, accounts, debts, goals, transactions', () => {
+  it('a custom range compares with the same-length span just before it', () => {
+    expect(periodRange('custom', '', '2026-11-04', { from: '2026-10-10', to: '2026-10-19' })).toMatchObject({ from: '2026-10-10', to: '2026-10-19', prevFrom: '2026-09-30', prevTo: '2026-10-09', label: '2026-10-10 to 2026-10-19' })
+    expect(periodRange('custom', '', '2026-11-04', { from: '2026-10-19', to: '2026-10-10' }).from).toBe('2026-10-10')   // swapped dates are tolerated
+  })
+  it('every section builds from the demo data, in catalogue order, with a table that reconciles to the ledger', () => {
+    const { data, household } = seed(); const s = { ...SETTINGS_DEFAULTS, ...household.settings }; const all = ALL_SECTIONS.map(x => x[0])
+    const rep = buildReport(data, s, 'custom', '', all.slice().reverse(), T0, { from: '2026-10-01', to: '2026-10-31' })
+    expect(rep.sections.map(x => x.id)).toEqual(all)
+    const live = data.transactions.filter(t => t.status !== 'void' && !t.duplicate_of && t.date >= '2026-10-01' && t.date <= '2026-10-31')
+    const tx = rep.sections.find(x => x.id === 'transactions')!; expect(tx.table!.rows).toHaveLength(live.length); expect(tx.kpis[0].value).toBe(live.length)
+    const inc = rep.sections.find(x => x.id === 'income')!; const income = live.filter(t => t.kind === 'income' && !t.exclude_from_budget).reduce((a, t) => a + t.amount, 0)
+    expect(inc.kpis[0].value).toBeCloseTo(income, 2); expect(inc.table!.rows.reduce((a, r) => a + +r[2], 0)).toBeCloseTo(income, 1)
+    const st = rep.sections.find(x => x.id === 'statement')!; const [begin, change, end] = [st.kpis[0].value, st.kpis[1].value, st.kpis[2].value]; expect(begin + change).toBeCloseTo(end, 1)
+    const bud = rep.sections.find(x => x.id === 'budget')!; expect(bud.kpis[0].value).toBeGreaterThan(0); expect(bud.table!.rows.every(r => Math.abs(+r[2] - +r[3] - +r[4]) < 0.01)).toBe(true)   // variance = planned − actual
+    const bills = rep.sections.find(x => x.id === 'bills')!; expect(bills.table!.rows.length).toBeGreaterThan(0); expect(bills.kpis[0].value).toBeCloseTo(monthlyCommitments(data).total, 1)
+    const tr = rep.sections.find(x => x.id === 'trend')!; expect(tr.table!.rows).toHaveLength(12); expect(tr.table!.rows[11][0]).toBe('2026-10')
+    const acc = rep.sections.find(x => x.id === 'accounts')!; expect(acc.table!.rows.every(r => Math.abs(+r[2] - +r[3] - +r[4]) < 0.01)).toBe(true)   // net = in − out
+    const debts = rep.sections.find(x => x.id === 'debts')!; expect(debts.kpis[0].value).toBeCloseTo(debtTotals(data).balance, 1)
+    const goals = rep.sections.find(x => x.id === 'goals')!; expect(goals.table!.rows.length).toBe(data.goals.filter(g => g.status === 'Active' || g.status === 'Reached').length)
+    const rows = reportRows(rep); for (const sec of rep.sections) expect(rows.some(r => r[0] === sec.title.toUpperCase())).toBe(true)
+  })
+  it('planned-in-range pro-rates a budget line by the share of the period inside the range, and falls back to the default budget without periods', () => {
+    const { data } = seed(); const p = data.periods.find(x => x.period_type === 'month' && x.start_date === '2026-10-01'); const line = p && data.lines.find(l => l.period_id === p.id && +l.planned > 0)
+    if (p && line) { const full = plannedInRange(data, line.category_id, '2026-10-01', '2026-10-31'); expect(full).toBeCloseTo(+line.planned + +line.rollover_in, 1); expect(plannedInRange(data, line.category_id, '2026-10-01', '2026-10-15')).toBeCloseTo(full * 15 / 31, 1) }
+    const c = data.categories.find(c => c.kind === 'expense' && c.default_budget > 0)!; expect(plannedInRange({ ...data, periods: [], lines: [] }, c.id, '2026-10-01', '2026-10-31')).toBeGreaterThan(0)
+  })
+  it('account flows: income and transfers in count as inflow, expenses and transfers out as outflow', () => {
+    const { data } = seed(); const a = data.accounts.find(x => x.kind === 'checking')!; const f = accountFlows(data, a, '2026-10-01', '2026-10-31')
+    const inflow = data.transactions.filter(t => t.status !== 'void' && !t.duplicate_of && t.date >= '2026-10-01' && t.date <= '2026-10-31' && ((t.kind === 'income' && t.account_id === a.id) || (t.kind === 'transfer' && t.to_account_id === a.id))).reduce((n, t) => n + t.amount, 0)
+    expect(f.inflow).toBeCloseTo(inflow, 2); expect(f.net).toBeCloseTo(f.inflow - f.outflow, 2)
   })
 })
 describe('reports: change labels and net worth', () => {
