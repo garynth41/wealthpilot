@@ -110,6 +110,11 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.24.1** — Help Center.
+  - **A ? beside every card's heading** opens help for exactly that card: what it is for, how to use it step by step, what every number, column, button and switch on it means, and the rules worth knowing. Every one of the app's ~140 cards is covered, and a unit test fails the build if a new card ships without help.
+  - **The help drawer** (Help button, F1, or a card's ?) now has three tabs — This page, How do I…, Glossary — and one search box that looks through all the help; a result on another page takes you there with the help still open.
+  - **Help Center** (new page, in the menu under Help): start here (a first-week setup path), the basics, every page's full guide with "Expand all cards", every "How do I…" answer by page, troubleshooting, the glossary A–Z and keyboard shortcuts — searchable, and linkable to a single card (`#/help?topic=/accounts&card=Liquidity`).
+  - The guide's text loads only when help is first opened, so pages load as fast as before.
 - **0.24.0** — Data.
   - **Move from Mint, YNAB, Quicken or Monarch** (Connections): one export file with every account's history — Mint and Monarch CSV, YNAB's register CSV, Quicken CSV or QIF. Accounts and categories are matched by name (or by the last four digits), anything new is created on confirmation, the two legs of a transfer become one transfer, and rows already here are skipped, so re-importing the same file adds nothing. The history fills in trends and reports without moving today's balances (`lib/migrate.ts`).
   - **Balance history**: every balance change is kept — one point per account per day, written by the database (bank syncs, typed balances, statements, logged transactions). **History** on any account charts it and gives the balance on any past date, worked out from the nearest recorded day and the transactions since (`lib/history.ts`, migration 0017).

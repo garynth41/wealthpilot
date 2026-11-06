@@ -1,0 +1,101 @@
+import type { GuidePage } from '../types'
+
+export const goals: GuidePage = {
+  path: '/goals',
+  summary: 'Your savings goals — emergency fund, sinking funds, purchases and debt payoff — with what is saved, the pace you are on, the date you get there and whether you will make your target date.',
+  start: [
+    'Click + Add goal on the All goals card and fill in the new row: the name, kind, target, the date you want it by, the account it is saved in and what you will put in each month.',
+    'Set Starting amount to what was already saved when you created the goal.',
+    'Each time you put money aside, click + Contribute on the goal\'s card. Keep "also log the transfer" ticked to record the move from checking too.',
+    'Click What if… on a goal to see how a bigger monthly amount or a lump sum moves the date.',
+  ],
+  top: [
+    { term: 'Active goals', text: 'How many goals have the status Active, and their targets added up.' },
+    { term: 'Saved toward goals', text: 'What the active goals have saved so far, and that as a share of all their targets.' },
+    { term: 'Contributing', text: 'The monthly contributions of every active goal added up. The line underneath is what they need per month to hit every target date. Green when you contribute at least that much.' },
+    { term: 'Gap', text: 'What is needed per month minus what you contribute, when that is more than zero. Raise contributions or move a date to close it.' },
+  ],
+  cards: [
+    {
+      title: 'Each goal',
+      what: 'Every active goal has its own card, headed with the goal\'s name and kind: what is saved, the target, the pace you are on and the milestones along the way.',
+      how: [
+        'Click + Contribute to record money you put toward the goal.',
+        'Click What if… to try a different monthly amount or a one-off lump sum.',
+        'Edit the goal itself — target, date, account, monthly amount — in the All goals table.',
+      ],
+      fields: [
+        { term: 'Saved of target', text: 'What is saved — the starting amount plus every contribution — and the target. For a debt payoff goal, saved is the target minus what is still owed on the linked card or loan.' },
+        { term: 'Today\'s dollars line', text: 'Shown when the goal has an inflation rate: the target you typed in today\'s dollars, and the yearly rate it grows at to the target date.' },
+        { term: 'Progress bar', text: 'Saved as a share of the target, in the goal\'s color.' },
+        { term: 'To go line', text: 'What is left, the target date, your monthly contribution, what you need per month to make the date, and the date you get there at this pace. It says Reached once the target is met.' },
+        { term: 'plan +$X/mo', text: 'Shown when a plan applied on the Plan page adds extra to this goal each month. Click it to open the Plan.' },
+        { term: 'Milestones', text: '25%, 50%, 75% and 100% of the target. A reached milestone shows the date of the contribution that reached it ("at start" when the starting amount already covered it). The others show the date they will be reached at the current monthly contribution; a dash means no monthly contribution is set.' },
+        { term: '+ Contribute', text: 'Opens a box with the Date and Amount (it starts at your monthly contribution). When the goal is saved in an account, "also log the transfer into" that account records the move as a transfer from the From account and moves both balances. Click Save. Not shown for debt payoff goals.' },
+        { term: 'What if…', text: 'Opens a box with two sliders, Monthly contribution and One-off lump sum. Reached is the date you would get there (green on or before the target date, red after). Today\'s plan is the date at your current monthly amount. Needed to hit the date is the monthly amount that makes the target date, with what you would have saved by then. Apply $X/mo saves the new monthly amount; the lump sum is a preview only. Its Scenarios strip saves and compares versions.' },
+      ],
+      tips: [
+        'Debt payoff goals have no Contribute or What if… — they move as the card or loan balance goes down.',
+        'Paused, Reached and Cancelled goals have no card; find them in All goals.',
+      ],
+    },
+    {
+      title: 'All goals',
+      what: 'Every goal, active or not, in one editable table — the place to set targets, dates, accounts and monthly amounts.',
+      how: [
+        'Click + Add goal: a new row appears with a $1,000 target a year from today, saved in your first savings account at $100 a month. Change what you need.',
+        'Click any cell to edit it.',
+        'Use ✕ to delete a goal and its contribution history. To keep the history, set Status to Paused or Cancelled instead.',
+      ],
+      fields: [
+        { term: 'Goal / Kind', text: 'The goal\'s name and kind: Savings, Emergency fund, Debt payoff, Sinking fund, Purchase or Other. Emergency fund goals feed the Liquidity card on Account Balances; debt payoff goals follow a card or loan.' },
+        { term: 'Target / By', text: 'The amount you are aiming for and the date you want it by. Without a date there is no needed-per-month or on-track test.' },
+        { term: 'Inflation %/yr', text: 'Leave it blank for a fixed target. With a rate, the target is in today\'s dollars and grows each year from the day you set the rate (or last changed the target) to the By date.' },
+        { term: 'Target then', text: 'The target grown by inflation to the By date (to today when there is no date). A dash when no inflation rate is set.' },
+        { term: 'Saved in', text: 'The account the money sits in. Contributions can log a transfer into it, and goal allocation on Account Balances uses its balance. For a debt payoff goal, pick the card or loan.' },
+        { term: 'Starting amount', text: 'What was already saved when you created the goal.' },
+        { term: 'Per month', text: 'What you plan to put in each month. The pace, the dates and the Plan use it.' },
+        { term: 'Saved', text: 'Starting amount plus every contribution (for debt payoff, the target minus what is still owed).' },
+        { term: 'Progress', text: 'Saved as a share of the target.' },
+        { term: 'Needed / mo', text: 'What is left divided by the months until the By date. A dash with no date.' },
+        { term: 'On track', text: 'Reached; "no date" without a By date; "yes" with the date you get there when your monthly amount covers what is needed; "behind" with the date when it does not.' },
+        { term: 'Priority', text: '1 to 9; lower numbers come first. The Plan fills goals with extra in this order, and goal allocation on Account Balances funds them in this order.' },
+        { term: 'Status', text: 'Active, Paused, Reached or Cancelled. Only Active goals get a card and count in the totals and the Plan. Inactive rows are grayed out.' },
+        { term: 'Color', text: 'The color of the goal\'s progress bars — a color name or a hex code such as #2f7d4f.' },
+        { term: 'Notes / ID', text: 'Your notes, and a short reference you can quote or search for.' },
+      ],
+      tips: [
+        'A contribution logged as a transfer from checking raises the savings balance; if the transfer has a budget line, the budget counts it too.',
+        'An inflation rate of about 3% a year is typical; college costs have run higher.',
+        'Rows are amber when a goal is behind, and green otherwise (reached, on track or without a date).',
+      ],
+    },
+    {
+      title: 'Contribution history',
+      what: 'Every contribution recorded toward any goal, newest first.',
+      fields: [
+        { term: 'Date / Goal / Amount', text: 'When the money went in, which goal it counts toward and how much.' },
+        { term: 'Note', text: 'Your note, or "marked by a payee rule" when a payee rule recorded it automatically.' },
+        { term: '✕', text: 'Removes the contribution, which lowers the goal\'s saved amount. Any transfer logged with it stays on Transactions.' },
+      ],
+      tips: ['A payee rule with "Count toward goal" set (Settings → Payee rules) records each matching transfer here once, automatically.'],
+    },
+  ],
+  tasks: [
+    { q: 'How do I set up an emergency fund goal?', steps: ['Click + Add goal on the All goals card.', 'Set Kind to Emergency fund, type the Target and By date, and pick the savings account in Saved in.', 'Type what is already saved in Starting amount and what you will add in Per month.'] },
+    { q: 'How do I record money I put toward a goal?', steps: ['Click + Contribute on the goal\'s card.', 'Check the Date and Amount.', 'Keep "also log the transfer" ticked and pick the From account to record the transfer too, then click Save.'] },
+    { q: 'How do I see how to reach a goal sooner?', steps: ['Click What if… on the goal\'s card.', 'Slide Monthly contribution or One-off lump sum and watch Reached.', 'Click Apply $X/mo to keep the new monthly amount.'] },
+    { q: 'How do I set a target that keeps up with inflation?', steps: ['Type the target in today\'s dollars in the Target column.', 'Type a yearly rate in Inflation %/yr.', 'Target then shows what you will need by the By date.'] },
+    { q: 'How do I count automatic transfers toward a goal?', steps: ['Open Settings → Payee rules.', 'Make a rule that matches the transfer and set "Count toward goal" to the goal.', 'Each matching transfer is added to Contribution history once.'] },
+  ],
+  glossary: [
+    { term: 'Starting amount', def: 'What a goal already had saved on the day you created it.' },
+    { term: 'Inflation-adjusted target', def: 'A goal target typed in today\'s dollars that grows each year at the rate you set, so it still buys the same thing on the target date.' },
+    { term: 'Needed per month', def: 'What is left to save divided by the months until the target date.' },
+    { term: 'On track', def: 'A goal whose monthly contribution covers what is needed per month to reach the target by its date.' },
+    { term: 'Goal milestone', def: 'A quarter-way mark — 25%, 50%, 75% or 100% of the target — with the date it was or will be reached.' },
+    { term: 'Goal priority', def: 'A number from 1 to 9 that decides which goals get money first; 1 comes first.' },
+    { term: 'Goal contribution', def: 'A recorded amount put toward a goal, with or without a transfer between accounts.' },
+  ],
+  links: [['/plan', 'Plan'], ['/accounts', 'Goal allocation and liquidity'], ['/transactions', 'Transactions'], ['/settings', 'Payee rules']],
+}

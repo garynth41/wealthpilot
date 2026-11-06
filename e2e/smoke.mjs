@@ -267,7 +267,7 @@ for (const W of [1400, 390]) {
     // 0.23.0: help drawer, privacy mode, number format, arrangeable dashboard, home-screen shortcuts
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(900)
     await p.click('.topbar button[aria-label="Help for this page"]'); await p.waitForTimeout(300); const hd = await p.locator('.helpdrawer').textContent()
-    ok(/Help · Dashboard/.test(hd) && /Safe to spend is cash on hand/.test(hd) && /Keyboard/.test(hd), 'the help drawer explains the page it was opened on')
+    ok(/Help · Dashboard/.test(hd) && /Safe to spend/.test(hd) && /Each card on this page/.test(hd) && /Keyboard/.test(hd), 'the help drawer explains the page it was opened on')
     await p.keyboard.press('Escape'); await p.waitForTimeout(200); ok((await p.locator('.helpdrawer').count()) === 0, 'Esc closes the help drawer')
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(700); await p.keyboard.press('F1'); await p.waitForTimeout(300); ok(/Zero-based/.test(await p.locator('.helpdrawer').textContent()), 'F1 opens the Budget help with the budgeting methods'); await p.keyboard.press('Escape')
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(800); await p.keyboard.press('h'); await p.waitForTimeout(500)
@@ -306,6 +306,30 @@ for (const W of [1400, 390]) {
     ok(/4 transactions added across 2 accounts/.test(mg2) && /start at a zero balance/.test(mg2), 'importing creates the two accounts and adds the history')
     await p.click('button:has-text("Import another file")'); await p.waitForTimeout(300); await p.setInputFiles('input[aria-label="Export file from Mint, YNAB, Quicken or Monarch"]', { name: 'transactions.csv', mimeType: 'text/csv', buffer: Buffer.from(mint) }); await p.waitForTimeout(600)
     ok(/Alreadyhere4/.test((await p.locator('.card:has-text("Move from Mint")').first().textContent()).replace(/\s+/g, '')), 'the same file again adds nothing'); await p.click('.card:has-text("Move from Mint") button:has-text("Cancel")').catch(() => {})
+    // 0.24.1: the guide — a ? beside every card heading opens help at that card; one search across all help; the Help Center
+    await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900)
+    ok((await p.locator('.cardhelp').count()) >= 8, `every card on Account Balances has a ? (${await p.locator('.cardhelp').count()})`)
+    await p.click('button[aria-label="Help: Property & vehicles"]'); await p.waitForTimeout(900)
+    const foc = await p.locator('.helpdrawer .g-card.g-focus').textContent().catch(() => '')
+    ok(/Property & vehicles/.test(foc) && /Loan-to-value/.test(foc) && /How to use it/.test(foc) && (await p.locator('.helpdrawer .g-card.g-focus[open]').count()) === 1, 'a card\'s ? opens the guide at that card: how to use it and what every number means')
+    await p.fill('.helpdrawer input[aria-label="Search all help"]', 'avalanche snowball'); await p.waitForTimeout(400)
+    const hits = await p.locator('.helpdrawer .g-hits li').count(); ok(hits > 0, `one search looks through all the help (${hits} results)`)
+    await p.locator('.helpdrawer .g-hits button:has(.g-where:text-is("Debt Payoff"))').first().click(); await p.waitForTimeout(1200)
+    ok(/#\/debts/.test(p.url()) && (await p.locator('.helpdrawer').count()) === 1 && /Help · Debt Payoff/.test(await p.locator('.helpdrawer h2').textContent()), 'a result on another page goes there with the help still open')
+    await p.locator('.helpdrawer .seg button:has-text("Glossary")').click(); await p.waitForTimeout(300); ok((await p.locator('.helpdrawer .g-gloss dt').count()) > 40, 'the glossary lists every term A–Z')
+    await p.keyboard.press('Escape'); await p.waitForTimeout(200)
+    { const bad = []; for (const path of ['/', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) {
+      await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(700); const qs = p.locator('.cardhelp'); const n = await qs.count(); if (!n) { bad.push(path + ' (no ?)'); continue }
+      await qs.nth(n - 1).click(); await p.waitForTimeout(500); if ((await p.locator('.helpdrawer .g-card.g-focus').count()) !== 1) bad.push(path + ': ' + await qs.nth(n - 1).getAttribute('aria-label'))
+      await p.keyboard.press('Escape'); await p.waitForTimeout(150) }
+      ok(!bad.length, 'on every page a card\'s ? finds its own help ' + bad.join(', ')) }
+    await p.goto('http://localhost:4173/#/help'); await p.waitForTimeout(1000)
+    ok(/Start here/.test(await p.locator('main').textContent()) && (await p.locator('.hc-tile').count()) === 21, 'the Help Center starts with getting started and a tile for every page')
+    await p.fill('input[aria-label="Search the Help Center"]', 'sync failed'); await p.waitForTimeout(400); ok((await p.locator('.g-kind.k-faq').count()) > 0, 'Help Center search finds troubleshooting answers')
+    await p.fill('input[aria-label="Search the Help Center"]', ''); await p.click('.hc-index button:has-text("Account Balances")'); await p.waitForTimeout(500)
+    await p.click('button:has-text("Expand all cards")'); await p.waitForTimeout(300); ok((await p.locator('.hc-main details.g-card[open]').count()) >= 8, 'a page\'s guide in the Help Center opens every card at once')
+    await p.click('.hc-index button:has-text("Troubleshooting")'); await p.waitForTimeout(300); ok(/does not match my bank/.test(await p.locator('.hc-main').textContent()), 'troubleshooting answers the common problems')
+    await p.goto('http://localhost:4173/#/help?topic=%2Freconcile&card=Statement'); await p.waitForTimeout(900); ok((await p.locator('.hc-main .g-card.g-focus[open]').count()) === 1, 'a link straight to one card of the guide opens it')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
@@ -355,6 +379,7 @@ for (const W of [1400, 390]) {
 // 0.23.0: phones — swipe a ledger card left to categorize it
 { const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }); const mp = await ctx.newPage()
   await mp.goto('http://localhost:4173/'); await mp.waitForTimeout(700); await mp.evaluate(() => localStorage.clear()); await mp.reload(); await mp.waitForTimeout(600); await mp.click('text=Open the offline demo'); await mp.waitForTimeout(1200)
+  await mp.goto('http://localhost:4173/#/help?topic=%2Faccounts'); await mp.waitForTimeout(900); ok((await mp.evaluate(() => document.documentElement.scrollWidth)) <= 392 && await mp.locator('select[aria-label="Help topic"]').isVisible(), 'the Help Center fits a phone, with a topic picker in place of the index')
   await mp.goto('http://localhost:4173/#/transactions'); await mp.waitForTimeout(1000)
   const swiped = await mp.evaluate(() => { const el = [...document.querySelectorAll('.stack .card')].find(c => c.querySelector('select[aria-label="Type"]')?.value === 'expense'); if (!el) return false; const r = el.getBoundingClientRect()
     const fire = (type, x) => { const t = new Touch({ identifier: 1, target: el, clientX: x, clientY: r.top + 30 }); el.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true })) }

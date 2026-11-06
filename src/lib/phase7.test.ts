@@ -9,7 +9,7 @@ import { setupSteps, setupProgress, hasMoneyData } from './onboarding'
 import { normalizeLayout, moveCard, toggleCard, visibleCards } from './dashLayout'
 import { noData } from './visuals'
 import { runwayProjection } from './forecast'
-import { HELP } from './help'
+import { guideFor } from './guide'
 import { demoSeed } from '../app/data/demoSeed'
 import { SETTINGS_DEFAULTS, emptyData, type Settings } from '../app/data/types'
 
@@ -75,6 +75,6 @@ describe('empty states', () => {
     const p = runwayProjection(emptyData(), SETTINGS_DEFAULTS as Settings); expect(p.zeroAt).toBeNull()
   })
   it('every page in the app has help', () => {
-    for (const path of ['/', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) { expect(HELP[path]?.intro, path).toBeTruthy(); expect(HELP[path].sections.length, path).toBeGreaterThan(0) }
+    for (const path of ['/', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) { expect(guideFor(path)?.summary, path).toBeTruthy(); expect(guideFor(path)!.cards.length, path).toBeGreaterThan(0) }
   })
 })

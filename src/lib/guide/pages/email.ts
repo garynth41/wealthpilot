@@ -1,0 +1,123 @@
+import type { GuidePage } from '../types'
+
+export const email: GuidePage = {
+  path: '/email',
+  summary: 'Reads bills, statements, payments, deposits and bank alerts from Gmail or Outlook. You review what it found; the app files what you approve as transactions, card statements and recurring bills, and keeps a record of each with a link back to the email.',
+  start: [
+    'An owner clicks Set up Gmail (or Set up Outlook), pastes the client ID and chooses how far back to read.',
+    'Click ✉ Check Gmail (or ✉ Check Outlook) and sign in to your mailbox when asked.',
+    'In Review, check where each item goes, its amount and its date, untick anything wrong, then click Apply selected.',
+    'Not ready to connect? Click Paste an email to test to see what the reader finds in a single message.',
+  ],
+  top: [
+    { term: 'Bills received', text: 'How many bills and statements filed from email are dated this month, and their total. These numbers sit under the Sync card.' },
+    { term: 'Paid from email', text: 'How many payments filed from email are dated this month, and their total.' },
+    { term: 'Deposits', text: 'How many deposits filed from email are dated this month, and their total.' },
+    { term: 'Needs attention', text: 'Open past-due and declined-payment items, plus bank alerts still marked Alert. Green with "all clear" when there are none.' },
+    { term: 'Remembered payees', text: 'How many senders the app remembers where to file. Each approval teaches it, so the next email from the same payee goes to the same place.' },
+  ],
+  cards: [
+    {
+      title: 'Sync',
+      what: 'Checks your mailbox for money emails and opens what it finds in Review. It is read-only: nothing is sent, labelled or deleted, and amounts and dates are taken exactly as the emails state them.',
+      how: [
+        'Click ✉ Check Gmail, ✉ Check Outlook, or ✉ Check Gmail & Outlook when both are set up. A banner shows progress while it reads.',
+        'Read the note beside each button for the last run: when, how many items there were to review, how many messages were checked and how many looked like money mail.',
+        'Click Paste an email to test to try the reader on one message without connecting.',
+      ],
+      fields: [
+        { term: 'Set up Gmail / Set up Outlook', text: 'Shown until a client ID is saved. For an owner it opens Email capture settings.' },
+        { term: 'Paste an email to test', text: 'Opens a window with From, Subject and Body (text or HTML). Parse shows what the reader found (type, payee, amount, statement balance, minimum due, due date, transaction date, last four digits, autopay and confidence) and adds it to Review, where you can file it like any other email. It says so when the message is not a money email or is skipped.' },
+        { term: 'Settings', text: 'Opens Email capture settings (owners): the Google OAuth client ID and Gmail address; the Outlook Application (client) ID, Tenant (consumers for a personal outlook.com address) and Mailbox; Read money emails from; Automatic filing; Statement and receipt PDFs; and Forget them, which clears every remembered payee.' },
+        { term: 'Reads from', text: 'The earliest date read: 60 days back unless you change Read money emails from in settings, and never earlier than January 1, 2025.' },
+        { term: 'Automatic filing', text: 'When it is on in settings, items that are clearly matched (a sure match to an existing card, loan, recurring bill or category, read with high confidence, not already recorded) are filed straight after the check without review.' },
+        { term: 'Statement and receipt PDFs', text: 'Off by default. When on, the PDF attached to a filed email is saved with the statement or transaction (shown in Statement history on Account Balances and on the transaction\'s 📎). The email itself is still never stored, but a statement PDF is the bank\'s own document and can show your full account number; leave this off if you do not want that kept.' },
+      ],
+      tips: [
+        'Every message is reviewed once: approved items are filed, and ignored ones are remembered so they do not come back.',
+        'Email bodies are never stored. The record keeps the amounts, dates, payee, the last four digits of an account, and the subject line with any long number cut to its last four digits.',
+        'Amounts and dates come only from the email. An amount the email does not state is left blank for you to fill in, and a payment or deposit with no stated date takes the date the email arrived. An email with no amount at all is listed under "nothing to record", except past-due and declined notices, bank alerts, bills that give a due date and scheduled card or loan payments that give a date.',
+        'Reading mail needs a Google OAuth client ID (Gmail) or a Microsoft app registration (Outlook) that allows this site\'s address. The same settings open from the Email capture card in Settings.',
+      ],
+    },
+    {
+      title: 'Review',
+      what: 'What the last check found, grouped as Money in, Payments made, Bills & statements, Needs attention and New accounts. Each line says exactly what Apply will do; nothing is filed until you click Apply selected.',
+      how: [
+        'Read each line: the payee, the type, the amount, the date and, underneath, what will change.',
+        'Fix anything wrong in the boxes: Amount, Date (Due date for a bill), Where it goes, and Paid from or Deposited to.',
+        'Untick lines you do not want filed now. Tick "not money I track — ignore this email" for mail you never want filed.',
+        'Click Apply selected, or Discard to close the review without filing or remembering anything.',
+      ],
+      fields: [
+        { term: 'Tick box', text: 'Ticked lines are filed by Apply selected. Lines the app is not sure about start unticked and carry a "check" tag.' },
+        { term: 'Type pills', text: 'Paid, Money in, Bill, Scheduled, Past due, Declined, Bank alert or Balance update. "resolved" means a later payment settled a past-due or declined notice; "paid" means a payment email settled this bill.' },
+        { term: 'What will change', text: 'The line under the payee, for example "payment $45.00 on Nov 2 → Chase card", "balance $1,410.20 → $1,365.20", "minimum $35.00 → $44.00", "→ new recurring bill" or "already logged". How it was matched follows in brackets: name, account ··1234, remembered, amount and so on.' },
+        { term: 'email ↗', text: 'Opens the original message in Gmail or Outlook.' },
+        { term: 'Amount / Date', text: 'As read from the email; change them if they are wrong. A blank Amount means the email did not state one.' },
+        { term: 'Where it goes', text: 'A card or loan (a payment becomes a transfer that lowers the balance; a statement updates it), a recurring bill (marked paid), a budget or income category, + New recurring bill…, + New category…, + New card / loan account, or Track only — don\'t file. For a new item, type its Name in the box beside it.' },
+        { term: 'Paid from / Deposited to', text: 'The bank account the money came from or went into. Your first checking account is used unless you pick another.' },
+        { term: 'not money I track — ignore this email', text: 'Files nothing and remembers the email as reviewed.' },
+        { term: 'Already recorded / nothing to record', text: 'Collapsed lists at the bottom: emails that match something already on file, and money emails with nothing to record (newsletters and offers, promotions and credit-score emails, monthly summaries, notices with no amount). Both are remembered as reviewed when you apply.' },
+      ],
+      tips: [
+        'Lines left unticked, and not marked ignore, come back the next time you check.',
+        'The same notice sent twice becomes one line with both emails attached, and a payment email settles the matching scheduled notice or open bill.',
+        'A card payment dated before the card\'s latest statement is recorded but does not lower the balance again, since the statement already includes it.',
+        'Each approval remembers where that payee went, so the next email from it is filed the same way.',
+      ],
+    },
+    {
+      title: 'Recurring bills & income found in email',
+      what: 'One row for each payee filed from your mail, bills (🧾) and income (💵), with the typical amount, the last payment and what is next, most frequent first.',
+      fields: [
+        { term: 'Typical', text: 'The middle amount of the payments or deposits recorded for that payee, or a bill amount when no payment has been recorded yet.' },
+        { term: 'Total recorded', text: 'All payments or deposits filed for that payee.' },
+        { term: 'Last paid / received', text: 'The date of the latest payment or deposit.' },
+        { term: 'Next', text: 'The earliest bill, scheduled payment or notice that is still open.' },
+        { term: 'Months seen', text: 'How many different months the payee appears in.' },
+        { term: 'Autopay', text: '"yes" when any of its emails mentioned autopay.' },
+      ],
+      tips: ['A payee here that is not on Bills & Subscriptions yet is a bill the forecast cannot see. Choosing + New recurring bill… in Review adds it there for you.'],
+    },
+    {
+      title: 'Everything filed from email',
+      what: 'The record of every approved bill, payment, deposit and alert, newest first, with a link to the email it came from.',
+      how: [
+        'Click a Payee / payer, Amount, Due, Status or Notes cell to correct the record.',
+        'Type in Search this table, click a heading to sort, or download CSV or Excel.',
+        'Use ✕ to remove a record; it goes straight away.',
+      ],
+      fields: [
+        { term: 'Date', text: 'The payment, deposit or statement date, or the due date when there is no other.' },
+        { term: 'Type', text: 'Paid, Money in, Bill, Scheduled, Past due, Declined, Bank alert or Balance update.' },
+        { term: 'Amount / Due', text: 'The amount and the due date read from the email.' },
+        { term: 'Status', text: 'Due, Scheduled, Paid, Received, Overdue, Declined, Alert, Resolved or Updated. Change it when you settle something outside email, for example mark a bank alert Resolved.' },
+        { term: 'Now', text: 'Where it stands today: Paid, Received or Resolved; Balance updated; Nothing due (a $0 bill); Scheduled, Scheduled today, or Scheduled · not confirmed (the date passed with no confirmation email); Declined; Bank alert; Overdue; Due today; Autopay; or Due.' },
+        { term: 'Filed to', text: '💳 the card or loan account, 🔁 the recurring bill, 📒 the budget category, or "tracked only" when it was not filed anywhere.' },
+        { term: 'Acct', text: 'The last four digits of the account, when the email gave them.' },
+        { term: 'Email', text: '✉ ↗ links to the last one or two emails behind the record.' },
+        { term: 'Notes / ID', text: 'Your own notes, and a short reference you can quote or search for.' },
+      ],
+      tips: [
+        'Editing or removing a record here does not change the transaction, statement or bill it created. Fix those on Transactions, Account Balances or Bills & Subscriptions.',
+        'Approving an email files it once: card and loan payments become transfers on Account Balances, bills and purchases become transactions in the Budget, statements update the card\'s balance, minimum and due date, and new bills become recurring items on Bills & Subscriptions.',
+      ],
+    },
+  ],
+  tasks: [
+    { q: 'How do I connect Gmail?', steps: ['Click Set up Gmail (an owner).', 'Paste the Google OAuth client ID (Google Cloud → APIs & Services → Credentials → OAuth client (Web)); that client must list this site as an authorized JavaScript origin and have the Gmail API enabled.', 'Click Save, then ✉ Check Gmail and sign in.'] },
+    { q: 'How do I connect Outlook?', steps: ['Click Set up Outlook (an owner).', 'Paste the Application (client) ID from Entra admin → App registrations → Single-page application, with the redirect address shown in the settings.', 'Pick the Tenant (consumers for a personal outlook.com address), click Save, then ✉ Check Outlook and sign in.'] },
+    { q: 'How do I file a card payment email to the right card?', steps: ['In Review, open Where it goes on that line and pick the card under Cards & loans.', 'Check Paid from, then click Apply selected.', 'The next email from that payee goes to the same card.'] },
+    { q: 'How do I stop an email from coming back?', steps: ['In Review, tick "not money I track — ignore this email" on its line.', 'Click Apply selected.'] },
+    { q: 'How do I make the app forget where it files payees?', steps: ['Click Settings on the Sync card.', 'Click Forget them next to the number of remembered payees.'] },
+  ],
+  glossary: [
+    { term: 'Email capture', def: 'Reading money emails from Gmail or Outlook so bills, payments and deposits are filed without typing.' },
+    { term: 'Money email', def: 'A bill, statement, payment confirmation, deposit notice, past-due or declined notice, or bank alert.' },
+    { term: 'Remembered payee', def: 'A sender the app has learned where to file from your earlier approvals.' },
+    { term: 'Automatic filing', def: 'An email capture setting that files clearly matched items without review.' },
+    { term: 'Track only', def: 'Keeping a record of an email item without filing it to an account, bill or category.' },
+  ],
+  links: [['/bills', 'Bills & Subscriptions'], ['/accounts', 'Account Balances'], ['/transactions', 'Transactions'], ['/budget', 'Budget'], ['/settings', 'Settings']],
+}
