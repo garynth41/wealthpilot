@@ -89,6 +89,7 @@ export const settings: GuidePage = {
         { term: 'Numbers and dates', text: 'Same as this browser, or a fixed format such as English (US) 1,234.56 or Deutsch 1.234,56. The line above the box shows a sample. Amounts stay in US dollars; only the way they are written changes.' },
         { term: 'Privacy mode', text: 'Hides every amount on this screen; H turns it on and off anywhere in the app. Excel and CSV downloads keep the real figures.' },
         { term: 'Show the getting-started checklist again', text: 'Appears once the checklist has been dismissed. It brings the checklist back to the Dashboard for the household.' },
+        { term: 'Keep a read-only copy for offline use', text: 'On by default. After each load this browser keeps a copy of the household, so the app still opens with your data when there is no connection — read-only, with a banner saying how old the copy is. Turn it off on a shared computer; turning it off deletes the copy, and signing out always clears it.' },
       ],
       tips: [
         'Where the comma is the decimal mark, typing "12,5" counts as 12.5.',
@@ -213,7 +214,7 @@ export const settings: GuidePage = {
         { term: 'Send a test', text: 'Sends a test push to your devices that have push on and a test email to your address, then reports what happened. It works when push is on here or Email me is on.' },
         { term: 'iPhone', text: 'Install the app first (Share → Add to Home Screen) and open it from the home screen; push works from the installed app on iOS 16.4 and later.' },
       ],
-      tips: ['Alerts are checked every morning at 07:30 Eastern.', 'Push and email need a signed-in household; the offline demo only shows the rules.'],
+      tips: ['Alerts are checked every morning at 7:30 am Eastern (8:30 am during daylight saving time).', 'Push and email need a signed-in household; the offline demo only shows the rules.'],
     },
     {
       title: 'Email',
@@ -450,8 +451,20 @@ export const settings: GuidePage = {
       ],
       tips: ['The log cannot be edited from the app.', 'The offline demo has no activity log.'],
     },
+    {
+      title: 'Delete this household',
+      what: 'On the General tab: permanently delete the household — every account, transaction, budget, bill, goal, receipt and statement PDF, the bank connection and the nightly backups, for every member — after a 7-day grace period.',
+      how: ['Click Download a backup first if you might want any of it.', 'Click Delete this household…, type the household\'s name, tick that you understand, and click Schedule deletion.', 'For 7 days the household is read-only and every member sees a red banner with the date; any owner can click Cancel the deletion (in the banner or here) to put everything back to normal.', 'After the 7 days the nightly clean-up removes it for good.'],
+      fields: [
+        { term: 'Download a backup first / Download a backup', text: 'Saves the whole household as one JSON file you can restore into a new household later.' },
+        { term: 'Delete this household…', text: 'Owners only. Opens the confirmation; nothing happens until you type the name and click Schedule deletion.' },
+        { term: 'Cancel the deletion', text: 'Owners only, while a deletion is pending. Clears the date; the household is editable again at once.' },
+      ],
+      tips: ['Your sign-in and any other households you belong to are not affected.', 'Every member is sent an alert when the deletion is scheduled and again the day before (when push or email alerts are set up).', 'In the offline demo this only shows how it works; Reset sample data starts over.'],
+    },
   ],
   tasks: [
+    { q: 'How do I delete our household?', steps: ['Open Settings → General and scroll to Delete this household (owners only).', 'Click Download a backup first if you want a copy.', 'Click Delete this household…, type its name, tick the box and click Schedule deletion.', 'It is read-only for 7 days and then deleted for good; any owner can cancel before then.'] },
     { q: 'How do I invite someone and limit what they see?', steps: ['Open the Members tab.', 'Under Invite someone, type their email and name.', 'Choose Limited, tick the sections they may open, and tick "Can add and change things in those sections" if they should edit there.', 'Click Create sign-in & draft email, then send them the email with the temporary password (Copy email or Open in email app).', 'To change it later, click Change beside them under Members.'] },
     { q: 'How do I turn on two-factor authentication?', steps: ['Open the Security tab.', 'Click Set up two-factor and scan the QR code with your authenticator app.', 'Type the 6-digit code and click Verify & turn on.', 'Under Recovery codes, click Make 10 recovery codes and save them.'] },
     { q: 'How do I add a passkey?', steps: ['On the phone or computer you want to use, open the Security tab.', 'Click + Add a passkey on this device and confirm with your face, fingerprint, PIN or security key.', 'Next time, choose "Sign in with a passkey".'] },
@@ -460,6 +473,8 @@ export const settings: GuidePage = {
     { q: 'How do I make a payee rule?', steps: ['Open the Payee rules tab and click + Add rule.', 'Type part of the merchant name under Payee pattern and pick the Match.', 'Choose Set category (and anything else it should set).', 'Click Apply to N transactions to file the existing ones.'] },
   ],
   glossary: [
+    { term: 'Grace period', def: 'The 7 days between scheduling a household\'s deletion and the deletion itself, when the household is read-only and any owner can cancel.' },
+    { term: 'Offline copy', def: 'The read-only copy of your household this browser keeps so the app opens without a connection. Cleared when you sign out.' },
     { term: 'Two-factor authentication (TOTP)', def: 'A second check at sign-in: a 6-digit code from an authenticator app that changes every 30 seconds (a time-based one-time password).' },
     { term: 'Passkey', def: 'A sign-in kept on your device and unlocked with its face, fingerprint, PIN or a security key — nothing to type or steal.' },
     { term: 'Recovery code', def: 'A single-use code that stands in for the authenticator code when your phone is lost.' },
@@ -469,7 +484,7 @@ export const settings: GuidePage = {
     { term: 'Learned rule', def: 'A payee rule made for you when you set a transaction\'s category by hand.' },
     { term: 'Match type', def: 'How a payee rule compares its pattern with the payee: contains, starts with, is exactly or regex.' },
     { term: 'Monday digest', def: 'A weekly email, plus a short push, each Monday: the week ahead, last week\'s spending and anything overdue.' },
-    { term: 'Savings-rate target', def: 'The share of income you aim to keep. Set it under Settings → Planning thresholds.' },
+    { term: 'Savings-rate target', def: 'The share of income you aim to keep. Set it under Settings → General → Planning thresholds.' },
   ],
   links: [['/budget', 'Budget'], ['/email', 'Email Money Capture'], ['/transactions', 'Transactions'], ['/accounts', 'Account Balances'], ['/bills', 'Bills & Subscriptions']],
 }

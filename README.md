@@ -110,6 +110,14 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.25.0** — Engineering.
+  - **Staging database**: every database change is applied to a separate staging project first; CI builds the app against it and drives it end to end — sign-in, row-level security (a read-only member is refused), triggers (balance history, audit), deleting a household, the offline copy — before anything deploys (`e2e/db.mjs`, `scripts/staging-schema.mjs`).
+  - **Read-only offline copy**: after every load this device keeps the household in IndexedDB; with no connection the app opens from it, read-only, with a banner saying how old it is, and reloads by itself when the connection returns. Signing out clears it; Settings → This device turns it off.
+  - **Library updates**: Dependabot opens weekly grouped pull requests; passing minor and patch updates merge and deploy themselves, majors wait for review.
+  - **Delete this household** (Settings → General, owners): type the name; the household is read-only for 7 days with a banner every member sees and an alert to each; any owner can cancel; then the nightly clean-up removes everything — files, bank connection and backups included.
+  - **Bank-sync limit**: Sync now and Load history at most once every 15 minutes and 12 times in 24 hours per household, enforced by the database in one locked step; the button says when the next sync is available. The nightly sync is not counted.
+  - **Scheduled-job secret rotation**: one command rotates it, a ping proves the jobs still get through, and a status view shows each job's last run (HANDOFF → Runbooks).
+  - **Fixes found while writing the help**: editors' changes to household settings were silently dropped (now saved); a payment or deposit from email with no amount is refused instead of filed at $0; deleting an email record asks first; history moved in from another app no longer counts as unreconciled bank activity; property and vehicles left out of year-to-date coverage; the 110% safe harbor uses $75,000 for married filing separately; Hardship's Status counts include Not needed and Closed; the Social Security claim age is 62–70 as the hint says; a 0-day bill reminder is honored; changing a password uses the same rules as the first sign-in; the Debts table shows account types in words; developer wording removed from several screens.
 - **0.24.1** — Help Center.
   - **A ? beside every card's heading** opens help for exactly that card: what it is for, how to use it step by step, what every number, column, button and switch on it means, and the rules worth knowing. Every one of the app's ~140 cards is covered, and a unit test fails the build if a new card ships without help.
   - **The help drawer** (Help button, F1, or a card's ?) now has three tabs — This page, How do I…, Glossary — and one search box that looks through all the help; a result on another page takes you there with the help still open.

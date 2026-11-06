@@ -45,6 +45,7 @@ export const connections: GuidePage = {
         { term: 'Sync history', text: 'Click it to open the list of syncs: when, how it started (Daily, Connect or Manual), and OK or Failed with the message.' },
       ],
       tips: [
+        'Sync now and Load year-to-date history can each run at most once every 15 minutes and 12 times in any 24 hours per household. When you reach a limit the button greys out and a line says when you can sync again (Eastern time); the nightly sync is not counted. The line also shows how many on-demand syncs you have used today.',
         'Each sync sets the balance of every matched account from the bank (a verified figure) and adds new posted transactions as imported. Pending bank items wait until they post, so they are never doubled.',
         'Only balances, dates, amounts and descriptions are kept. Card and loan balances are stored as the amount you owe.',
         'Run Auto-categorize on Transactions after a sync to file the new rows.',

@@ -118,7 +118,10 @@ for (const W of [1400, 390]) {
     ok(afterSync.a > acctsBefore && afterSync.i === importedBefore + 8, 'Save matching & sync creates the missing accounts and adds the bank transactions')
     ok(/Sync history/.test(await p.locator('main').textContent()) && (await p.locator('button:has-text("Sync now")').isEnabled()), 'after syncing, history shows and plain "Sync now" is available')
     await p.click('button:has-text("Sync now")'); await p.waitForTimeout(900); ok((await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.filter(t => t.source === 'import').length)) === importedBefore + 8, 'syncing again adds nothing twice')
-    await p.evaluate(() => localStorage.removeItem('wealthpilot.simSync')); await p.reload(); await p.waitForTimeout(600)
+    // 0.25.0: the on-demand sync limit (simulated in the demo only when asked): after a sync, Sync now waits 15 minutes and says until when
+    await p.evaluate(() => localStorage.setItem('wealthpilot.simSyncLimit', '1')); await p.click('button:has-text("Sync now")'); await p.waitForTimeout(1200)
+    ok(/you can sync again at/.test(await p.locator('[data-testid="sync-limit"]').textContent().catch(() => '')) && !(await p.locator('button:has-text("Sync now")').isEnabled()), 'after an on-demand sync, Sync now waits 15 minutes and says until when')
+    await p.evaluate(() => { localStorage.removeItem('wealthpilot.simSync'); localStorage.removeItem('wealthpilot.simSyncLimit') }); await p.reload(); await p.waitForTimeout(600)
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.click('.seg button:has-text("Security")'); await p.waitForTimeout(300); ok((await p.locator('.card').first().textContent()).includes('offline demo'), 'Security tab renders (demo notice)')
     // 0.10.0: members — invite with limited access drafts an email carrying a one-time temporary password; access can be changed afterwards
     await p.click('button:has-text("Members")'); await p.waitForTimeout(300); const members0 = await p.locator('table.tbl tbody tr').count()
@@ -330,6 +333,14 @@ for (const W of [1400, 390]) {
     await p.click('button:has-text("Expand all cards")'); await p.waitForTimeout(300); ok((await p.locator('.hc-main details.g-card[open]').count()) >= 8, 'a page\'s guide in the Help Center opens every card at once')
     await p.click('.hc-index button:has-text("Troubleshooting")'); await p.waitForTimeout(300); ok(/does not match my bank/.test(await p.locator('.hc-main').textContent()), 'troubleshooting answers the common problems')
     await p.goto('http://localhost:4173/#/help?topic=%2Freconcile&card=Statement'); await p.waitForTimeout(900); ok((await p.locator('.hc-main .g-card.g-focus[open]').count()) === 1, 'a link straight to one card of the guide opens it')
+    // 0.25.0: deleting a household — type the name, 7 days read-only with a banner every member sees, any owner can cancel
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(900); await p.click('button:has-text("Delete this household…")'); await p.waitForTimeout(400)
+    const hhName = (await p.locator('.modal .mhead b').first().textContent()).replace(/^Delete\s+/, '').replace(/\?\s*$/, '').trim()
+    ok(!(await p.locator('.modal button:has-text("Schedule deletion")').isEnabled()), 'deletion stays locked until the name is typed and the box ticked')
+    await p.fill('.modal input[aria-label="Type the household\'s name to confirm"]', hhName); await p.check('.modal input[type=checkbox]'); await p.click('.modal button:has-text("Schedule deletion")'); await p.waitForTimeout(900)
+    ok(/permanently deleted on/.test(await p.locator('[data-testid="deletion-banner"]').textContent().catch(() => '')), 'a scheduled deletion shows its date to everyone')
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(800); ok((await p.locator('.ro').count()) > 0, 'while a deletion is pending the household is read-only')
+    await p.click('[data-testid="deletion-banner"] button:has-text("Cancel the deletion")'); await p.waitForTimeout(800); ok((await p.locator('[data-testid="deletion-banner"]').count()) === 0 && (await p.locator('.ro').count()) === 0, 'an owner cancels it from the banner and editing comes back')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
