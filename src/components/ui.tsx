@@ -2,10 +2,14 @@ import { Component, cloneElement, createContext, isValidElement, useContext, use
 import { useStore } from '../app/store'
 import { fmtMoney } from '../lib/money'
 import { captureError } from '../lib/errors'
+import { openHelp } from '../lib/helpBus'
 
-export const Card = ({ title, hint, span = 12, children, right, className = '', id }: { title?: ReactNode; hint?: ReactNode; span?: number; children?: ReactNode; right?: ReactNode; className?: string; id?: string }) => (
-  <div className={`card span${span} ${className}`} id={id}>{title != null && <h3>{title}{hint && <span className="hint">{hint}</span>}{right && <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{right}</span>}</h3>}{children}</div>
-)
+/** A card. Its heading gets a small ? that opens the guide at this card (0.24.1): keyed by the heading text, or by `help` when the
+ *  heading varies (a goal's name); `help={false}` for none. */
+export const Card = ({ title, hint, span = 12, children, right, className = '', id, help }: { title?: ReactNode; hint?: ReactNode; span?: number; children?: ReactNode; right?: ReactNode; className?: string; id?: string; help?: string | false }) => {
+  const key = help === false ? null : typeof help === 'string' ? help : typeof title === 'string' ? title : null
+  return <div className={`card span${span} ${className}`} id={id}>{title != null && <h3>{title}{key && <button type="button" className="cardhelp" onClick={() => openHelp(key)} aria-label={`Help: ${key}`} title="What is this? How do I use it?">?</button>}{hint && <span className="hint">{hint}</span>}{right && <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>{right}</span>}</h3>}{children}</div>
+}
 export const KPI = ({ l, v, cls = 'info', s }: { l: string; v: ReactNode; cls?: string; s?: ReactNode }) => <div className={`kpi ${cls}`}><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>
 export const Pill = ({ cls, children }: { cls: string; children: ReactNode }) => <span className={`pill ${cls}`}>{children}</span>
 export const Money = ({ v, sign }: { v: number | null | undefined; sign?: boolean }) => { const n = +(v ?? 0) || 0; return <span style={{ color: sign ? (n >= 0 ? 'var(--good)' : 'var(--crit)') : undefined }}>{sign && n > 0 ? '+' : ''}{fmtMoney(n)}</span> }

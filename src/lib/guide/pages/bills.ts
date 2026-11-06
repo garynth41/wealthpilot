@@ -1,0 +1,100 @@
+import type { GuidePage } from '../types'
+
+export const bills: GuidePage = {
+  path: '/bills',
+  summary: 'Every bill, subscription, card or loan payment, savings transfer and recurring deposit on a schedule: what is coming up, what is overdue, and what it all costs in a month.',
+  start: [
+    'Click + Add under Recurring items for each bill, then fill in the row: Name, Payee (as it shows on your bank statement), Kind, Amount, Every, Day and Next due.',
+    'Pick the From account it is paid from and the Budget line it counts against, and tick Autopay for anything the company takes automatically.',
+    'For a card or loan payment or a savings transfer, set Pays to that card, loan or savings account so Mark paid moves both balances.',
+    'Check Coming up & overdue every few days and click Mark paid when you pay, or let the bank feed and email capture match the payment for you.',
+  ],
+  top: [
+    { term: 'Monthly commitments', text: 'What your active bills, subscriptions, card and loan payments and savings transfers cost in an average month: each item\'s amount × how many times a year it comes ÷ 12, added up. The line underneath splits it into bills, subscriptions, debt and savings. Irregular items and recurring income are not counted.' },
+    { term: 'Due next N days', text: 'The total of unpaid bills and payments due from today to the end of the window chosen on Coming up & overdue (14, 30, 60 or 90 days). Recurring income is left out of the total; the count underneath is every unpaid item in the window, income included.' },
+    { term: 'Overdue', text: 'How many items from the last 45 days are past their due date with no payment matched or recorded, and how much they add up to. Green when nothing is overdue.' },
+    { term: 'Due within 7 days', text: 'How many unpaid items fall due between today and a week from today, and their total ("clear week" when there are none).' },
+    { term: 'Subscriptions', text: 'How many active items are of the Subscription kind, with what they cost per month and per year. It turns amber above six, a nudge to review them.' },
+    { term: 'On autopay', text: 'How many active items have Autopay ticked, out of all active items. Autopays still need the cash in the account on the day.' },
+  ],
+  cards: [
+    {
+      title: 'Coming up & overdue',
+      what: 'Every unpaid due date from 45 days ago to the end of the window you choose, worked out from each item\'s schedule, with buttons to record the payment or skip that date.',
+      how: [
+        'Pick 14 days, 30 days, 60 days or 90 days at the top right to set how far ahead this list, the chart beside it and the totals across the top look.',
+        'Click Mark paid when you pay a bill (Received for recurring income). Check the Date, Amount and From account in the window that opens, then click Save.',
+        'Click Skip when a due date will not happen this time (a paused service, a waived fee). Only that date drops out of the list, the totals and the forecast.',
+      ],
+      fields: [
+        { term: 'Date', text: 'The due date, and how far away it is: today, in N days, or N days ago.' },
+        { term: 'Item', text: 'The item\'s name, "· autopay" when Autopay is ticked, and its kind underneath ("· amount varies" when Varies is ticked).' },
+        { term: 'Amount', text: 'The amount due: the amount from an email bill filed for that date when there is one, otherwise the item\'s listed amount.' },
+        { term: 'From', text: 'The account the payment comes out of (the item\'s From account).' },
+        { term: 'Status', text: 'Overdue (past the due date, nothing paid), Due today, Due soon (within the item\'s Remind days), Autopay (autopay is ticked and it is not due yet), Scheduled (an email said the payment is scheduled) or Due.' },
+        { term: 'Mark paid / Received', text: 'Opens a window with Date, Amount and From (Into for income). Save records the payment and marks this due date paid. The date starts at today, or at the due date when that has already passed.' },
+        { term: 'Skip', text: 'Marks just this due date as skipped. The next one still comes.' },
+      ],
+      tips: [
+        'Mark paid records an expense from the From account against the Budget line. When Pays is set to a card or loan, it records a transfer that lowers what you owe instead, and when the amount covers the minimum and is paid no later than three days after the card\'s due date, that statement shows as Paid. When Pays is a savings account, the money moves into it. Recurring income records a deposit into the Into account.',
+        'You often do not need Mark paid: a due date counts as paid by itself when a transaction from the item\'s Payee lands between 12 days before and 10 days after it, at a similar amount (within about 25%, or any amount when Varies is ticked).',
+        'Paid and skipped dates do not come back on this list.',
+      ],
+    },
+    {
+      title: 'Cash needed by day',
+      what: 'A bar chart of how much your unpaid bills and payments need on each day from today to the end of the window chosen on Coming up & overdue, so you know which days the account must be ready for.',
+      fields: [
+        { term: 'Bars', text: 'One bar for each day with something due; its height is the total due that day. Bars in the next 7 days are amber, later ones blue. Hover a bar for the date and the amount.' },
+        { term: 'Total', text: 'Everything unpaid and due from today to the end of the window. Recurring income and overdue items are not on the chart.' },
+        { term: 'Heaviest day', text: 'The single day with the most due, and how much.' },
+      ],
+      tips: ['Compare the heaviest day with your paydays on Income & Pay Periods: a big bill just before payday is where an account runs short.'],
+    },
+    {
+      title: 'Recurring items',
+      what: 'The list every bill, subscription, card and loan payment, savings transfer and recurring deposit lives in. Each row\'s schedule produces the due dates the rest of the app uses: this page, the dashboard, the cash flow forecast and the paycheck plan.',
+      how: [
+        'Click + Add to add a row called New bill (monthly, on the 1st, paid from your checking account), then click each cell to fill it in.',
+        'Use the buttons above the table (All, Bill, Subscription, Card / loan payment, Savings, Income) to show one kind at a time.',
+        'Click a column heading to sort, type in Search this table to find a row, use ⚙ Columns to hide columns, and CSV or Excel to download the list.',
+        'Use ✕ at the end of a row to delete an item; its past transactions are kept. To stop an item without losing it, set Status to Paused or Cancelled.',
+      ],
+      fields: [
+        { term: 'Name / Payee', text: 'What you call it, and the merchant name as it shows on your bank statement. Automatic matching looks for the first word of the Payee in incoming transactions.' },
+        { term: 'Kind', text: 'Bill, Subscription, Card / loan payment, Income, Transfer or Savings. It decides which total the item counts in and how Mark paid records it.' },
+        { term: 'Amount / Varies', text: 'The usual amount. Tick Varies for bills that change each time, such as utilities: a payment of any size then counts as paid, and the price-rise alert never fires for it.' },
+        { term: 'Every', text: 'How often it comes: Weekly, Every 2 weeks, Twice a month, Monthly, Every 2 months, Quarterly, Every 6 months, Yearly or Irregular.' },
+        { term: 'Day / Next due', text: 'The day of the month, and a due date the schedule counts from. Weekly and every-2-weeks items step from Next due; monthly and longer ones fall on Day (the last day in shorter months); twice a month falls on Day and 15 days from it (for example the 1st and the 16th). An Irregular item is due only on its Next due date.' },
+        { term: 'Per month', text: 'Amount × times a year ÷ 12: weekly × 52, every 2 weeks × 26, twice a month × 24, monthly × 12, every 2 months × 6, quarterly × 4, every 6 months × 2, yearly × 1. Irregular items show $0.' },
+        { term: 'From account', text: 'The account it is paid from, or for income the account it is deposited to. The forecast takes the money from (or adds it to) this account.' },
+        { term: 'Pays (card / loan / savings)', text: 'For a card or loan payment, the card or loan it pays down; for a savings transfer, the account the money goes into. With it set, Mark paid records a transfer that moves both balances.' },
+        { term: 'Budget line', text: 'The budget category the payment counts against (for income, the income category). Leave it blank and the payment is logged with no category.' },
+        { term: 'Autopay', text: 'Tick it when the company takes the payment automatically. The status then shows Autopay instead of Due soon.' },
+        { term: 'Remind (days)', text: 'How many days before the due date the status turns Due soon. Blank or 0 means 3 days.' },
+        { term: 'Status', text: 'Active items count everywhere. Paused and Cancelled items stay on the list, greyed out, but drop out of the due dates, the totals and the forecast.' },
+        { term: 'Last paid', text: 'The date and amount of the last payment recorded with Mark paid, Record payment on a linked card or loan, or an approved email.' },
+        { term: 'Notes / ID', text: 'Your own notes, and a short reference (R-number) you can quote or search for.' },
+      ],
+      tips: [
+        'A colored stripe at the left of each row shows its state: green for recurring income, purple for autopay items, grey for paused or cancelled ones.',
+        'Bills, statements and payments you approve on Email Money Capture appear here automatically, including new recurring bills it creates.',
+      ],
+    },
+  ],
+  tasks: [
+    { q: 'How do I add a new bill?', steps: ['Click + Add under Recurring items.', 'Type the Name and the Payee as it appears on your bank statement, the Amount, how often it comes (Every), the Day and the Next due date.', 'Pick the From account and the Budget line, and tick Autopay if the company takes it automatically.'] },
+    { q: 'How do I record that I paid a bill?', steps: ['Find it under Coming up & overdue.', 'Click Mark paid.', 'Check the Date, Amount and From account, then click Save. The item shows as paid and the account balance moves.'] },
+    { q: 'How do I make a credit card or loan payment lower the balance?', steps: ['Add a row under Recurring items and set Kind to Card / loan payment.', 'Set Pays (card / loan / savings) to the card or loan, and From account to the bank account you pay from.', 'Mark paid now records a transfer: the bank balance goes down and so does what you owe.'] },
+    { q: 'How do I stop a subscription I cancelled?', steps: ['Find it under Recurring items.', 'Set Status to Cancelled (or Paused if it will start again).', 'It stops producing due dates and drops out of the totals and the forecast; its history is kept.'] },
+    { q: 'How do I see what my subscriptions cost a year?', steps: ['Look at Subscriptions across the top: the line underneath gives the cost per month and per year.', 'Click Subscription above Recurring items to list just those.'] },
+  ],
+  glossary: [
+    { term: 'Recurring item', def: 'A bill, subscription, card or loan payment, savings transfer or deposit that repeats on a schedule. Its due dates are worked out from how often it comes and its next due date.' },
+    { term: 'Monthly commitments', def: 'What your recurring bills, subscriptions, debt payments and savings transfers cost in an average month.' },
+    { term: 'Amount varies', def: 'A bill whose amount changes each time, like electricity. Any payment to the payee counts as paid, and price-rise alerts are off for it.' },
+    { term: 'Autopay', def: 'A payment the company takes from your account automatically on the due date. The money still has to be there.' },
+    { term: 'Skipped due date', def: 'One due date you marked as not happening. Only that date is skipped; the schedule carries on.' },
+  ],
+  links: [['/transactions', 'Transactions'], ['/forecast', 'Cash Flow Forecast'], ['/email', 'Email Money Capture'], ['/accounts', 'Account Balances'], ['/budget', 'Budget']],
+}

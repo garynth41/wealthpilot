@@ -1,0 +1,116 @@
+import type { GuidePage } from '../types'
+
+export const insights: GuidePage = {
+  path: '/insights',
+  summary: 'Where the money goes by merchant, recurring charges you may have forgotten, money leaking to fees and duplicates, and two health scores built from your last few full months.',
+  start: [
+    'Check Waste detection first: late fees, duplicate charges and bank fees are the easiest money to get back.',
+    'Look under Subscriptions & recurring charges for charges the app found that are not on Bills & Subscriptions yet, and click + Add to Bills so the forecast and reminders include them.',
+    'Switch Merchants between 30 days, This month and 90 days to see who gets the most of your money.',
+    'Set your savings-rate target in Settings → General → Planning thresholds so the scores measure against your own goal.',
+  ],
+  top: [
+    { term: 'Monthly burn rate', text: 'Average monthly spending plus card and loan payments over the last 3 full calendar months (or 6, with the switch on Cash-flow score). The current month is left out because it is not over yet, and so are transactions excluded from budget.' },
+    { term: 'Savings rate', text: 'Monthly income minus the monthly burn rate, divided by monthly income, over the same months. Green when it meets your target in Settings; underneath are the target and your average monthly income.' },
+    { term: 'Expense ratio', text: 'The monthly burn rate divided by monthly income. Green at 80% or less, amber up to 100%, red above — spending more than you earn.' },
+    { term: 'Months covered', text: 'Cash on hand divided by the monthly burn rate: how many months you could pay your way if income stopped. Coloured by your runway thresholds in Settings.' },
+    { term: 'Subscriptions', text: 'What your subscriptions cost a month: the subscriptions on Bills & Subscriptions plus the recurring charges the app detected that are not there. Underneath: how many, the yearly total, and how many are not on Bills yet (amber when there are any).' },
+    { term: 'Waste found', text: 'The total of the duplicate charges, bank and card fees, late fees, spending spikes and unusually large charges found in the last 90 days. Rising and dormant subscriptions are listed below but not added in. Underneath: how many findings in all.' },
+  ],
+  cards: [
+    {
+      title: 'Cash-flow score',
+      what: 'One number from 0 to 100 for how healthy your cash flow is: how close your savings rate is to your target and how many months your cash would cover.',
+      how: ['Pick 3 mo or 6 mo in the card header to measure over the last three or six full months. The switch changes every health number on the page: the numbers at the top, both scores and What to look at.'],
+      fields: [
+        { term: 'Score', text: '60% comes from your savings rate divided by your target (full marks at or above the target) and 40% from months covered divided by your green runway threshold (full marks at or above it).' },
+        { term: 'Gauge colours', text: 'Green at 70 or more, amber from 40 to 69, red below 40.' },
+      ],
+      tips: ['Raising the savings rate moves the score most. Building cash toward your green runway threshold does the rest.'],
+    },
+    {
+      title: 'Spending-efficiency score',
+      what: 'One number from 0 to 100 for how lean your spending is: a small discretionary share, essentials well covered by income, and little lost to fees.',
+      fields: [
+        { term: 'Score', text: 'Half comes from your discretionary share (full marks at 0%, none at 40% or more of spending), 35% from how much of your income is left after essentials, and 15% from fees (each 1% of spending lost to fees takes a fifth of this part off).' },
+        { term: 'Essentials / discretionary', text: 'The share of spending in Essential-priority and Discretionary-priority categories over the same months.' },
+        { term: 'Gauge colours', text: 'Green at 70 or more, amber from 40 to 69, red below 40.' },
+      ],
+      tips: ['Fees are expenses whose payee or memo mentions a fee, overdraft, NSF, insufficient funds, an interest or finance charge, a service or maintenance charge, an ATM fee or a foreign transaction.', 'Set each category\'s priority in Settings → Categories so the essential and discretionary shares are right.'],
+    },
+    {
+      title: 'What to look at',
+      what: 'The few things in your recent months worth changing, in plain words.',
+      fields: [
+        { term: 'Notes', text: 'A savings rate below your target; cash covering fewer months than your yellow runway threshold; discretionary spending above 30%; and any money that went to fees and interest charges.' },
+        { term: 'Nothing stands out', text: 'Your savings rate, cover and discretionary share are all inside your targets.' },
+      ],
+    },
+    {
+      title: 'Waste detection',
+      what: 'Charges in the last 90 days that look like money leaking: duplicates, fees, late fees, rising or dormant subscriptions, spending spikes and unusually large charges. Worst first.',
+      how: ['Click Open on a finding to see its transactions on the Transactions page.', 'Click Bills on a subscription finding to check or cancel it on Bills & Subscriptions.'],
+      fields: [
+        { term: 'Duplicate charge', text: 'The same merchant and the same amount (a dollar or more) within 3 days. Check it is not a real second purchase before asking for a refund.' },
+        { term: 'Bank / card fee', text: 'A charge whose payee, memo or category mentions a fee, overdraft, NSF, interest or finance charge, service or maintenance charge, ATM fee or foreign transaction.' },
+        { term: 'Late fee', text: 'A late fee, late payment or late charge, penalty, past due fee or returned payment. Shown in red — a reminder or autopay would avoid it.' },
+        { term: 'Subscription went up', text: 'A charge that repeats steadily whose latest amount is more than 5% above its first. The amount is what the increase costs a year.' },
+        { term: 'Dormant subscription', text: 'A subscription on Bills & Subscriptions with no charge seen for more than two billing cycles plus a week — cancelled, or paid from an account you do not track? The amount is its yearly cost.' },
+        { term: 'Spending spike', text: 'A Monday-to-Sunday week of everyday spending more than twice your typical week and at least $150 above it. Fixed-cost categories such as rent are left out. Needs six weeks of history. The amount is the excess over a typical week.' },
+        { term: 'Unusually large', text: 'A charge far above its category\'s usual size — well outside the usual spread, more than three times the typical charge and at least $50, in a category with five or more charges in the window. The amount is the excess over the typical charge.' },
+        { term: 'Detail / Date / Amount', text: 'What was found, the date it happened and the money involved, as described for each kind above.' },
+        { term: 'Open / Bills', text: 'Open lists just those transactions on Transactions ("Show all" there brings back the full list). Bills opens Bills & Subscriptions.' },
+      ],
+    },
+    {
+      title: 'Merchants',
+      what: 'Who gets your money: spending by merchant over the window you pick, biggest first, with how it compares with the window before.',
+      how: ['Pick 30 days, This month or 90 days in the card header.', 'Hover a bar for the exact total; click ⤢ to open the chart full size.'],
+      fields: [
+        { term: 'Chart', text: 'Your top 12 merchants by total spent in the window.' },
+        { term: 'Merchant', text: 'Payees are grouped by name with store numbers, card suffixes and similar noise removed, so "KROGER #1234" and "Kroger" count as one. The name shown is the latest spelling.' },
+        { term: 'Visits', text: 'How many charges in the window.' },
+        { term: 'Total / Avg', text: 'What you spent there in the window, and the average charge.' },
+        { term: 'vs prior', text: 'The change from the same length of time just before the window. Red when up more than 10%, green when down more than 10%; "new" when you spent nothing there before.' },
+        { term: 'Categories', text: 'The categories those charges are filed under.' },
+      ],
+      tips: ['The table lists the top 25. Only expenses count; transfers and card payments do not.'],
+    },
+    {
+      title: 'Subscriptions & recurring charges',
+      what: 'Every subscription you pay: the ones on Bills & Subscriptions plus charges the app noticed repeating in your transactions, with what each costs a month and a year.',
+      how: [
+        'Look for the detected pill: those charges are not on Bills & Subscriptions yet.',
+        'Under Recurring charges not in Bills & Subscriptions, click + Add to Bills to add one so the forecast, reminders and alerts include it.',
+        'Open Bills & Subscriptions to cancel or change anything you no longer want.',
+      ],
+      fields: [
+        { term: 'Service', text: 'The subscription. ↑ price means the latest charge is more than 5% above the first one seen.' },
+        { term: '/mo / /yr', text: 'What it costs a month and a year, worked out from its amount and how often it is charged.' },
+        { term: 'Last', text: 'When it was last charged or marked paid.' },
+        { term: 'detected', text: 'Found in your transactions rather than on Bills & Subscriptions.' },
+        { term: 'Total', text: 'The monthly and yearly total of every row.' },
+        { term: 'Charge / Every / Amount / Next expected', text: 'For each detected charge not on Bills: the merchant and how many times it was seen, how often it repeats (weekly, biweekly, monthly, quarterly or yearly), its latest amount, and when the next one should come.' },
+        { term: '+ Add to Bills', text: 'Adds the charge to Bills & Subscriptions as a subscription with its latest amount, how often it repeats, the next date, and the account and category of its last charge. It is added with autopay on and a 3-day reminder; change either on Bills & Subscriptions.' },
+        { term: 'Subscription cost by service', text: 'A bar chart of the ten largest subscriptions by monthly cost.' },
+      ],
+      tips: ['A charge counts as recurring when the same merchant was charged at least three times in the last 400 days, at a steady interval and an amount within 15% each time.', 'Only items of kind subscription on Bills & Subscriptions are listed here; regular bills such as rent and utilities are not.'],
+    },
+  ],
+  tasks: [
+    { q: 'How do I add a recurring charge the app found to my bills?', steps: ['Find it under Recurring charges not in Bills & Subscriptions.', 'Click + Add to Bills.', 'Open Bills & Subscriptions to check the amount, date and autopay setting.'] },
+    { q: 'How do I see the transactions behind a finding?', steps: ['Click Open on the finding in Waste detection.', 'Transactions opens with only those transactions listed.', 'Click Show all to go back to the full list.'] },
+    { q: 'How do I raise my cash-flow score?', steps: ['Spend less than you earn so the savings rate reaches your target.', 'Build cash until it covers as many months as your green runway threshold.', 'Check What to look at for the biggest gap.'] },
+    { q: 'Why is a subscription marked ↑ price?', steps: ['Its latest charge is more than 5% above the first one the app saw.', 'Look for the matching Subscription went up line in Waste detection for the yearly cost of the increase.'] },
+  ],
+  glossary: [
+    { term: 'Monthly burn rate', def: 'Average monthly spending plus card and loan payments over your last three (or six) full months. Unlike Monthly burn on the forecast, income is not taken off.' },
+    { term: 'Expense ratio', def: 'The monthly burn rate divided by monthly income. Under 80% leaves room to save; over 100% means you are spending more than you earn.' },
+    { term: 'Months covered', def: 'Cash on hand divided by the monthly burn rate — how many months you could pay your way if income stopped.' },
+    { term: 'Cash-flow score', def: 'A 0–100 score: 60% your savings rate against your target, 40% the months your cash covers against your green runway threshold.' },
+    { term: 'Spending-efficiency score', def: 'A 0–100 score: half for a small discretionary share, 35% for essentials well covered by income, 15% for little lost to fees.' },
+    { term: 'Detected recurring charge', def: 'A charge the app noticed repeating at a steady interval and amount, at least three times in the last 400 days, whether or not it is on Bills & Subscriptions.' },
+    { term: 'Dormant subscription', def: 'A subscription on Bills & Subscriptions with no charge seen for more than two billing cycles plus a week.' },
+  ],
+  links: [['/bills', 'Bills & Subscriptions'], ['/transactions', 'Transactions'], ['/trends', 'Trends & Analysis'], ['/settings', 'Savings target and category priorities']],
+}
