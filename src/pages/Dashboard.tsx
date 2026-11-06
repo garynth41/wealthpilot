@@ -19,6 +19,8 @@ import { AddTxn } from './Transactions'
 import { linkTo } from '../lib/focus'
 import { hasMoneyData } from '../lib/onboarding'
 import { REVIEW_TAG } from '../lib/rules'
+import { revalueDue } from '../lib/assets'
+import { creditTrends } from '../lib/credit'
 import { PaycheckCard } from './Allocate'
 import { SetupCard, ArrangeDashboard, DASH_CARDS } from './DashboardParts'
 import { loadLayout, visibleCards } from '../lib/dashLayout'
@@ -46,10 +48,12 @@ export function Dashboard() {
   { const n = data.transactions.filter(x => x.status !== 'void' && (x.tags || []).includes(REVIEW_TAG)).length; if (n) attention.push({ c: 'info', t: `${n} transaction${n === 1 ? '' : 's'} flagged for review`, m: 'your payee rules asked you to look at these', d: 'Review' }) }
   if (ps && ps.uncat > 0) attention.push({ c: 'info', t: `${fmtMoney(ps.uncat)} uncategorized this period`, m: 'categorize it so the budget is right', d: 'Transactions' })
   data.hardship.filter(h => !['Closed', 'Not needed', 'Declined', 'Enrolled'].includes(h.status) && h.next_followup && h.next_followup <= t).forEach(h => attention.push({ c: 'warn', id: h.id, t: `Call ${h.entity}`, m: `follow-up ${h.next_followup === t ? 'today' : 'was ' + fmtDY(h.next_followup!)}`, d: 'Hardship' }))
+  revalueDue(data, t).forEach(r => attention.push({ c: 'info', id: r.a.id, t: `Update the value of ${r.a.name}`, m: r.asOf ? `last valued ${fmtDY(r.asOf)} (${r.age} days ago)${r.estimate != null ? ` — the guide estimates ${fmtMoney(r.estimate)} now` : ''}` : 'no as-of date on the value yet', d: 'Accounts' }))
+  creditTrends(data, t).filter(p => p.stale).forEach(p => attention.push({ c: 'info', t: `Add ${p.person === 'Me' ? 'your' : p.person + '\'s'} latest credit score`, id: 'credit-scores', m: `the last one is from ${fmtDY(p.latest.date)} — most card issuers show a free score each month`, d: 'Debts' }))
   const hasData = hasMoneyData(data)
   if (!attention.length) attention.push(hasData ? { c: 'good', t: 'Nothing needs attention', m: 'bills are on track, cash is above the floor, the budget is within plan' } : { c: 'info', t: 'Nothing to check yet', m: 'add your accounts, income and bills — the checklist above walks through it — and this list starts watching them' })
   const last30 = rangeStat(data, addDays(t, -29), t); const grpRows = Object.entries(last30.byGroup).sort((a, b) => b[1] - a[1]).slice(0, 7)
-  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Hardship: '/hardship', Reconcile: '/reconcile', 'Cash & Account Operations': '/connections' }
+  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
   const cards: Record<string, ReactNode> = {
     setup: <SetupCard />,
     paycheck: <PaycheckCard />,

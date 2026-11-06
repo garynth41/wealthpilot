@@ -12,6 +12,7 @@ import { fmtD, today, ago } from '../lib/dates'
 import { isLiability, acctLabel } from '../lib/accounts'
 import { BankSyncCard, syncKpi } from './BankSync'
 import { YtdCoverageCard } from './Coverage'
+import { MigrateCard } from './Migrate'
 import type { SyncStatus } from '../app/data/types'
 
 type Stage = 'pick' | 'map' | 'review' | 'done'
@@ -109,9 +110,10 @@ export function ConnectionsPage() {
           {accts.map(a => { const h = lastByAcct(a); return <tr key={a.id}><td><b>{acctLabel(a, data.accounts)}</b></td><td>{h ? <>{ago(h.at.slice(0, 10))} <span className="note" style={{ display: 'inline' }}>· {h.added} added</span></> : <Pill cls="idle">never</Pill>}</td><td className="num">{a.balance_as_of ? fmtD(a.balance_as_of) : '—'}</td></tr> })}
         </tbody></table></div>
       </Card>
+      <MigrateCard />
       <Card span={12} title="Import history" hint="every statement file, newest first">
         {history.length === 0 ? <Empty>No imports yet.</Empty> : <div className="tblwrap"><table className="tbl"><thead><tr><th>When</th><th>File</th><th>Format</th><th>Account</th><th className="num">Rows</th><th className="num">Added</th><th className="num">Skipped</th><th className="num">Statement balance</th></tr></thead><tbody>
-          {history.map((h, i) => <tr key={i}><td>{fmtD(h.at.slice(0, 10))}</td><td><b>{h.file}</b></td><td><Pill cls="info">{h.format.toUpperCase()}</Pill></td><td>{data.accounts.find(a => a.id === h.account_id) ? acctLabel(data.accounts.find(a => a.id === h.account_id)!, data.accounts) : '—'}</td><td className="num">{h.rows}</td><td className="num">{h.added}</td><td className="num">{h.skipped}</td><td className="num">{h.balance != null ? fm2(round2(Math.abs(h.balance))) : '—'}</td></tr>)}
+          {history.map((h, i) => <tr key={i}><td>{fmtD(h.at.slice(0, 10))}</td><td><b>{h.file}</b></td><td><Pill cls="info">{h.format.toUpperCase()}</Pill></td><td>{h.accounts && h.accounts > 1 ? `${h.source || 'Export'} · ${h.accounts} accounts` : data.accounts.find(a => a.id === h.account_id) ? acctLabel(data.accounts.find(a => a.id === h.account_id)!, data.accounts) : '—'}</td><td className="num">{h.rows}</td><td className="num">{h.added}</td><td className="num">{h.skipped}</td><td className="num">{h.balance != null ? fm2(round2(Math.abs(h.balance))) : '—'}</td></tr>)}
         </tbody></table></div>}
       </Card>
     </div>

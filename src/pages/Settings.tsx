@@ -295,6 +295,7 @@ function NotificationsTab() {
       <Toggle k="price_rise" label="A bill or subscription charged more than usual" hint="more than $1 and 5% over the amount on the Bills page" />
       <Toggle k="new_recurring" label="A new repeating charge" hint="the same merchant three months running at a similar amount, not yet on the Bills page" />
       <Toggle k="reconcile" label="An account is due for reconciling" hint="5 weeks since the last reconciliation, repeated weekly" />
+      <Toggle k="revalue" label="A property or vehicle value is a quarter old" hint="once each quarter until you type a new value on Accounts" />
       <Toggle k="digest" label="Monday digest: the week ahead, last week's spending, what is overdue" hint="email, plus a short push" />
       <div className="btnrow" style={{ marginTop: 8 }}><Btn sm onClick={runPreview}>Preview today's alerts</Btn></div>
       {preview && (preview.length === 0 ? <div className="msg good" style={{ marginTop: 8 }}>Nothing would be sent right now.</div> : <ul className="alist" style={{ marginTop: 8 }}>{preview.map(a => <li key={a.key}><span className={`dot ${a.severity}`} /><span><span className="t">{a.title}</span><div className="m">{a.body}</div></span></li>)}</ul>)}
@@ -319,7 +320,7 @@ function DeviceDisplay() {
     {settings.setupDismissed && canEdit && <div style={{ marginTop: 8 }}><Btn sm onClick={() => guarded(() => saveSettings({ setupDismissed: false }), 'The checklist is back on the Dashboard')}>Show the getting-started checklist again</Btn></div>}
     <Note>Amounts stay in US dollars; the format changes how they are written (1,234.56 or 1.234,56) and how dates read. Typing "12,5" counts as 12.5 where the comma is the decimal mark.</Note></Card>
 }
-const ALERT_KINDS: Array<[string, string]> = [['bill_due', 'Bills due'], ['bill_overdue', 'Overdue bills'], ['low_cash', 'Low cash'], ['large_charge', 'Large charges'], ['paycheck', 'Missed paychecks'], ['sync', 'Bank sync'], ['price_rise', 'Price rises'], ['new_recurring', 'New repeating charges'], ['reconcile', 'Reconcile reminders']]
+const ALERT_KINDS: Array<[string, string]> = [['bill_due', 'Bills due'], ['bill_overdue', 'Overdue bills'], ['low_cash', 'Low cash'], ['large_charge', 'Large charges'], ['paycheck', 'Missed paychecks'], ['sync', 'Bank sync'], ['price_rise', 'Price rises'], ['new_recurring', 'New repeating charges'], ['reconcile', 'Reconcile reminders'], ['revalue', 'Property & vehicle values']]
 /** Who gets what (0.21.0): per member, push to their devices, email to their own address, the Monday digest, and which alerts.
  *  Unset rows follow the household switches above; when nobody picks email for themselves, the household address gets it. */
 function MemberRouting({ prefs }: { prefs: NotifyPrefs }) {

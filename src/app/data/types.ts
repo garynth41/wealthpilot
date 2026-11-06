@@ -20,6 +20,8 @@ export interface Account extends Stamped {
   promo_apr?: number | null; promo_until?: ISODate | null
   /** 0.22.0: who inherits the account (retirement / brokerage beneficiary, POD/TOD on bank accounts) and when it was last checked */
   beneficiary?: string | null; beneficiary_reviewed_on?: ISODate | null
+  /** 0.24.0: property and vehicles — what the asset is, the loan against it (for equity), and a yearly value change guide (+ loses value) */
+  asset_type?: AssetType | null; linked_account_id?: UUID | null; depreciation_pct?: number | null; value_source?: string | null
   statement_date?: ISODate | null; statement_balance?: number | null; minimum_payment: number; due_date?: ISODate | null; planned_payment?: number | null
   autopay: boolean; autopay_account_id?: UUID | null; last_paid_due?: ISODate | null
   include_in_cash: boolean; include_in_net_worth: boolean
@@ -123,6 +125,12 @@ export const INSURANCE_KIND_LABEL: Record<InsuranceKind, string> = { life: 'Life
 export interface InsurancePolicy extends Stamped { ref?: string | null; kind: InsuranceKind; name: string; carrier?: string | null; insured?: string | null; policy_last4?: string | null; coverage?: number | null; deductible?: number | null; premium: number; premium_frequency: 'monthly' | 'quarterly' | 'semiannual' | 'yearly'; renews_on?: ISODate | null; beneficiary?: string | null; through_employer: boolean; recurring_id?: UUID | null; status: 'Active' | 'Lapsed' | 'Cancelled'; notes?: string | null; sort_order: number }
 /** One line of the estate checklist (0.22.0): will, powers of attorney, beneficiaries, where the documents are. */
 export interface EstateItem extends Stamped { key?: string | null; label: string; area: string; status: 'todo' | 'in_progress' | 'done' | 'na'; done_on?: ISODate | null; review_on?: ISODate | null; location?: string | null; notes?: string | null; sort_order: number }
+export type AssetType = 'home' | 'rental' | 'land' | 'vehicle' | 'boat' | 'collectible' | 'business' | 'other'
+export const ASSET_TYPE_LABEL: Record<AssetType, string> = { home: 'Home', rental: 'Rental property', land: 'Land', vehicle: 'Vehicle', boat: 'Boat / RV', collectible: 'Collectible', business: 'Business interest', other: 'Other asset' }
+/** One account's balance on one day (0.24.0) — written by the database whenever a balance changes; read-only in the app. */
+export interface BalancePoint { id: UUID; household_id: UUID; account_id: UUID; as_of: ISODate; balance: number | null; bank_balance: number | null; source: 'book' | 'bank' | 'value'; created_at?: string; updated_at?: string }
+/** A credit score as reported by a bureau, card issuer or monitoring app (0.24.0). */
+export interface CreditScore extends Stamped { person: string; date: ISODate; score: number; bureau?: 'Equifax' | 'Experian' | 'TransUnion' | 'Combined' | 'Other' | null; model?: string | null; source?: string | null; notes?: string | null }
 export interface PlannedItem extends Stamped { ref?: string | null; date: ISODate; label: string; category: string; amount: number; status: 'Planned' | 'Done' | 'Cancelled'; transaction_id?: UUID | null; notes?: string | null }
 export interface NetWorthSnapshot extends Stamped { date: ISODate; cash: number; assets: number; liabilities: number; by_account: Record<string, number>; notes?: string | null }
 export interface Hardship extends Stamped {
@@ -189,7 +197,7 @@ export interface AppliedPlan { scenarioId?: string | null; name?: string | null;
 export interface SavedView { id: string; name: string; range: 'period' | '30' | 'month' | '90' | 'all'; kind: 'all' | 'expense' | 'income' | 'transfer' | 'uncat'; account_id?: string | null; tag?: string | null; q?: string | null }
 export interface NotifyPrefs { push?: boolean; email?: boolean; email_to?: string | null; bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; digest?: boolean; quiet_from?: number; quiet_to?: number
   /** 0.21.0: subscription or bill price went up; a new charge repeating three months running; an account not reconciled for 35 days */
-  price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean
+  price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean; revalue?: boolean   // 0.24.0: a property or vehicle value a quarter old
   /** 0.21.0: per-member channels, keyed by user id; unset fields fall back to the household switches above */
   members?: Record<string, MemberNotify> }
 export interface MemberNotify { push?: boolean; email?: boolean; email_to?: string | null; digest?: boolean; kinds?: string[] | null }
@@ -203,21 +211,21 @@ export interface RetirementInputs {
   ssMonthly?: number | null; ssStartAge?: number | null; ssHaircut?: number; pensions?: Pension[]
 }
 export interface PayeeRule { id: string; pattern: string; match: 'contains' | 'starts' | 'exact' | 'regex'; category_id?: string | null; account_id?: string | null; rename?: string | null; exclude_from_budget?: boolean; kind?: 'expense' | 'income' | null; tags?: string[] | null; review?: boolean; goal_id?: string | null; enabled: boolean; hits?: number; created_at?: string; source?: 'manual' | 'learned' }
-export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
+export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx' | 'qif'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null; /** 0.24.0: a move from another app — its name and how many accounts the file covered */ source?: string; accounts?: number }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'lots' | 'insurance' | 'estate' | 'comments' | 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
-export const TABLE: Record<Collection, string> = { lots: 'holding_lots', insurance: 'insurance_policies', estate: 'estate_items', comments: 'transaction_comments', scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
+export type Collection = 'balances' | 'scores' | 'lots' | 'insurance' | 'estate' | 'comments' | 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
+export const TABLE: Record<Collection, string> = { balances: 'balance_history', scores: 'credit_scores', lots: 'holding_lots', insurance: 'insurance_policies', estate: 'estate_items', comments: 'transaction_comments', scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
   transactions: Transaction[]; splits: TransactionSplit[]; attachments: Attachment[]; comments: TransactionComment[]; scenarios: Scenario[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
   planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
-  lots: HoldingLot[]; insurance: InsurancePolicy[]; estate: EstateItem[]
+  lots: HoldingLot[]; insurance: InsurancePolicy[]; estate: EstateItem[]; balances: BalancePoint[]; scores: CreditScore[]
   /** immutable cash-operations audit trail, newest first */
   audit: AuditEvent[]
   emailLedger: EmailLedgerRow[]; members: Member[]; invites: Invite[]; activity: ActivityRow[]
   /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
   duplicates: Transaction[]
 }
-export const emptyData = (): Data => ({ lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ balances: [], scores: [], lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

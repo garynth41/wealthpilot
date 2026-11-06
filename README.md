@@ -110,6 +110,11 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.24.0** — Data.
+  - **Move from Mint, YNAB, Quicken or Monarch** (Connections): one export file with every account's history — Mint and Monarch CSV, YNAB's register CSV, Quicken CSV or QIF. Accounts and categories are matched by name (or by the last four digits), anything new is created on confirmation, the two legs of a transfer become one transfer, and rows already here are skipped, so re-importing the same file adds nothing. The history fills in trends and reports without moving today's balances (`lib/migrate.ts`).
+  - **Balance history**: every balance change is kept — one point per account per day, written by the database (bank syncs, typed balances, statements, logged transactions). **History** on any account charts it and gives the balance on any past date, worked out from the nearest recorded day and the transactions since (`lib/history.ts`, migration 0017).
+  - **Property & vehicles** (Accounts): homes, cars, rentals and other assets with the value's date and source, the loan against each for equity and loan-to-value, and a depreciation guide. A value a quarter old shows on the dashboard, in the alerts and in the Monday digest (`lib/assets.ts`).
+  - **Credit-score trend** (Debts): type the free score your card issuer or bank shows; a trend per person and bureau, the change against the same bureau and model, the FICO band and points to the next one, and tips that start from your card utilization (`lib/credit.ts`). Never a credit pull.
 - **0.23.0** — Experience.
   - **Getting-started checklist** on the Dashboard: accounts, balances, income, bills, transactions, a budget and categorizing — each ticked from the household's own data — plus optional goal, alerts and inviting the household (`lib/onboarding.ts`).
   - **Arrange dashboard**: reorder or hide the Dashboard cards, per device, with a reset (`lib/dashLayout.ts`).

@@ -10,22 +10,23 @@
 //   price_rise    (0.21.0) a fixed-price bill or subscription charged more than its listed amount in the last 35 days
 //   new_recurring (0.21.0) the same merchant charged a similar amount in each of the last three months and is not in Bills
 //   reconcile     (0.21.0) an account last reconciled 35+ days ago (weekly reminder), or a bank-fed account never reconciled (once)
+//   revalue       (0.24.0) a property or vehicle whose value is a quarter (90 days) old or undated — once per quarter it stays stale
 // Who receives what: recipientsFor() — per-member channels with the household switches as the fallback.
 // Quiet hours are a delivery concern (the function sends at 07:30 local), not a rule.
 
-export interface NAccount { id: string; name: string; kind: string; status: string; balance: number; bank_balance?: number | null; include_in_cash: boolean; balance_as_of?: string | null; last_reconciled_on?: string | null; created_at?: string | null }
+export interface NAccount { id: string; name: string; kind: string; asset_type?: string | null; status: string; balance: number; bank_balance?: number | null; include_in_cash: boolean; balance_as_of?: string | null; last_reconciled_on?: string | null; created_at?: string | null }
 export interface NRecurring { id: string; name: string; payee?: string | null; kind: string; amount: number; amount_varies?: boolean; frequency: string; day_of_month?: number | null; next_due?: string | null; starts_on?: string | null; ends_on?: string | null; status: string; autopay: boolean }
 export interface NOccurrence { recurring_id: string; due_date: string; status: string }
 export interface NTxn { id: string; date: string; kind: string; amount: number; payee?: string | null; recurring_id?: string | null; pay_schedule_id?: string | null; created_at?: string | null; status?: string | null; duplicate_of?: string | null }
 export interface NPay { id: string; name: string; frequency: string; anchor_date: string; semimonthly_days?: number[] | null; net_amount: number; starts_on?: string | null; ends_on?: string | null; status: string }
 export type NSync = { status: string; last_sync_at: string | null; last_error?: string | null } | null
-export interface NPrefs { bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean }
+export interface NPrefs { bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean; revalue?: boolean }
 export interface NInput { today: string; now?: string; accounts: NAccount[]; recurring: NRecurring[]; occurrences: NOccurrence[]; transactions: NTxn[]; paySchedules: NPay[]; sync: NSync; reserveFloor: number; prefs: NPrefs; includeRetirementInCash?: boolean }
-export interface Alert { kind: 'bill_due' | 'bill_overdue' | 'low_cash' | 'large_charge' | 'paycheck' | 'sync' | 'price_rise' | 'new_recurring' | 'reconcile'; key: string; title: string; body: string; url: string; severity: 'info' | 'warn' | 'crit'; amount?: number }
+export interface Alert { kind: 'bill_due' | 'bill_overdue' | 'low_cash' | 'large_charge' | 'paycheck' | 'sync' | 'price_rise' | 'new_recurring' | 'reconcile' | 'revalue'; key: string; title: string; body: string; url: string; severity: 'info' | 'warn' | 'crit'; amount?: number }
 
-export const NOTIFY_DEFAULTS: Required<NPrefs> = { bills: true, low_cash: true, large: 500, paycheck: true, sync: true, price_rise: true, new_recurring: true, reconcile: true }
+export const NOTIFY_DEFAULTS: Required<NPrefs> = { bills: true, low_cash: true, large: 500, paycheck: true, sync: true, price_rise: true, new_recurring: true, reconcile: true, revalue: true }
 /** The alerts that also go in the Monday digest's "Worth a look" list. */
-export const DIGEST_NOTICES: Alert['kind'][] = ['price_rise', 'new_recurring', 'reconcile']
+export const DIGEST_NOTICES: Alert['kind'][] = ['price_rise', 'new_recurring', 'reconcile', 'revalue']
 const DAY = 86400000
 const iso = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 const parse = (s: string) => new Date(s.slice(0, 10) + 'T12:00:00Z')
@@ -140,6 +141,11 @@ export function computeAlerts(inp: NInput): Alert[] {
   if (p.reconcile) for (const a of inp.accounts.filter(a => a.status === 'Active' && ['checking', 'savings', 'credit_card', 'store_card', 'line_of_credit'].includes(a.kind))) {
     if (a.last_reconciled_on) { const age = diff(t, a.last_reconciled_on.slice(0, 10)); if (age >= 35) out.push({ kind: 'reconcile', key: `reconcile:${a.id}:${Math.floor(age / 7)}`, title: `${a.name}: time to reconcile`, body: `last reconciled ${a.last_reconciled_on.slice(0, 10)} — ${age} days ago`, url: '/reconcile', severity: 'info' }) }
     else if (a.bank_balance != null && a.created_at && diff(t, a.created_at.slice(0, 10)) >= 35) out.push({ kind: 'reconcile', key: `reconcile:${a.id}:never`, title: `${a.name} has never been reconciled`, body: 'tick the bank statement against the register once so the verified balance means something', url: '/reconcile', severity: 'info' })
+  }
+  if (p.revalue) for (const a of inp.accounts.filter(a => a.status === 'Active' && (a.kind === 'other_asset' || !!a.asset_type) && !LIAB.includes(a.kind))) {
+    const at = a.balance_as_of ? a.balance_as_of.slice(0, 10) : null; const age = at ? diff(t, at) : null
+    if (age == null) out.push({ kind: 'revalue', key: `revalue:${a.id}:undated`, title: `${a.name}: add the value and its date`, body: 'type today\'s estimate (Zillow, an appraisal, Kelley Blue Book) so net worth is current', url: '/accounts', severity: 'info' })
+    else if (age >= 90) out.push({ kind: 'revalue', key: `revalue:${a.id}:${at}:${Math.floor(age / 90)}`, title: `${a.name}: time to update the value`, body: `${money(+a.balance || 0)} was the value on ${at} — ${age} days ago`, url: '/accounts', severity: 'info', amount: +a.balance || 0 })
   }
   const rank = { crit: 0, warn: 1, info: 2 }; return out.sort((a, b) => rank[a.severity] - rank[b.severity])
 }

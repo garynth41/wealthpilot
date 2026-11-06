@@ -4,7 +4,7 @@ import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 
 const COLLECTIONS = Object.keys(TABLE) as Collection[]
-const IMPORT_ORDER: Collection[] = ['scenarios', 'accounts', 'holdings', 'lots', 'insurance', 'estate', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'comments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
+const IMPORT_ORDER: Collection[] = ['scenarios', 'accounts', 'scores', 'holdings', 'lots', 'insurance', 'estate', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'comments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
 const strip = <T extends object>(row: T) => { const r = { ...row } as Record<string, unknown>; for (const k of ['created_at', 'updated_at', 'created_by', 'updated_by', 'value']) delete r[k]; return r }   // 'value' is a generated column on holdings
 
 export class SupabaseRepo implements Repo {
@@ -89,10 +89,13 @@ export class SupabaseRepo implements Repo {
     if (mode === 'replace') for (const k of [...IMPORT_ORDER].reverse()) { const { error } = await sb().from(TABLE[k]).delete().eq('household_id', this.hh); if (error) throw error }
     const idMap = new Map<string, string>()
     const remap = (row: Record<string, unknown>) => { const out: Record<string, unknown> = {}; for (const [k, v] of Object.entries(row)) { if (k === 'id' || k === 'household_id' || k === 'created_at' || k === 'updated_at' || k === 'created_by' || k === 'updated_by') continue; out[k] = typeof v === 'string' && idMap.has(v) ? idMap.get(v) : v } return out }
+    const links: Array<[string, string]> = []   // accounts point at each other (an asset's loan): link them once both exist
     for (const k of IMPORT_ORDER) {
       const rows = ((json[k] as Record<string, unknown>[] | undefined) || []).filter(r => k !== 'attachments' || String(r.path || '').startsWith(this.hh + '/'))   // a file stored under another household cannot be re-linked
-      for (const r of rows) { const { data, error } = await sb().from(TABLE[k]).insert({ ...remap(r), household_id: this.hh }).select('id').single(); if (error) throw error; if (typeof r.id === 'string') idMap.set(r.id, data.id); n++ }
+      for (const r of rows) { const row = remap(r); if (k === 'accounts' && row.linked_account_id) { links.push([String(r.id), String(r.linked_account_id)]); row.linked_account_id = null }
+        const { data, error } = await sb().from(TABLE[k]).insert({ ...row, household_id: this.hh }).select('id').single(); if (error) throw error; if (typeof r.id === 'string') idMap.set(r.id, data.id); n++ }
     }
+    for (const [a, b] of links) if (idMap.has(a) && idMap.has(b)) await sb().from('accounts').update({ linked_account_id: idMap.get(b) }).eq('id', idMap.get(a)!).eq('household_id', this.hh)
     return n
   }
   subscribe(onChange: () => void) {
@@ -102,4 +105,4 @@ export class SupabaseRepo implements Repo {
     return () => { sb().removeChannel(ch) }
   }
 }
-const NUMERIC = new Set(['cost', 'coverage', 'deductible', 'premium', 'inflation_pct', 'promo_apr', 'bank_balance', 'last_reconciled_balance', 'opening_balance', 'cleared_deposits', 'cleared_payments', 'book_balance', 'outstanding_checks', 'deposits_in_transit', 'reconciled_balance', 'variance', 'adjustment', 'quantity', 'cost_basis', 'price', 'value', 'expense_ratio', 'yield_pct', 'balance', 'credit_limit', 'apr', 'statement_balance', 'minimum_payment', 'planned_payment', 'default_budget', 'gross_amount', 'net_amount', 'hours_per_period', 'hourly_rate', 'expected_income', 'planned', 'rollover_in', 'amount', 'paid_amount', 'target_amount', 'starting_amount', 'monthly_contribution', 'cash', 'assets', 'liabilities', 'monthly_obligation', 'relief_monthly', 'min_due', 'fee', 'last_paid_amount'])
+const NUMERIC = new Set(['bank_balance', 'depreciation_pct', 'cost', 'coverage', 'deductible', 'premium', 'inflation_pct', 'promo_apr', 'bank_balance', 'last_reconciled_balance', 'opening_balance', 'cleared_deposits', 'cleared_payments', 'book_balance', 'outstanding_checks', 'deposits_in_transit', 'reconciled_balance', 'variance', 'adjustment', 'quantity', 'cost_basis', 'price', 'value', 'expense_ratio', 'yield_pct', 'balance', 'credit_limit', 'apr', 'statement_balance', 'minimum_payment', 'planned_payment', 'default_budget', 'gross_amount', 'net_amount', 'hours_per_period', 'hourly_rate', 'expected_income', 'planned', 'rollover_in', 'amount', 'paid_amount', 'target_amount', 'starting_amount', 'monthly_contribution', 'cash', 'assets', 'liabilities', 'monthly_obligation', 'relief_monthly', 'min_due', 'fee', 'last_paid_amount'])

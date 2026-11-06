@@ -153,6 +153,17 @@ export function demoSeed(): { household: Household; data: Data } {
      [600, 'insert', 'holdings', 'VTI 22 @ 268.50'], [1440, 'update', 'categories', 'Dining out budget 160'], [2900, 'insert', 'email_items', 'AEP Ohio 152.4'], [4320, 'delete', 'transactions', 'duplicate Shell 45.10'], [7200, 'update', 'households', 'tax profile saved']] as Array<[number, string, string, string]>)
     .forEach(([m, a, tb, sm]) => act(m, a, tb, sm))
 
+  // property & vehicles (0.24.0): the car the auto loan is against, valued from Kelley Blue Book a little over a quarter ago (so the
+  // update-the-value reminder shows), with the depreciation guide and two earlier values in its history
+  const car = acc({ name: '2021 Honda CR-V', kind: 'other_asset', asset_type: 'vehicle', balance: 22800, balance_as_of: addDays(t, -104), value_source: 'Kelley Blue Book', depreciation_pct: 15, include_in_cash: false, linked_account_id: auto.id, color: '#64748b' })
+  { const bp = (account_id: string, k: number, balance: number, source: 'book' | 'bank' | 'value', bank: number | null = null) => d.balances.push({ id: demoId(), household_id: hh, account_id, as_of: addDays(t, k), balance, bank_balance: bank, source })
+    bp(car.id, -470, 26900, 'value'); bp(car.id, -287, 24600, 'value'); bp(car.id, -104, 22800, 'value')
+    for (let m = 6; m >= 1; m--) bp(auto.id, -m * 30, Math.round((9420 + m * 268) * 100) / 100, 'book')
+    bp(chk.id, -60, 2410.55, 'bank', 2410.55); bp(chk.id, -30, 2896.1, 'bank', 2896.1) }
+  // manual credit-score trend (0.24.0): the card issuer's free FICO each quarter, one VantageScore from a monitoring app, and Sam's
+  ;([['Me', -330, 688, 'Experian', 'FICO 8', 'Discover card'], ['Me', -240, 694, 'Experian', 'FICO 8', 'Discover card'], ['Me', -200, 705, 'Equifax', 'VantageScore 3.0', 'Credit Karma'], ['Me', -150, 701, 'Experian', 'FICO 8', 'Discover card'], ['Me', -60, 712, 'Experian', 'FICO 8', 'Discover card'], ['Me', -20, 716, 'Experian', 'FICO 8', 'Discover card'], ['Sam', -45, 774, 'TransUnion', 'FICO 8', 'Bank app']] as const)
+    .forEach(([person, k, score, bureau, model, source], i) => d.scores.push({ id: demoId(), household_id: hh, person, date: addDays(t, k), score, bureau, model, source, notes: null, created_at: new Date(Date.parse(addDays(t, k) + 'T12:00:00') + i).toISOString() }))
+
   // net-worth snapshots, derived from today's balances so they always include every demo account: assets grew and debt came down over two months
   {
     const live = d.accounts.filter(a => a.status === 'Active' && a.include_in_net_worth); const LIAB = ['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability']

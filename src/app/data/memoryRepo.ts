@@ -1,6 +1,6 @@
 // Offline demo repo: the same contract as Supabase, kept in this browser (localStorage). Also the harness for the test suites.
 import type { Repo } from './repo'
-import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
 import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { monthKey, today } from '../../lib/dates'
@@ -28,18 +28,28 @@ export class MemoryRepo implements Repo {
   private emit() { this.listeners.forEach(f => f()) }
   /** a copy of every array, so the store's state never aliases the repo's (an insert would otherwise appear twice until the next refresh) */
   async loadAll() { const data = Object.fromEntries(Object.entries(this.data).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v])) as unknown as Data; return { household: this.household, data, role: 'owner' as Role, readOnly: false, modules: null } }
+  /** mirrors the database trigger record_balance_history (0.24.0): one row per account per day, book and bank figures */
+  private recordBalance(a: Account, prev?: Account) {
+    const bank = !prev || a.bank_balance !== prev.bank_balance || a.bank_balance_as_of !== prev.bank_balance_as_of, book = !prev || a.balance !== prev.balance || a.balance_as_of !== prev.balance_as_of
+    if (!bank && !book) return
+    const [d, source] = bank && a.bank_balance != null ? [a.bank_balance_as_of || today(), 'bank' as const] : a.kind === 'other_asset' && a.balance_as_of ? [a.balance_as_of, 'value' as const] : [today(), 'book' as const]
+    const list = this.data.balances || (this.data.balances = []); const i = list.findIndex(x => x.account_id === a.id && x.as_of === d)
+    if (i >= 0) list[i] = { ...list[i], balance: a.balance, bank_balance: a.bank_balance ?? list[i].bank_balance, source: source === 'book' ? list[i].source : source }
+    else list.push({ id: demoId(), household_id: this.household.id, account_id: a.id, as_of: d, balance: a.balance, bank_balance: a.bank_balance ?? null, source })
+  }
   private nextRef(coll: Collection) { const p = PREFIX[coll]; if (!p) return undefined; const rows = this.data[coll] as Array<{ ref?: string | null }>; const n = Math.max(0, ...rows.map(r => +String(r.ref || '').split('-')[1] || 0)) + 1; return `${p}-${String(n).padStart(3, '0')}` }
   async insert<C extends Collection>(coll: C, row: Partial<RowOf<C>>) {
     const r = { ...row, id: (row as { id?: string }).id || demoId(), household_id: this.household.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as RowOf<C> & { ref?: string | null }
     if ('ref' in r || PREFIX[coll]) { if (!r.ref) r.ref = this.nextRef(coll) }
     if (coll === 'holdings') { const h = r as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }   // mirrors the DB's generated column
-    ;(this.data[coll] as unknown as RowOf<C>[]).push(r); this.persist(); this.emit(); return r
+    if (coll === 'balances') throw new Error('Balance history is written by the database')
+    ;(this.data[coll] as unknown as RowOf<C>[]).push(r); if (coll === 'accounts') this.recordBalance(r as unknown as Account); this.persist(); this.emit(); return r
   }
   async insertMany<C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]) { const out: RowOf<C>[] = []; for (const r of rows) out.push(await this.insert(coll, r)); return out }
   async update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) {
     if ((coll as string) === 'audit' || (coll as string) === 'reconciliations') throw new Error('Audit events and completed reconciliations are immutable')
     const arr = this.data[coll] as unknown as RowOf<C>[]; const i = arr.findIndex(x => (x as { id: string }).id === id); if (i < 0) throw new Error('Row not found')
-    arr[i] = { ...arr[i], ...patch, updated_at: new Date().toISOString() }
+    const prev = arr[i]; arr[i] = { ...arr[i], ...patch, updated_at: new Date().toISOString() }; if (coll === 'accounts') this.recordBalance(arr[i] as unknown as Account, prev as unknown as Account)
     if (coll === 'holdings') { const h = arr[i] as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }
     this.persist(); this.emit(); return arr[i]
   }
@@ -48,6 +58,7 @@ export class MemoryRepo implements Repo {
     // cascades mirroring the schema
     if (coll === 'periods') this.data.lines = this.data.lines.filter(l => l.period_id !== id)
     if (coll === 'transactions') { this.data.splits = (this.data.splits || []).filter(s => s.transaction_id !== id); this.data.attachments = (this.data.attachments || []).filter(a => a.transaction_id !== id); this.data.comments = (this.data.comments || []).filter(c => c.transaction_id !== id) }
+    if (coll === 'accounts') this.data.balances = (this.data.balances || []).filter(b => b.account_id !== id)
     if (coll === 'holdings') this.data.lots = (this.data.lots || []).filter(l => l.holding_id !== id)
     if (coll === 'statements') this.data.attachments = (this.data.attachments || []).filter(a => a.statement_id !== id)
     if (coll === 'recurring') this.data.occurrences = this.data.occurrences.filter(o => o.recurring_id !== id)

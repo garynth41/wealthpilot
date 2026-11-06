@@ -14,6 +14,8 @@ import { Chart, C } from '../components/Chart'
 import { netWorthSeries } from '../lib/forecast'
 import { openAttachment, statementFiles } from './Attachments'
 import { sb } from '../app/supabase'
+import { PropertyCard, HistoryModal } from './AssetsParts'
+import { isValuedAsset } from '../lib/assets'
 
 export function AccountsPage() {
   const { data, settings, insert, update, remove, guarded, canEdit, acctLabels, mode } = useData(); const confirm = useConfirm(); const { open, close } = useModal()
@@ -30,7 +32,7 @@ export function AccountsPage() {
   const del = async (a: Account) => { if (await confirm(`Delete ${a.name}? Its transactions stay but lose the account link.`)) guarded(() => remove('accounts', a.id), 'Deleted') }
   const snapshot = () => guarded(async () => { const t = today(); const ex = data.snapshots.find(s => s.date === t); const row = { date: t, cash, assets: nw.assets, liabilities: nw.liabilities, by_account: Object.fromEntries(data.accounts.map(a => [a.id, +a.balance || 0])) }; if (ex) await update('snapshots', ex.id, row); else await insert('snapshots', row) }, 'Snapshot recorded')
   const nws = netWorthSeries(data); const c = C(); const liq = liquidity(data, settings); const alloc = goalAllocation(data, settings)
-  const rows = (kind: 'asset' | 'liability') => data.accounts.filter(a => (kind === 'asset' ? !isLiability(a) : isLiability(a))).sort((a, b) => a.sort_order - b.sort_order)
+  const rows = (kind: 'asset' | 'liability') => data.accounts.filter(a => (kind === 'asset' ? !isLiability(a) && !isValuedAsset(a) : isLiability(a))).sort((a, b) => a.sort_order - b.sort_order)
   return <>
     <div className="kpis" style={{ marginBottom: 16 }}>
       <KPI l="Cash on hand" v={fmtMoney(cash)} cls="good" s="checking + savings + cash (counts-as-cash accounts)" /><KPI l="Total assets" v={fmtMoney(nw.assets)} cls="info" s={`${as.length} account${as.length === 1 ? '' : 's'}`} /><KPI l="Total debt" v={fmtMoney(nw.liabilities)} cls={nw.liabilities ? 'crit' : 'good'} s={`${li.length} card${li.length === 1 ? '' : 's'} & loans`} /><KPI l="Net worth" v={fmtMoney(nw.net)} cls={nw.net >= 0 ? 'good' : 'crit'} s={nws.length > 1 ? `${nw.net - nws[0].net >= 0 ? '+' : ''}${fmtMoney(nw.net - nws[0].net)} since ${fmtD(nws[0].date)}` : 'record snapshots to see the trend'} />
@@ -41,12 +43,14 @@ export function AccountsPage() {
           cols={[{ k: 'institution', label: 'Institution', type: 'ro', fmt: a => a.institution || '—' }, { k: 'name', label: 'Account', type: 'ro', fmt: a => <b>{a.name}{a.last4 ? <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> ··{a.last4}</span> : null}</b> }, { k: 'kind', label: 'Type', type: 'ro', fmt: a => ACCOUNT_KIND_LABEL[a.kind] },
             { k: 'balance', label: 'Current balance', type: 'ro', cls: 'num', sortVal: a => (isLiability(a) ? -1 : 1) * balanceOf(a, data), fmt: a => <span style={{ color: isLiability(a) ? 'var(--crit-ink)' : undefined }} title={a.bank_balance != null ? `verified: bank ${fm2(a.bank_balance)} as of ${a.bank_balance_as_of || '—'} ± outstanding entries` : 'book balance (no bank figure yet)'}>{isLiability(a) ? '−' : ''}{fm2(Math.abs(balanceOf(a, data)))}{a.bank_balance != null && <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--good-ink)' }}>✓</span>}</span> },
             { k: '_avail', label: 'Available', type: 'ro', cls: 'num', sortVal: a => availableBalance(a) ?? -1, fmt: a => { const v = availableBalance(a); return v == null ? '—' : fm2(v) } },
-            { k: 'balance_as_of', label: 'Last updated', type: 'ro', sortVal: a => a.balance_as_of || '', fmt: a => a.balance_as_of ? <>{fmtDY(a.balance_as_of)} <span style={{ color: 'var(--ink-3)' }}>· {ago(a.balance_as_of)}</span></> : '—' }]} />
-        <Note>Balances change three ways: you type one in, a transaction posts to the account, or a statement import sets it. Each change is recorded in Settings → Activity log.</Note>
+            { k: 'balance_as_of', label: 'Last updated', type: 'ro', sortVal: a => a.balance_as_of || '', fmt: a => a.balance_as_of ? <>{fmtDY(a.balance_as_of)} <span style={{ color: 'var(--ink-3)' }}>· {ago(a.balance_as_of)}</span></> : '—' }]}
+          actions={a => <Btn sm onClick={() => open(<HistoryModal a={a} onDone={close} />)} aria-label={`Balance history for ${a.name}`}>History</Btn>} />
+        <Note>Balances change three ways: you type one in, a transaction posts to the account, or a statement import or bank sync sets it. Every change is kept as balance history — <b>History</b> shows it and the balance on any past date.</Note>
       </Card>
       <Card span={12} title="Cash, savings & investments" hint="type the balance from your bank; transactions you log move it from there" right={canEdit ? <><Btn sm onClick={() => add('checking')}>+ Checking</Btn><Btn sm onClick={() => add('savings')}>+ Savings</Btn><Btn sm onClick={() => add('investment')}>+ Investment</Btn><Btn sm onClick={() => add('retirement')}>+ Retirement</Btn><Btn sm onClick={() => add('cash')}>+ Cash</Btn></> : undefined}>
         <Table rows={rows('asset')} cols={assetCols} editable={canEdit} onChange={change} onDelete={del} rowCls={a => a.status !== 'Active' ? 'st-idle ex-off' : 'st-good'} search={false} />
         <Note><b>Counts as cash</b> feeds the runway and the cash-flow forecast; retirement money is tracked in net worth but kept out of cash unless you turn that on in Settings.</Note></Card>
+      <PropertyCard />
       <Card span={12} title="Credit cards & loans" hint="enter what is on each statement; the app does the rest" right={canEdit ? <><Btn sm onClick={() => add('credit_card')}>+ Credit card</Btn><Btn sm onClick={() => add('auto_loan')}>+ Auto loan</Btn><Btn sm onClick={() => add('student_loan')}>+ Student loan</Btn><Btn sm onClick={() => add('loan')}>+ Loan</Btn><Btn sm onClick={() => add('mortgage')}>+ Mortgage</Btn><Btn sm onClick={() => add('bnpl')}>+ BNPL</Btn></> : undefined}>
         <Table rows={rows('liability')} cols={debtCols} editable={canEdit} onChange={change} onDelete={del} rowCls={a => a.status !== 'Active' ? 'st-idle ex-off' : `st-${debtDueState(a).cls === 'info' ? 'wait' : debtDueState(a).cls}`} search={false} actions={a => canEdit && a.status === 'Active' ? <><Btn sm onClick={() => open(<PaymentModal a={a} onDone={close} />)}>Record payment</Btn><Btn sm onClick={() => open(<StatementModal a={a} onDone={close} />)}>New statement</Btn></> : null} />
         <Note><b>Record payment</b> logs a transfer from your bank account, reduces the balance and marks the statement paid. <b>New statement</b> saves the current one to history and re-arms the due date. The <b>planned payment</b> (never less than the minimum) is what the budget, forecast and payoff plan assume each month.</Note></Card>

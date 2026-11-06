@@ -128,7 +128,7 @@ describe('new alert rules', () => {
   })
   it('each new rule can be switched off, and all three are listed in the digest', () => {
     const inp = base({ today: '2026-11-30', prefs: { reconcile: false } }); expect(computeAlerts(inp).some(a => a.kind === 'reconcile')).toBe(false)
-    expect(DIGEST_NOTICES).toEqual(['price_rise', 'new_recurring', 'reconcile'])
+    expect(DIGEST_NOTICES).toEqual(['price_rise', 'new_recurring', 'reconcile', 'revalue'])
   })
   it('the edge function runs the same rules (engine copy is identical)', () => { expect(notifyCopy).toBe(notifySource) })
 })
