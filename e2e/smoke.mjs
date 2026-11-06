@@ -17,7 +17,7 @@ for (const W of [1400, 390]) {
   if (await p.locator('#pw').count()) { await p.fill('#pw', 'hunter22'); const t0 = await p.getAttribute('#pw', 'type'); await p.click('.pwtoggle'); const t1 = await p.getAttribute('#pw', 'type'); await p.click('.pwtoggle'); const t2 = await p.getAttribute('#pw', 'type'); ok(t0 === 'password' && t1 === 'text' && t2 === 'password' && await p.inputValue('#pw') === 'hunter22', `${W}: password eye toggles hidden → shown → hidden (${t0}/${t1}/${t2})`); ok((await p.locator('.msg.crit').count()) === 0, `${W}: toggling the eye did not submit the form`); await p.fill('#pw', '') }
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
-  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/tax', '/reports', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
+  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/plan', '/tax', '/reports', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
   for (const path of pages) { await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(900); const h = await p.locator('h1').first().textContent(); const sw = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth); ok(h && sw <= 1, `${W}: ${path} renders "${h}" (sideways overflow ${sw}px)`); await p.screenshot({ path: `e2e/shots/${W}_${path.replace('/', '') || 'home'}.png`, fullPage: true }) }
   if (W === 1400) {
     // add a transaction
@@ -124,7 +124,7 @@ for (const W of [1400, 390]) {
     await p.click('button:has-text("Members")'); await p.waitForTimeout(300); const members0 = await p.locator('table.tbl tbody tr').count()
     await p.fill('input[placeholder="name@example.com"]', 'pat.smoke@example.com'); await p.fill('input[placeholder="how the email greets them"]', 'Pat'); await p.click('.seg button:has-text("Limited")'); await p.waitForTimeout(100)
     ok(await p.locator('button:has-text("Create sign-in & draft email")').isDisabled(), 'limited access needs at least one section before inviting')
-    await p.click('label:has-text("Budget") input'); await p.click('label:has-text("Savings goals") input'); await p.waitForTimeout(100); ok(/Limited — Budget, Savings goals \(read-only\)/.test(await p.locator('main').textContent()), 'access summary describes the limited grant')
+    await p.click('label:has-text("Budget") input'); await p.click('label:has-text("Savings goals") input'); await p.waitForTimeout(100); ok(/Limited — Budget, Savings goals & plan \(read-only\)/.test(await p.locator('main').textContent()), 'access summary describes the limited grant')
     await p.click('button:has-text("Create sign-in & draft email")'); await p.waitForTimeout(600); const invM = await p.locator('.modal').textContent()
     ok(/Temporary password/.test(invM) && /WP-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}/.test(invM), 'invitation shows a one-time temporary password'); ok(/Hi Pat,/.test(invM) && /Limited — Budget, Savings goals/.test(invM) && /first sign-in only/.test(invM), 'drafted email greets by name and states the access')
     ok((await p.locator('.modal a:has-text("Open in email app")').getAttribute('href')).startsWith('mailto:pat.smoke%40example.com?subject='), 'Open in email app is a mailto link'); await p.click('.modal button:has-text("Done")'); await p.waitForTimeout(300)
@@ -184,6 +184,31 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/insights'); await p.waitForTimeout(1200); const ins = await p.locator('main').textContent()
     if (/\+ Add to Bills/.test(ins)) { const before = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.recurring.length); await p.locator('button:has-text("+ Add to Bills")').first().click(); await p.waitForTimeout(600); const after = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.recurring.length); ok(after === before + 1, 'Add to Bills creates a recurring item from a detected charge') } else ok(true, 'no detected charges outside Bills in the demo (Add to Bills not exercised)')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
+    // 0.20.0 phase 4: the unified plan, saved scenarios, promotional APRs, guaranteed retirement income, price freshness, idle lock
+    await p.goto('http://localhost:4173/#/plan'); await p.waitForTimeout(900); const pl = await p.locator('main').textContent()
+    ok(/Where this month's extra goes/.test(pl) && /One timeline/.test(pl) && /Month by month/.test(pl), 'the Plan page shows the allocation, the timeline and the monthly table')
+    await p.locator('input[aria-label="Extra per month"]').fill('400'); await p.waitForTimeout(400)
+    ok(/\$400/.test(await p.locator('.plan-alloc .b').first().textContent()) && /to /.test(await p.locator('.plan-alloc .b').first().textContent()), 'debt first: $400 extra goes to the focus debt account')
+    await p.click('.scenbar button:has-text("Save as scenario")'); await p.fill('.scenbar input[aria-label="Scenario name"]', 'Smoke plan'); await p.click('.schip.naming button:has-text("Save")'); await p.waitForTimeout(500)
+    ok((await p.locator('.schip.on:has-text("Smoke plan")').count()) === 1, 'saving the sliders as a scenario pins a chip that is marked active')
+    await p.locator('input[aria-label="Extra per month"]').fill('0'); await p.waitForTimeout(300); ok((await p.locator('.schip.on').count()) === 0, 'moving a slider leaves the saved scenario')
+    await p.click('.schip button.go:has-text("Smoke plan")'); await p.waitForTimeout(400); ok(await p.locator('input[aria-label="Extra per month"]').inputValue() === '400' && (await p.locator('.schip.on').count()) === 1, 'loading the scenario puts the sliders back')
+    await p.locator('input[aria-label="Extra per month"]').fill('150'); await p.waitForTimeout(300); await p.click('.scenbar button:has-text("Compare")'); await p.waitForTimeout(500)
+    ok(/Sliders now/.test(await p.locator('.modal').textContent()) && /Smoke plan/.test(await p.locator('.modal').textContent()) && (await p.locator('.modal td.best').count()) >= 1, 'Compare shows the sliders against the saved scenario with the winners marked'); await p.click('.modal .mfoot button:has-text("Close")'); await p.waitForTimeout(200)
+    await p.click('button:has-text("Apply this plan")'); await p.waitForTimeout(300); ok(/Debts page starts its extra-payment slider/.test(await p.locator('.modal').textContent()), 'Apply previews what it changes'); await p.click('.modal .mfoot button:has-text("Apply")'); await p.waitForTimeout(800)
+    ok(/This plan is applied/.test(await p.locator('main').textContent()), 'the applied plan is flagged on the Plan page')
+    await p.goto('http://localhost:4173/#/debts'); await p.waitForTimeout(900); const dbt = await p.locator('main').textContent()
+    ok(/promotional rate ends/.test(dbt) && /Discover it/.test(dbt), 'Debts warns before the 0% promotion ends')
+    ok(/Your applied plan sends \$150\.00\/mo/.test(dbt), 'Debts starts from the plan\'s extra payment — the pages agree')
+    await p.goto('http://localhost:4173/#/investments'); await p.waitForTimeout(1000); const inv4 = await p.locator('main').textContent()
+    ok(/Guaranteed income/.test(inv4) && /Claim at age/.test(inv4) && /Retirement income, year by year/.test(inv4) && /Bridge to Social Security|Portfolio money lasts/.test(inv4), 'the retirement planner models Social Security at a claiming age, pensions and a year-by-year drawdown')
+    ok((await p.locator('.fresh').count()) >= 5, 'every holding shows how fresh its price is')
+    await p.click('button:has-text("+ Add a pension")'); await p.waitForTimeout(300); ok((await p.locator('input[aria-label="Pension name"]').count()) === 1, 'a pension line can be added')
+    await p.click('button[aria-label="Lock now"]'); await p.waitForTimeout(400)
+    ok((await p.locator('.lockscreen').count()) === 1 && (await p.locator('main').count()) === 0, 'Lock now hides every figure behind the lock screen')
+    await p.reload(); await p.waitForTimeout(900); ok((await p.locator('.lockscreen').count()) === 1, 'the lock survives a reload')
+    await p.click('.lockscreen button:has-text("Unlock")'); await p.waitForTimeout(600); ok((await p.locator('main').count()) === 1 && (await p.locator('.lockscreen').count()) === 0, 'unlocking brings the page back')
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
     await p.reload(); await p.waitForTimeout(900); await p.click('button:has-text("Review")'); await p.waitForTimeout(400)
@@ -204,9 +229,9 @@ for (const W of [1400, 390]) {
     ok(cLight >= 4.5 && cDark >= 4.5, `dialog, toast, banner and message text meet 4.5:1 in light (${cLight.toFixed(1)}) and dark (${cDark.toFixed(1)})`)
     await p.click('.modal button:has-text("Cancel")'); await p.waitForTimeout(200)
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
-    // 0.19.0: accessibility gate — axe-core WCAG 2.0/2.1 A + AA on five pages; any serious or critical violation fails the run
+    // 0.19.0: accessibility gate — axe-core WCAG 2.0/2.1 A + AA on eight pages; any serious or critical violation fails the run
     const axeSrc = readFileSync(fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8')
-    for (const route of ['/', '/transactions', '/budget', '/reports', '/settings']) {
+    for (const route of ['/', '/transactions', '/budget', '/reports', '/plan', '/debts', '/investments', '/settings']) {
       await p.goto('http://localhost:4173/#' + route); await p.waitForTimeout(900); await p.evaluate(axeSrc)
       const res = await p.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }))
       const bad = res.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')
@@ -221,6 +246,6 @@ for (const W of [1400, 390]) {
   ok(!errors.length, `${W}: no page errors ${errors.slice(0, 3).join(' | ')}`); await p.close()
 }
 // 0.11.1: a password-reset link must open the "choose a new password" screen, never sign straight in (an unusable token shows the expired-link message)
-{ const rp = await b.newPage(); await rp.goto('http://localhost:4173/#access_token=not-a-real-token&refresh_token=x&expires_in=3600&token_type=bearer&type=recovery'); await rp.waitForTimeout(1500)
+{ const rp = await b.newPage(); await rp.goto('http://localhost:4173/#access_token=not-a-real-token&refresh_token=x&expires_in=3600&token_type=bearer&type=recovery'); await rp.waitForSelector('text=/reset link has expired|Choose a new password/', { timeout: 8000 }).catch(() => {})
   const rt = await rp.locator('body').textContent(); ok(/reset link has expired|Choose a new password/.test(rt) && !/Dashboard/.test(rt), 'a password-reset link opens the reset screen instead of signing in'); await rp.close() }
 console.log('smoke fails', F); await b.close(); srv.close()

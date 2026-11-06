@@ -9,7 +9,7 @@ import { balanceFor, dropKnown } from '../../lib/simplefin'
 import { verifiedBalance } from '../../lib/reconcile'
 
 const KEY = LS('demo')
-const PREFIX: Partial<Record<Collection, string>> = { reconciliations: 'K', transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I' }
+const PREFIX: Partial<Record<Collection, string>> = { reconciliations: 'K', transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I', scenarios: 'N' }
 
 export class MemoryRepo implements Repo {
   readonly mode = 'demo' as const

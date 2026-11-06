@@ -16,6 +16,8 @@ export interface Account extends Stamped {
   /** what the institution last reported (bank feed, statement or reconciliation); null = no bank figure, the book balance is all there is */
   bank_balance?: number | null; bank_balance_as_of?: ISODate | null; last_reconciled_on?: ISODate | null; last_reconciled_balance?: number | null
   credit_limit?: number | null; apr: number
+  /** promotional rate (0.20.0): promo_apr applies through promo_until, then apr takes over */
+  promo_apr?: number | null; promo_until?: ISODate | null
   statement_date?: ISODate | null; statement_balance?: number | null; minimum_payment: number; due_date?: ISODate | null; planned_payment?: number | null
   autopay: boolean; autopay_account_id?: UUID | null; last_paid_due?: ISODate | null
   include_in_cash: boolean; include_in_net_worth: boolean
@@ -49,6 +51,9 @@ export interface BudgetLine extends Stamped { period_id: UUID; category_id: UUID
 export interface TransactionSplit extends Stamped { ref?: string | null; transaction_id: UUID; category_id?: UUID | null; amount: number; memo?: string | null; sort_order: number }
 /** A receipt or document on a transaction (0.19.0); the file is in the private `attachments` bucket at `path`. */
 export interface Attachment extends Stamped { ref?: string | null; transaction_id: UUID; name: string; path: string; mime?: string | null; size: number }
+/** A saved what-if (0.20.0): the slider state of one planner, named so it can be reloaded and compared. Shapes in lib/scenarios.ts. */
+export type ScenarioKind = 'forecast' | 'debt' | 'goal' | 'retirement' | 'plan'
+export interface Scenario extends Stamped { ref?: string | null; name: string; kind: ScenarioKind; assumptions: Record<string, unknown>; notes?: string | null; pinned: boolean; sort_order: number }
 export type TxnKind = 'expense' | 'income' | 'transfer'
 export type TxnSource = 'manual' | 'email' | 'import' | 'recurring' | 'statement' | 'adjustment'
 export interface Transaction extends Stamped {
@@ -101,6 +106,8 @@ export const ASSET_CLASS_LABEL: Record<AssetClass, string> = { stock: 'Stocks', 
 export interface Holding extends Stamped {
   ref?: string | null; account_id?: UUID | null; symbol?: string | null; name: string; asset_class: AssetClass; sector?: string | null; risk: 'low' | 'medium' | 'high'
   quantity: number; cost_basis: number; price: number; price_as_of?: ISODate | null; value?: number; expense_ratio?: number | null; yield_pct?: number | null; notes?: string | null; sort_order: number
+  /** 'auto' = the daily price feed updates price/price_as_of from the symbol; 'manual' = typed by hand (private assets, cash) */
+  price_source?: 'auto' | 'manual'
 }
 export interface PlannedItem extends Stamped { ref?: string | null; date: ISODate; label: string; category: string; amount: number; status: 'Planned' | 'Done' | 'Cancelled'; transaction_id?: UUID | null; notes?: string | null }
 export interface NetWorthSnapshot extends Stamped { date: ISODate; cash: number; assets: number; liabilities: number; by_account: Record<string, number>; notes?: string | null }
@@ -156,20 +163,31 @@ export interface Settings {
   learnRules?: boolean              // create a rule when a category is set by hand (default true)
   savedViews?: SavedView[]          // Transactions filter presets (0.19.0)
   notify?: NotifyPrefs              // alert channels and thresholds (0.19.0, see lib/notify.ts)
+  plan?: AppliedPlan                // the Plan view's applied allocation (0.20.0) — Debts, Goals and Retirement read it
 }
+/** What 'Apply this plan' wrote (0.20.0), so other pages agree with the Plan view and a re-apply replaces rather than adds. */
+export interface AppliedPlan { scenarioId?: string | null; name?: string | null; assumptions: Record<string, unknown>; appliedAt: string; debtExtra: number; goalExtra: Record<string, number>; retireExtra: number; strategy?: 'avalanche' | 'snowball' }
 /** A Transactions filter preset pinned above the ledger. */
 export interface SavedView { id: string; name: string; range: 'period' | '30' | 'month' | '90' | 'all'; kind: 'all' | 'expense' | 'income' | 'transfer' | 'uncat'; account_id?: string | null; tag?: string | null; q?: string | null }
 export interface NotifyPrefs { push?: boolean; email?: boolean; email_to?: string | null; bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; digest?: boolean; quiet_from?: number; quiet_to?: number }
-export interface RetirementInputs { currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number; socialSecurity: number; currentIncome: number }
+/** A guaranteed income line in retirement (0.20.0): Social Security or a pension — monthly amount in today's dollars from a start age. */
+export interface Pension { id: string; name: string; monthly: number; startAge: number; cola?: boolean }
+export interface RetirementInputs {
+  currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number
+  /** Social Security, $/yr in today's dollars (kept for compatibility; ssMonthly wins when set) */
+  socialSecurity: number; currentIncome: number
+  /** 0.20.0: Social Security as the SSA statement shows it — monthly benefit at a claiming age — plus any pensions; ssHaircut = the share of the benefit to assume is NOT paid (0.25 = plan on 75%) */
+  ssMonthly?: number | null; ssStartAge?: number | null; ssHaircut?: number; pensions?: Pension[]
+}
 export interface PayeeRule { id: string; pattern: string; match: 'contains' | 'starts' | 'exact' | 'regex'; category_id?: string | null; account_id?: string | null; rename?: string | null; exclude_from_budget?: boolean; kind?: 'expense' | 'income' | null; enabled: boolean; hits?: number; created_at?: string; source?: 'manual' | 'learned' }
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
-export const TABLE: Record<Collection, string> = { splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
+export type Collection = 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
+export const TABLE: Record<Collection, string> = { scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
-  transactions: Transaction[]; splits: TransactionSplit[]; attachments: Attachment[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
+  transactions: Transaction[]; splits: TransactionSplit[]; attachments: Attachment[]; scenarios: Scenario[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
   planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
   /** immutable cash-operations audit trail, newest first */
   audit: AuditEvent[]
@@ -177,5 +195,5 @@ export interface Data {
   /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
   duplicates: Transaction[]
 }
-export const emptyData = (): Data => ({ splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

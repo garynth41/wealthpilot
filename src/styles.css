@@ -213,3 +213,32 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 @keyframes focusPulse{0%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 6px var(--accent-soft)}60%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 2px var(--accent-soft)}100%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 0 transparent}}
 .focus-hit{animation:focusPulse 1.6s ease-out 3;background:var(--accent-soft)!important;position:relative;z-index:1}
 tr.focus-hit > td{background:var(--accent-soft)!important}
+
+/* ---------- 0.20.0 · Phase 4 ---------- */
+/* saved-scenario strip above a planner */
+.scenbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 0 10px;border-bottom:1px solid var(--line);margin-bottom:10px}
+.scenbar .l{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-right:4px;font-family:var(--mono)}
+.schip{display:inline-flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+.schip .go{border:0;background:transparent;padding:4px 10px;font:inherit;font-size:12.5px;color:var(--ink);cursor:pointer}
+.schip .mini{border:0;border-left:1px solid var(--line);background:transparent;padding:0 7px;color:var(--ink-3);cursor:pointer;font-size:11px}
+.schip .mini:hover,.schip .go:hover{background:var(--ground);color:var(--ink)}
+.schip.on{border-color:var(--sel);box-shadow:inset 0 0 0 1px var(--sel)} .schip.on .go{font-weight:600}
+.schip.naming{padding:2px;gap:4px;align-items:center} .schip.naming .inp{width:200px;padding:3px 8px}
+.tbl.cmp td.best{background:var(--good-soft);color:var(--good-ink);font-weight:600}
+/* plan view */
+.plan-alloc{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin:6px 0 4px}
+.plan-alloc .b{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--surface)}
+.plan-alloc .b .l{font-size:12px;color:var(--ink-3)} .plan-alloc .b .v{font-family:var(--display);font-size:22px;font-weight:600;margin-top:2px} .plan-alloc .b .s{font-size:12px;color:var(--ink-2);margin-top:2px}
+.plan-alloc .b.on{border-color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+.mile{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line)} .mile:last-child{border-bottom:0} .mile .d{font-family:var(--mono);font-size:12px;color:var(--ink-2);min-width:96px} .mile .t{flex:1}
+/* price freshness */
+.fresh{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--ink-3);white-space:nowrap}
+.fresh.fresh-fresh{color:var(--good-ink);border-color:var(--good);background:var(--good-soft)} .fresh.fresh-stale{color:var(--warn);border-color:var(--warn)} .fresh.fresh-old{color:var(--crit);border-color:var(--crit)}
+/* idle lock */
+.lockscreen{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:color-mix(in srgb,var(--ground) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:16px}
+.lockscreen .box{width:min(380px,100%);background:var(--surface);border:1px solid var(--line-strong);border-radius:calc(var(--radius) + 2px);padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.18)}
+.lockscreen h2{margin:6px 0 4px;font-family:var(--display)} .lockscreen .note{margin-top:0}
+.locked-app{visibility:hidden}
+/* pensions editor */
+.pens{display:grid;grid-template-columns:1.4fr .9fr .7fr auto auto;gap:6px;align-items:center;margin:4px 0} .pens .inp{padding:5px 8px}
+@media (max-width: 700px){ .pens{grid-template-columns:1fr 1fr} .schip.naming .inp{width:150px} }

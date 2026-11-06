@@ -44,3 +44,15 @@ Legend — **FE**: pure front-end, buildable now · **DB**: needs a schema migra
 | Visualization | Treemap, heat map | `lib/visuals.ts` SVG on Trends | ✔ | 0.9.0 |
 
 Not planned: MFA beyond TOTP, "API latency / uptime" dashboards, Plaid/Teller/MX until a backend exists.
+
+## Phase 4 of the Nov 2026 review — shipped in 0.20.0
+
+| Item | Where | Kind |
+|---|---|---|
+| Saved scenarios + side-by-side compare | `scenarios` table, `lib/scenarios.ts`, `components/Scenarios.tsx` on Forecast, Debts, Retirement, goal What-if, Plan | DB + FE |
+| One plan, not four | **Plan** page, `lib/plan.ts` (allocation modes, freed-payment roll-on, affordability, Apply) | FE |
+| Promotional APRs and balance transfers | `accounts.promo_apr / promo_until`, `lib/debts.ts` aprAt / promoAlerts | DB + FE |
+| Social Security and pensions | `lib/retirement.ts` guaranteedIncome / drawdown; Investments → Retirement planner | FE |
+| Investment price feed | `prices` table, `price-feed` edge function + cron, `lib/prices.ts` | DB + EF |
+| Passkeys, recovery codes, device list | Settings → Security; sign-in and lock screen | Auth + DB |
+| Idle lock | `components/IdleLock.tsx`, per device | FE |

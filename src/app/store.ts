@@ -31,6 +31,10 @@ interface State {
   signIn: (email: string, password: string) => Promise<void>; signUp: (email: string, password: string) => Promise<string>; signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>; updatePassword: (pw: string) => Promise<void>; finishRecovery: (pw: string) => Promise<void>
   verifyMfa: (code: string) => Promise<void>
+  /** 0.20.0: one of the ten single-use codes instead of the authenticator */
+  verifyRecoveryCode: (code: string) => Promise<void>
+  /** 0.20.0: passwordless sign-in with a passkey (device biometrics / PIN / security key) */
+  signInWithPasskey: () => Promise<void>
   openHousehold: (id: string) => Promise<void>; createHousehold: (name: string) => Promise<void>
   refresh: () => Promise<void>
   insert: <C extends Collection>(coll: C, row: Partial<RowOf<C>>) => Promise<RowOf<C>>
@@ -90,6 +94,8 @@ export const useStore = create<State>((set, get) => ({
   resetDemo() { const r = get().repo; if (r instanceof MemoryRepo) { r.reset(); get().refresh(); get().toast('Sample data restored') } },
   async signIn(email, password) { const { error } = await sb().auth.signInWithPassword({ email, password }); if (error) throw error; if (await needsMfa()) { set({ mfaPending: true }); return } const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async verifyMfa(code) { const { data: f, error: e1 } = await sb().auth.mfa.listFactors(); if (e1) throw e1; const factor = f.totp.find(x => x.status === 'verified') || f.totp[0]; if (!factor) throw new Error('No authenticator is enrolled'); const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s+/g, '') }); if (error) throw error; set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
+  async verifyRecoveryCode(code) { const { error } = await sb().auth.mfa.recoveryCodes.verify({ code: code.trim() }); if (error) throw new Error(authMessage(error)); set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
+  async signInWithPasskey() { const { data, error } = await sb().auth.signInWithPasskey(); if (error) throw new Error(authMessage(error)); const user = data?.user || (await sb().auth.getUser()).data.user; if (!user) throw new Error('The passkey was accepted but no session came back — try again'); set({ mfaPending: false }); await loadHouseholds(user) },
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
   async signOut() { setErrorSink(null); await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
   async finishRecovery(pw) {
@@ -177,7 +183,21 @@ export const useStore = create<State>((set, get) => ({
 }))
 
 /** True when the user has a verified TOTP factor but this session is still at AAL1 — the app then asks for the code before opening any household. */
-async function needsMfa() { try { const { data } = await sb().auth.mfa.getAuthenticatorAssuranceLevel(); return !!data && data.nextLevel === 'aal2' && data.currentLevel !== 'aal2' } catch { return false } }
+/** A second factor is owed when the account has one and this session has not used it. A passkey sign-in already is two factors
+ *  (the device you hold + its fingerprint, face or PIN), so it is not asked for a code on top. */
+async function needsMfa() { try { const { data } = await sb().auth.mfa.getAuthenticatorAssuranceLevel(); if (!data || data.nextLevel !== 'aal2' || data.currentLevel === 'aal2') return false; return !(data.currentAuthenticationMethods || []).some(m => /passkey|webauthn/i.test(typeof m === 'string' ? m : String(m.method))) } catch { return false } }
+/** Plain-language messages for the auth errors people actually hit with passkeys and recovery codes. */
+export function authMessage(e: { message?: string; code?: string; name?: string } | null | undefined): string {
+  const m = String(e?.message || ''), c = String(e?.code || '')
+  if (/ERROR_CEREMONY_ABORTED|NotAllowedError|abort|cancel|timed out/i.test(c + ' ' + m + ' ' + (e?.name || ''))) return 'The passkey prompt was closed or timed out — try again.'
+  if (/passkey.*(disabled|not enabled)|webauthn.*(disabled|not enabled)|feature.*disabled/i.test(m) || /passkey.*disabled/i.test(c)) return 'Passkeys are not switched on for this app yet (Supabase → Authentication → Passkeys).'
+  if (c === 'mfa_recovery_codes_enroll_not_enabled' || c === 'mfa_recovery_codes_verify_not_enabled') return 'Recovery codes are not switched on for this app yet (Supabase → Authentication → Multi-factor).'
+  if (c === 'mfa_recovery_codes_sole_factor') return 'Set up the authenticator app first — recovery codes back it up and cannot be the only second step.'
+  if (c === 'mfa_recovery_codes_locked') return 'Too many wrong recovery codes — wait a few minutes, then try again or use the authenticator app.'
+  if (c === 'mfa_verification_failed' || /invalid.*code|code.*invalid/i.test(m)) return 'That code did not match. Each recovery code works once; check for typos.'
+  if (/credential.*not found|unknown credential|no passkey/i.test(m)) return 'This device has no passkey for WealthPilot. Sign in with your password, then add one under Settings → Security.'
+  return m || 'Something went wrong — try again.'
+}
 const need = (get: () => State) => { const r = get().repo; if (!r) throw new Error('Not signed in'); return r }
 function attach(repo: Repo) { unsub?.(); unsub = repo.subscribe(() => { if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(() => useStore.getState().refresh(), repo.mode === 'demo' ? 0 : 700) }) }
 async function loadHouseholds(user: User) {

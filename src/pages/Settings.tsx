@@ -11,7 +11,10 @@ import { fmtMoney, parseNum } from '../lib/money'
 import { NOTIFY_DEFAULTS, computeAlerts, type Alert } from '../lib/notify'
 import type { NotifyPrefs } from '../app/data/types'
 import { fmtDY, today, ago } from '../lib/dates'
-import { hasSupabase, sb } from '../app/supabase'
+import { hasSupabase, sb, authFeatures } from '../app/supabase'
+import { authMessage } from '../app/store'
+import { IDLE_CHOICES, idleMinutes, setIdleMinutes, lockNow } from '../components/IdleLock'
+import { describeDevice } from '../lib/devices'
 import { ruleHits, planAutoCategorise, type PayeeRule } from '../lib/rules'
 import { GRANTABLE, ACCESS_LABEL, accessLevel, accessToMember, describeAccess, normaliseModules, canEditAccess, inviteEmailDraft, mailtoLink, type AccessLevel } from '../lib/access'
 import type { Member, InviteResult } from '../app/data/types'
@@ -118,12 +121,15 @@ function SecurityTab() {
       {enrol && <div><p className="note" style={{ marginTop: 0 }}>Scan this with your authenticator app, then enter the code it shows.</p><img src={enrol.qr} alt="TOTP QR code" style={{ width: 180, height: 180, background: '#fff', borderRadius: 8, padding: 6 }} /><div className="note">Can't scan? Secret: <code style={{ userSelect: 'all' }}>{enrol.secret}</code></div>
         <Field label="6-digit code"><input className="inp" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} style={{ maxWidth: 160 }} /></Field><div className="btnrow"><Btn primary onClick={finishEnrol} disabled={code.replace(/\D/g, '').length < 6}>Verify & turn on</Btn><Btn onClick={cancelEnrol}>Cancel</Btn></div></div>}
     </Card>
-    <Card span={6} title="Sessions & password">
-      <div className="btnrow" style={{ marginBottom: 12 }}><Btn onClick={signOutOthers}>Sign out other devices</Btn><Btn danger onClick={signOutAll}>Sign out everywhere</Btn></div>
-      <Note>Supabase keeps one refresh token per device; "other devices" revokes every session except this one.</Note>
-      <h3 style={{ margin: '12px 0 6px' }}>Change password</h3>
+    <Passkeys />
+    <RecoveryCodes hasTotp={verified.length > 0} />
+    <Devices onSignOutOthers={signOutOthers} onSignOutAll={signOutAll} />
+    <Card span={6} title="Password & idle lock">
+      <h3 style={{ margin: '0 0 6px' }}>Change password</h3>
       <div className="grid2"><Field label="New password" hint="8+ characters"><PasswordInput autoComplete="new-password" value={pw1} onChange={e => setPw1(e.target.value)} /></Field><Field label="Repeat"><PasswordInput autoComplete="new-password" value={pw2} onChange={e => setPw2(e.target.value)} /></Field></div>
       <Btn primary onClick={changePw} disabled={!pw1}>Update password</Btn>
+      <h3 style={{ margin: '16px 0 6px' }}>Lock this device when idle</h3>
+      <IdleChoice />
     </Card>
     <Card span={6} title="What is stored, and where" hint="there is no secret in this app that would need a vault">
       <div className="tblwrap"><table className="tbl"><tbody>{stored.map(([k, v]) => <tr key={k}><td style={{ color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{k}</td><td>{v}</td></tr>)}</tbody></table></div>
@@ -283,4 +289,68 @@ function NotificationsTab() {
       </tbody></table></div>}
     </Card>
   </div>
+}
+
+/** Idle-lock minutes for this device (0.20.0). Stored in this browser only: a shared computer can lock fast while your phone does not. */
+function IdleChoice() {
+  const { mode } = useData(); const [m, setM] = useState(() => idleMinutes(mode))
+  return <><div className="btnrow" style={{ flexWrap: 'wrap', alignItems: 'center' }}><select className="inp" style={{ width: 'auto' }} value={m} onChange={e => { const n = +e.target.value; setM(n); setIdleMinutes(n) }} aria-label="Lock after">{IDLE_CHOICES.map(([v, l]) => <option key={v} value={v}>{v ? `after ${l}` : l}</option>)}</select><Btn onClick={lockNow}>🔒 Lock now</Btn></div>
+    <Note>This device only. Locking hides every figure until you unlock with your password (plus the authenticator code when two-factor is on) or a passkey. The lock survives closing and reopening the tab. Keyboard: <kbd>L</kbd>.</Note></>
+}
+
+/** Passkeys (0.20.0): passwordless sign-in with the phone's or laptop's own lock — Face ID, fingerprint, Windows Hello or a security key. */
+function Passkeys() {
+  const { guarded } = useData(); const confirm = useConfirm()
+  type PK = { id: string; friendly_name?: string; created_at: string; last_used_at?: string }
+  const [list, setList] = useState<PK[] | null>(null); const [on, setOn] = useState<boolean | null>(null); const [err, setErr] = useState('')
+  const supported = typeof window !== 'undefined' && 'PublicKeyCredential' in window
+  const load = async () => { const f = await authFeatures(); setOn(f ? f.passkeys : null); if (f && !f.passkeys) { setList([]); return } const { data, error } = await sb().auth.passkey.list(); if (error) { setErr(authMessage(error)); setList([]) } else { setErr(''); setList((data || []) as PK[]) } }
+  useEffect(() => { load() /* eslint-disable-line */ }, [])
+  const add = () => guarded(async () => { const { error } = await sb().auth.registerPasskey(); if (error) throw new Error(authMessage(error)); await load() }, 'Passkey added — next time choose “Sign in with a passkey”')
+  const rename = (p: PK, name: string) => guarded(async () => { const n = name.trim().slice(0, 120); if (!n || n === p.friendly_name) return; const { error } = await sb().auth.passkey.update({ passkeyId: p.id, friendlyName: n }); if (error) throw new Error(authMessage(error)); await load() })
+  const drop = async (p: PK) => { if (!(await confirm(`Remove the passkey “${p.friendly_name || 'Passkey'}”? That device will need the password again.`, 'Remove'))) return; guarded(async () => { const { error } = await sb().auth.passkey.delete({ passkeyId: p.id }); if (error) throw new Error(authMessage(error)); await load() }, 'Passkey removed') }
+  return <Card span={6} title="Passkeys" hint="sign in with Face ID, a fingerprint, Windows Hello or a security key — no password to type or steal" right={on === false ? <Pill cls="warn">off for this app</Pill> : list && list.length ? <Pill cls="good">{list.length} added</Pill> : <Pill cls="idle">none yet</Pill>}>
+    {!supported && <Note>This browser does not support passkeys.</Note>}
+    {on === false && <div className="banner warn" style={{ marginBottom: 8 }}>Passkeys are switched off for this app. The owner turns them on in Supabase → <b>Authentication → Passkeys</b> (relying party <code>{location.hostname}</code>, origin <code>{location.origin}</code>); then add one here.</div>}
+    {list && list.length > 0 && <div className="tblwrap"><table className="tbl"><caption className="sr-only">Passkeys</caption><thead><tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col" /></tr></thead><tbody>{list.map(p => <tr key={p.id}><td><input className="inp" defaultValue={p.friendly_name || 'Passkey'} aria-label="Passkey name" onBlur={e => rename(p, e.target.value)} style={{ maxWidth: 220 }} /></td><td>{fmtDY(p.created_at.slice(0, 10))}</td><td>{p.last_used_at ? ago(p.last_used_at) : '—'}</td><td><button className="del" onClick={() => drop(p)} aria-label={`Remove passkey ${p.friendly_name || ''}`}>✕</button></td></tr>)}</tbody></table></div>}
+    {err && <div className="msg warn">{err}</div>}
+    <div className="btnrow" style={{ marginTop: 8 }}><Btn primary onClick={add} disabled={!supported || on === false}>+ Add a passkey on this device</Btn></div>
+    <Note>A passkey is already two factors — the device you hold and its fingerprint, face or PIN — so signing in with one skips the authenticator code. Your password and two-factor keep working on every other device.</Note>
+  </Card>
+}
+
+/** Recovery codes (0.20.0): ten single-use codes for when the authenticator phone is lost. Shown once; only a count is kept afterwards. */
+function RecoveryCodes({ hasTotp }: { hasTotp: boolean }) {
+  const { guarded } = useData(); const confirm = useConfirm()
+  const [st, setSt] = useState<{ total: number; remaining: number } | null>(null); const [codes, setCodes] = useState<string[] | null>(null); const [err, setErr] = useState('')
+  const load = async () => { if (!hasTotp) return; try { const { data, error } = await sb().auth.mfa.recoveryCodes.getStatus(); if (error) { if (!/not found|no recovery/i.test(error.message)) setErr(authMessage(error)); setSt(null) } else { setErr(''); setSt(data ? { total: data.total, remaining: data.remaining } : null) } } catch (e) { setErr((e as Error).message) } }
+  useEffect(() => { load() /* eslint-disable-line */ }, [hasTotp])
+  const make = (again: boolean) => guarded(async () => { if (again && !(await confirm('Make a new set? The old codes stop working at once.', 'Make new codes'))) return; const r = again ? await sb().auth.mfa.recoveryCodes.regenerate() : await sb().auth.mfa.recoveryCodes.generate({ friendlyName: 'WealthPilot recovery codes' }); if (r.error) throw new Error(authMessage(r.error)); setCodes(r.data.codes); await load() })
+  const text = codes ? `WealthPilot recovery codes — ${new Date().toLocaleDateString()}\nEach code works once, instead of the authenticator app.\n\n${codes.join('\n')}\n` : ''
+  const download = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = 'wealthpilot-recovery-codes.txt'; a.click() }
+  return <Card span={6} title="Recovery codes" hint="for when the phone with the authenticator app is lost" right={st ? <Pill cls={st.remaining <= 2 ? 'warn' : 'good'}>{st.remaining} of {st.total} left</Pill> : <Pill cls="idle">{hasTotp ? 'not made' : 'needs two-factor'}</Pill>}>
+    {!hasTotp ? <Note>Turn on two-factor authentication first — recovery codes back up the authenticator app and cannot replace it.</Note> : <>
+      {codes ? <><div className="banner good" style={{ marginBottom: 8 }}><b>Save these now — they are shown only once.</b> Each works one time, in place of the 6-digit code.</div>
+        <div className="codes" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 6, fontFamily: 'var(--mono)', fontSize: 14, userSelect: 'all', marginBottom: 8 }}>{codes.map(c => <span key={c} style={{ border: '1px solid var(--line)', borderRadius: 6, padding: '6px 8px' }}>{c}</span>)}</div>
+        <div className="btnrow"><Btn onClick={() => { navigator.clipboard?.writeText(text); useStore.getState().toast('Copied') }}>Copy</Btn><Btn onClick={download}>Download .txt</Btn><Btn primary onClick={() => setCodes(null)}>I saved them</Btn></div></>
+        : <div className="btnrow">{st ? <Btn onClick={() => make(true)}>Make a new set</Btn> : <Btn primary onClick={() => make(false)}>Make 10 recovery codes</Btn>}</div>}
+      {err && <div className="msg warn">{err}</div>}
+      <Note>Keep them somewhere you can reach without your phone — a password manager or a printed copy at home. At sign-in, choose “Lost your phone? Use a recovery code”.</Note></>}
+  </Card>
+}
+
+/** Devices (0.20.0): every place this account is signed in, with last activity; sign any one of them out. */
+function Devices({ onSignOutOthers, onSignOutAll }: { onSignOutOthers: () => void; onSignOutAll: () => void }) {
+  const { guarded } = useData(); const confirm = useConfirm()
+  type S = { id: string; created_at: string; updated_at: string; user_agent: string | null; ip: string | null; is_current: boolean }
+  const [rows, setRows] = useState<S[] | null>(null); const [err, setErr] = useState('')
+  const load = async () => { const { data, error } = await sb().rpc('my_sessions'); if (error) { setErr(/my_sessions|schema cache|does not exist/i.test(error.message) ? 'The device list needs database migration 0013.' : error.message); setRows([]) } else { setErr(''); setRows((data || []) as S[]) } }
+  useEffect(() => { load() /* eslint-disable-line */ }, [])
+  const revoke = async (r: S) => { if (!(await confirm(`Sign out ${describeDevice(r.user_agent).label}? It will need to sign in again.`, 'Sign out'))) return; guarded(async () => { const { error } = await sb().rpc('revoke_session', { p_id: r.id }); if (error) throw error; await load() }, 'Device signed out') }
+  return <Card span={6} title="Devices" hint="everywhere this account is signed in" right={rows ? <Pill cls="info">{rows.length} active</Pill> : undefined}>
+    {rows && rows.length > 0 && <div className="tblwrap"><table className="tbl"><caption className="sr-only">Signed-in devices</caption><thead><tr><th scope="col">Device</th><th scope="col">Last active</th><th scope="col">Signed in</th><th scope="col" /></tr></thead><tbody>{rows.map(r => { const d = describeDevice(r.user_agent); return <tr key={r.id} className={r.is_current ? 'st-good' : ''}><td><span aria-hidden>{d.icon}</span> {d.label}{r.is_current && <> <Pill cls="good">this device</Pill></>}{r.ip && <div className="note" style={{ margin: 0 }}>{r.ip}</div>}</td><td>{ago(r.updated_at)}</td><td>{fmtDY(r.created_at.slice(0, 10))}</td><td>{!r.is_current && <Btn sm onClick={() => revoke(r)}>Sign out</Btn>}</td></tr> })}</tbody></table></div>}
+    {err && <div className="msg warn">{err}</div>}
+    <div className="btnrow" style={{ marginTop: 8 }}><Btn onClick={() => { onSignOutOthers(); setTimeout(load, 800) }}>Sign out all other devices</Btn><Btn danger onClick={onSignOutAll}>Sign out everywhere</Btn></div>
+    <Note>Signing a device out stops it refreshing its session; anything it already has open stops working within the hour.</Note>
+  </Card>
 }

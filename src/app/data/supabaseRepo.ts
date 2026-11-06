@@ -4,7 +4,7 @@ import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 
 const COLLECTIONS = Object.keys(TABLE) as Collection[]
-const IMPORT_ORDER: Collection[] = ['accounts', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
+const IMPORT_ORDER: Collection[] = ['scenarios', 'accounts', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
 const strip = <T extends object>(row: T) => { const r = { ...row } as Record<string, unknown>; for (const k of ['created_at', 'updated_at', 'created_by', 'updated_by', 'value']) delete r[k]; return r }   // 'value' is a generated column on holdings
 
 export class SupabaseRepo implements Repo {
@@ -102,4 +102,4 @@ export class SupabaseRepo implements Repo {
     return () => { sb().removeChannel(ch) }
   }
 }
-const NUMERIC = new Set(['bank_balance', 'last_reconciled_balance', 'opening_balance', 'cleared_deposits', 'cleared_payments', 'book_balance', 'outstanding_checks', 'deposits_in_transit', 'reconciled_balance', 'variance', 'adjustment', 'quantity', 'cost_basis', 'price', 'value', 'expense_ratio', 'yield_pct', 'balance', 'credit_limit', 'apr', 'statement_balance', 'minimum_payment', 'planned_payment', 'default_budget', 'gross_amount', 'net_amount', 'hours_per_period', 'hourly_rate', 'expected_income', 'planned', 'rollover_in', 'amount', 'paid_amount', 'target_amount', 'starting_amount', 'monthly_contribution', 'cash', 'assets', 'liabilities', 'monthly_obligation', 'relief_monthly', 'min_due', 'fee', 'last_paid_amount'])
+const NUMERIC = new Set(['promo_apr', 'bank_balance', 'last_reconciled_balance', 'opening_balance', 'cleared_deposits', 'cleared_payments', 'book_balance', 'outstanding_checks', 'deposits_in_transit', 'reconciled_balance', 'variance', 'adjustment', 'quantity', 'cost_basis', 'price', 'value', 'expense_ratio', 'yield_pct', 'balance', 'credit_limit', 'apr', 'statement_balance', 'minimum_payment', 'planned_payment', 'default_budget', 'gross_amount', 'net_amount', 'hours_per_period', 'hourly_rate', 'expected_income', 'planned', 'rollover_in', 'amount', 'paid_amount', 'target_amount', 'starting_amount', 'monthly_contribution', 'cash', 'assets', 'liabilities', 'monthly_obligation', 'relief_monthly', 'min_due', 'fee', 'last_paid_amount'])

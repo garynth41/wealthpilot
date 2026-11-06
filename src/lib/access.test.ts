@@ -13,7 +13,7 @@ describe('modules', () => {
     expect(canViewPath('/transactions', ['transactions'])).toBe(true); expect(canViewPath('/insights', ['transactions'])).toBe(true)
     expect(canViewPath('/accounts', ['transactions'])).toBe(false); expect(canViewPath('/', ['transactions'])).toBe(true); expect(canViewPath('/settings', [])).toBe(true)
     expect(canViewPath('/not-a-page', [])).toBe(true)   // unknown paths are left to the router
-    expect(allowedPaths(['goals'])).toEqual(['/', '/forecast', '/goals', '/reports', '/trends', '/settings'])
+    expect(allowedPaths(['goals'])).toEqual(['/', '/forecast', '/goals', '/plan', '/reports', '/trends', '/settings'])
     expect(moduleForPath('/debts')).toBe('accounts')
   })
   it('normalises module lists: full set → null, duplicates and always-on dropped, sorted', () => {
@@ -38,7 +38,7 @@ describe('access levels', () => {
   })
   it('describes access in one line', () => {
     expect(describeAccess({ role: 'viewer', read_only: true, modules: null })).toMatch(/^Read-only/)
-    expect(describeAccess({ role: 'editor', read_only: false, modules: ['budget', 'goals'] })).toBe('Limited — Budget, Savings goals (can add and change there)')
+    expect(describeAccess({ role: 'editor', read_only: false, modules: ['budget', 'goals'] })).toBe('Limited — Budget, Savings goals & plan (can add and change there)')
     expect(describeAccess({ role: 'viewer', read_only: true, modules: ['tax'] })).toBe('Limited — Tax planning (read-only)')
   })
 })

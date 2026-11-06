@@ -8,22 +8,24 @@ import { passwordProblems } from '../lib/access'
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'recover' | 'mfa'
 export function AuthPage({ recover }: { recover?: boolean }) {
-  const { signIn, signUp, resetPassword, updatePassword, enterDemo, verifyMfa, mfaPending, signOut } = useStore()
+  const { signIn, signUp, resetPassword, updatePassword, enterDemo, verifyMfa, verifyRecoveryCode, signInWithPasskey, mfaPending, signOut } = useStore(); const [useRecovery, setUseRecovery] = useState(false)
   const [mode, setMode] = useState<Mode>(recover ? 'recover' : 'signin'); const [code, setCode] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [msg, setMsg] = useState<{ cls: string; text: string } | null>(null); const [busy, setBusy] = useState(false)
   const run = async (fn: () => Promise<unknown>, okMsg?: string) => { setBusy(true); setMsg(null); try { const r = await fn(); if (okMsg) setMsg({ cls: 'good', text: okMsg }); if (r === 'confirm') setMsg({ cls: 'info', text: 'Check your email for a confirmation link, then sign in.' }) } catch (e) { setMsg({ cls: 'crit', text: (e as Error).message }) } finally { setBusy(false) } }
   const submit = (e: FormEvent) => { e.preventDefault(); if (mode === 'signin') run(() => signIn(email, pw)); else if (mode === 'signup') run(() => signUp(email, pw)); else if (mode === 'forgot') run(() => resetPassword(email), 'Reset link sent — check your email.'); else if (mode === 'recover') run(() => updatePassword(pw).then(() => setMode('signin')), 'Password updated. Sign in with it.') }
   return <div className="auth"><div className="box">
     <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><Logo /></span><div><b style={{ fontSize: 18 }}>{APP_NAME}</b><small style={{ color: 'var(--ink-3)' }}>Budget · savings · planning</small></div></div>
     <h2>{mfaPending ? 'Two-factor code' : { signin: 'Sign in', signup: 'Create account', forgot: 'Reset password', recover: 'Choose a new password', mfa: 'Two-factor code' }[mode]}</h2>
-    {mfaPending ? <form onSubmit={e => { e.preventDefault(); run(() => verifyMfa(code)) }}>
-      <div className="field"><label htmlFor="code">6-digit code from your authenticator app</label><input id="code" className="inp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" required autoFocus value={code} onChange={e => setCode(e.target.value)} /></div>
+    {mfaPending ? <form onSubmit={e => { e.preventDefault(); run(() => useRecovery ? verifyRecoveryCode(code) : verifyMfa(code)) }}>
+      {useRecovery ? <div className="field"><label htmlFor="code">One of your recovery codes</label><input id="code" key="rc" className="inp" autoComplete="off" autoCapitalize="characters" spellCheck={false} required autoFocus value={code} onChange={e => setCode(e.target.value)} placeholder="xxxx-xxxx" /></div>
+        : <div className="field"><label htmlFor="code">6-digit code from your authenticator app</label><input id="code" key="totp" className="inp" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" required autoFocus value={code} onChange={e => setCode(e.target.value)} /></div>}
       <Btn type="submit" primary block disabled={busy}>Verify</Btn>
       {msg && <div className={`msg ${msg.cls}`}>{msg.text}</div>}
-      <div className="links"><button type="button" onClick={() => signOut()}>← Cancel and sign out</button></div>
+      <div className="links"><button type="button" onClick={() => { setUseRecovery(x => !x); setCode(''); setMsg(null) }}>{useRecovery ? 'Use the authenticator app instead' : 'Lost your phone? Use a recovery code'}</button><button type="button" onClick={() => signOut()}>← Cancel and sign out</button></div>
     </form> : hasSupabase() ? <form onSubmit={submit}>
       {mode !== 'recover' && <div className="field"><label htmlFor="email">Email</label><input id="email" className="inp" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></div>}
       {mode !== 'forgot' && <div className="field"><label htmlFor="pw">{mode === 'recover' ? 'New password' : 'Password'}{mode !== 'signin' && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> (8+ characters)</span>}</label><PasswordInput id="pw" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 8} required value={pw} onChange={e => setPw(e.target.value)} /></div>}
       <Btn type="submit" primary block disabled={busy}>{{ signin: 'Sign in', signup: 'Create account', forgot: 'Send reset link', recover: 'Update password', mfa: 'Verify' }[mode]}</Btn>
+      {mode === 'signin' && typeof window !== 'undefined' && 'PublicKeyCredential' in window && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={() => run(() => signInWithPasskey())}><span aria-hidden>🔑</span> Sign in with a passkey</Btn></div>}
       {msg && <div className={`msg ${msg.cls}`}>{msg.text}</div>}
       <div className="links">{mode === 'signin' ? <><button type="button" onClick={() => setMode('signup')}>Create an account</button><button type="button" onClick={() => setMode('forgot')}>Forgot password?</button></> : <button type="button" onClick={() => setMode('signin')}>← Back to sign in</button>}</div>
     </form> : <div className="msg crit">Supabase is not configured — copy <code>.env.example</code> to <code>.env</code>.</div>}

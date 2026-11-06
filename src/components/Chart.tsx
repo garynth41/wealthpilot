@@ -14,7 +14,11 @@ export const PALETTE = () => { const c = C(); return [cssVar('--ink'), c.good, c
 const isMobile = () => window.matchMedia('(max-width:900px)').matches
 const wrap = (s: string, n: number) => { const words = String(s).split(/\s+/); const lines: string[] = []; let cur = ''; for (const w of words) { if ((cur + ' ' + w).trim().length > n && cur) { lines.push(cur); cur = w } else cur = (cur + ' ' + w).trim() } if (cur) lines.push(cur); return lines.slice(0, 3).join('<br>') }
 export function base(): Layout { const c = C(); return { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: "'IBM Plex Sans', system-ui, sans-serif", size: isMobile() ? 12.5 : 13.5, color: c.ink2 }, margin: { l: 48, r: 18, t: 10, b: 40 }, xaxis: { gridcolor: c.line, zeroline: false, automargin: true, tickfont: { size: isMobile() ? 12 : 13, color: c.ink2 } }, yaxis: { gridcolor: c.line, zeroline: false, automargin: true, tickfont: { size: isMobile() ? 12 : 13, color: c.ink2 } }, hoverlabel: { font: { size: 13.5 } }, legend: { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: isMobile() ? 12 : 13 } } } }
-function readable(el: HTMLElement, data: Data, layout: Layout, big: boolean): { data: Data; layout: Layout } {
+function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean): { data: Data; layout: Layout } {
+  // Plotly writes computed ranges back into the layout it is given, so every draw gets its own copy. And because a redraw (resize, theme)
+  // passes the same x/y arrays, Plotly.react would skip recalculating and fall back to default ranges (x −1…6) — draw() bumps
+  // layout.datarevision each time to force the recalculation (0.20.0).
+  const layout = JSON.parse(JSON.stringify(layout0)) as Layout
   const W = Math.max(260, el.clientWidth || 600); const L: Layout = { ...base(), ...layout, xaxis: { ...base().xaxis, ...(layout.xaxis || {}) }, yaxis: { ...base().yaxis, ...(layout.yaxis || {}) } }
   if (big) { L.font = { ...L.font, size: 15 }; (L.xaxis as Record<string, unknown>).tickfont = { size: 14.5 }; (L.yaxis as Record<string, unknown>).tickfont = { size: 14.5 }; L.legend = { ...L.legend, font: { size: 14.5 } } }
   let d = data.map(t => ({ ...t }))
@@ -35,8 +39,8 @@ export function Chart({ data, layout = {}, height = 260, title, expand = true, c
   // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
   // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)
   const latest = useRef({ data, layout, height }); latest.current = { data, layout, height }
-  const P = useRef<typeof Plotly | null>(null); const alive = useRef(true)
-  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current; const h = fill ? Math.max(height, Math.floor(el.parentElement?.clientHeight || 0)) : height; const r = readable(el, data, { height: h, ...layout }, false); if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
+  const P = useRef<typeof Plotly | null>(null); const alive = useRef(true); const rev = useRef(0)
+  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current; const h = fill ? Math.max(height, Math.floor(el.parentElement?.clientHeight || 0)) : height; const r = readable(el, data, { height: h, ...layout }, false); (r.layout as Record<string, unknown>).datarevision = ++rev.current; if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
   useEffect(() => { const el = ref.current; if (!el) return; alive.current = true; loadPlotly().then(p => { P.current = p; draw() })
     const ro = new ResizeObserver(() => draw()); ro.observe(fill && el.parentElement ? el.parentElement : el); return () => { alive.current = false; ro.disconnect(); try { P.current?.purge(el) } catch { /* */ } } }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { draw() }, [data, layout, height])   // eslint-disable-line react-hooks/exhaustive-deps
