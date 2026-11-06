@@ -6,6 +6,7 @@ import { Card, KPI, Note, Btn, Field, Pill, Empty, Banner } from '../components/
 import { parseCsv, detectMapping, mapRows, parseOfx, sniffFormat, dedupe, DUP_LABEL, trimPreamble, parseExcel, isExcelName, type Mapping, type Proposed, type ImportRow, type SheetRows } from '../lib/import'
 import { post } from '../lib/ledger'
 import { suggest, applySuggestion } from '../lib/rules'
+import { logGoalLinks } from '../app/goalLinks'
 import { fm2, fmtMoney, round2 } from '../lib/money'
 import { fmtD, today, ago } from '../lib/dates'
 import { isLiability, acctLabel } from '../lib/accounts'
@@ -42,6 +43,7 @@ export function ConnectionsPage() {
   const apply = () => guarded(async () => {
     if (!account || !file) return
     const made = await insertMany('transactions', toAdd.map(p => p.txn))
+    await logGoalLinks(made)
     let d = data; for (const t of made) { await post(d, async (id, patch) => { await update('accounts', id, patch); d = { ...d, accounts: d.accounts.map(a => a.id === id ? { ...a, ...patch } : a) } }, t, 1, t.date) }
     // a statement's ledger balance is a bank-verified figure: it becomes the bank balance, and the book follows (bank + outstanding)
     if (setBalance && ofx?.balance != null) { const bb = isLiability(account) ? Math.abs(ofx.balance) : ofx.balance; await update('accounts', account.id, { bank_balance: bb, bank_balance_as_of: ofx.balanceAsOf || today(), balance: bb, balance_as_of: ofx.balanceAsOf || today() }) }

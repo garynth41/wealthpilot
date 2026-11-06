@@ -4,7 +4,7 @@ import { addDays, today } from '../dates'
 import { debtDueState } from '../accounts'
 import { post } from '../ledger'
 import { maskDigits, when, type Fact } from './extract'
-import { key, NEW_CAT, sortForApply, type FactG, type Proposal, type Target } from './propose'
+import { key, NEW_CAT, sortForApply, type Evidence, type FactG, type Proposal, type Target } from './propose'
 
 export interface Ctx {
   data: () => Data; settings: () => Settings
@@ -12,7 +12,11 @@ export interface Ctx {
   update: <C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) => Promise<RowOf<C>>
   saveSettings: (patch: Partial<Settings>) => Promise<void>
   ledger: (rows: Array<{ message_id: string; src: string; decision: 'applied' | 'ignored'; subject?: string; message_at?: string | null }>) => Promise<void>
+  /** 0.21.0: file the message's PDF (statement or receipt) on the row just written; absent when the household has it off */
+  attachPdf?: (ev: Evidence, target: { statement_id?: string; transaction_id?: string }) => Promise<number>
 }
+/** Attach the first PDF any of the item's messages carries. Never fails the apply: a missing file is not worth losing the item. */
+const filePdf = async (ctx: Ctx, f: FactG, target: { statement_id?: string; transaction_id?: string }) => { const e = ctx.attachPdf && f.ev.find(x => x.pdf); if (!e) return; try { await ctx.attachPdf!(e, target) } catch (err) { console.warn('pdf', err) } }
 export interface ApplyInput { amount?: number | null; date?: string | null; target?: Target; name?: string; accountId?: string | null }
 const ACCT_KIND: Record<string, Account['kind']> = { bnpl: 'bnpl', loc: 'line_of_credit', auto: 'auto_loan', student: 'student_loan', collection: 'collection', loan: 'loan', card: 'credit_card' }
 
@@ -51,12 +55,13 @@ export async function applyOne(ctx: Ctx, p: Proposal, inp: ApplyInput = {}): Pro
     } else {
       const tx = await ctx.insert('transactions', { date, kind: f.kind === 'income' ? 'income' : 'expense', amount: +f.amount! || 0, account_id: payFrom, category_id: category?.id || null, payee: f.payee + (f.merchant && f.merchant !== f.payee ? ' · ' + f.merchant : ''), memo: f.kind === 'income' && f.bank ? 'Deposit via ' + f.bank : 'From email', tags: [], status: 'cleared', source: 'email', recurring_id: recurring?.id || null, exclude_from_budget: false })
       rec.transaction_id = tx.id; await post(ctx.data(), (id, patch) => ctx.update('accounts', id, patch), tx, 1, date)
+      await filePdf(ctx, f, { transaction_id: tx.id })
     }
     if (recurring) { await ctx.update('recurring', recurring.id, { last_paid_on: date, last_paid_amount: +f.amount! || 0 }); const occ = d.occurrences.find(o => o.recurring_id === recurring!.id && !['paid', 'skipped'].includes(o.status) && Math.abs(new Date(o.due_date).getTime() - new Date(date).getTime()) < 15 * 86400000); if (occ) await ctx.update('occurrences', occ.id, { status: 'paid', paid_on: date, transaction_id: rec.transaction_id }) }
     rec.status = f.kind === 'income' ? 'Received' : 'Paid'
   } else if ((f.kind === 'bill' || f.kind === 'balance') && account && tgt !== 'new-account') {
     const sd = f.stmtDate || (f.stmtBal != null || f.minDue != null ? f.date : null); const patch: Partial<Account> = {}
-    if (f.stmtBal != null && sd && sd !== (account.statement_date || '').slice(0, 10)) { const st = await ctx.insert('statements', { account_id: account.id, statement_date: sd, statement_balance: f.stmtBal, minimum_payment: f.minDue ?? (+account.minimum_payment || 0), due_date: f.dueDate || null, source: 'email' }); rec.statement_id = st.id; patch.statement_date = sd; patch.statement_balance = f.stmtBal; patch.balance = f.balance ?? f.stmtBal; patch.balance_as_of = sd; patch.last_paid_due = null }
+    if (f.stmtBal != null && sd && sd !== (account.statement_date || '').slice(0, 10)) { const st = await ctx.insert('statements', { account_id: account.id, statement_date: sd, statement_balance: f.stmtBal, minimum_payment: f.minDue ?? (+account.minimum_payment || 0), due_date: f.dueDate || null, source: 'email' }); rec.statement_id = st.id; await filePdf(ctx, f, { statement_id: st.id }); patch.statement_date = sd; patch.statement_balance = f.stmtBal; patch.balance = f.balance ?? f.stmtBal; patch.balance_as_of = sd; patch.last_paid_due = null }
     if (f.minDue != null) patch.minimum_payment = f.minDue; if (f.dueDate && f.dueDate !== (account.due_date || '').slice(0, 10)) { patch.due_date = f.dueDate; if (!patch.statement_date && f.dueDate > (account.due_date || '').slice(0, 10)) patch.last_paid_due = null }
     if (f.balance != null && f.kind === 'balance') { patch.balance = f.balance; patch.balance_as_of = f.date } if (f.autopay && !account.autopay && f.kind === 'bill') patch.autopay = true
     if (Object.keys(patch).length) await ctx.update('accounts', account.id, patch); rec.status = f.kind === 'balance' ? 'Updated' : f.paidBy ? 'Paid' : 'Due'

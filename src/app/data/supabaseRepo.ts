@@ -4,7 +4,7 @@ import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 
 const COLLECTIONS = Object.keys(TABLE) as Collection[]
-const IMPORT_ORDER: Collection[] = ['scenarios', 'accounts', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
+const IMPORT_ORDER: Collection[] = ['scenarios', 'accounts', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'comments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
 const strip = <T extends object>(row: T) => { const r = { ...row } as Record<string, unknown>; for (const k of ['created_at', 'updated_at', 'created_by', 'updated_by', 'value']) delete r[k]; return r }   // 'value' is a generated column on holdings
 
 export class SupabaseRepo implements Repo {

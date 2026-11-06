@@ -242,3 +242,18 @@ tr.focus-hit > td{background:var(--accent-soft)!important}
 /* pensions editor */
 .pens{display:grid;grid-template-columns:1.4fr .9fr .7fr auto auto;gap:6px;align-items:center;margin:4px 0} .pens .inp{padding:5px 8px}
 @media (max-width: 700px){ .pens{grid-template-columns:1fr 1fr} .schip.naming .inp{width:150px} }
+
+/* comment threads (0.21.0) */
+.thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.thread li { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface); max-width: 92%; }
+.thread li.mine { margin-left: auto; background: var(--info-soft); border-color: var(--line-strong); }
+.thread .who { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; font-size: 13px; }
+.thread .body { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* paycheck allocation (0.21.0) */
+.alloc { display: grid; gap: 6px; }
+.alloc .grp { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; padding-top: 6px; border-top: 1px solid var(--line); }
+.alloc .grp:first-child { border-top: 0; padding-top: 0; }
+.alloc .ln { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--ink-2); padding-left: 12px; }
+.alloc .ln span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.allocbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--line); margin: 8px 0 4px; }
+.allocbar > i { display: block; height: 100%; }

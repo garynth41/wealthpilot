@@ -11,6 +11,7 @@ import { spanFor } from '../lib/periods'
 import { rangeStat } from '../lib/budget'
 import { Chart, C } from '../components/Chart'
 import { AddTxn } from './Transactions'
+import { RecentPaychecks } from './Allocate'
 
 const KIND_LABEL: Record<PaySchedule['kind'], string> = { salary: 'Salary', hourly: 'Hourly', benefit: 'Benefit', severance: 'Severance', side: 'Side income', rental: 'Rental', investment: 'Investment', support: 'Support', other: 'Other' }
 export function IncomePage() {
@@ -44,6 +45,7 @@ export function IncomePage() {
         <Note>Total in the next 90 days: <b>{fmtMoney(sum(next90.map(x => +x.p.net_amount || 0)))}</b>. <b>Received</b> logs the deposit when it lands (email capture can do this automatically).</Note></Card>
       <Card span={6} title="Income received by month" hint="all income transactions · last 6 months"><Chart title="Income received by month" data={[{ type: 'bar', x: months.map(mShort), y: hist, marker: { color: c.good }, hovertemplate: '%{x}: $%{y:,.0f}<extra></extra>' }, { type: 'scatter', mode: 'lines', name: 'Expected / month', x: months.map(mShort), y: months.map(() => monthly), line: { color: c.blue, dash: 'dot', width: 2 }, hovertemplate: 'expected $%{y:,.0f}<extra></extra>' }]} layout={{ showlegend: true, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={260} />
         <Note>Months with three paychecks (every-2-weeks pay) show above the line — a good month to fund a goal or pay extra on debt.</Note></Card>
+      <RecentPaychecks />
       <Card span={12} title="Status"><div className="btnrow">{data.paySchedules.map(p => <Pill key={p.id} cls={p.status === 'Active' ? 'good' : 'idle'}>{p.name} · {p.status}</Pill>)}</div></Card>
     </div>
   </>

@@ -9,13 +9,14 @@ import { Table, type Col } from '../components/Table'
 import { MailSetup } from './Email'
 import { fmtMoney, parseNum } from '../lib/money'
 import { NOTIFY_DEFAULTS, computeAlerts, type Alert } from '../lib/notify'
-import type { NotifyPrefs } from '../app/data/types'
+import type { NotifyPrefs, MemberNotify } from '../app/data/types'
 import { fmtDY, today, ago } from '../lib/dates'
 import { hasSupabase, sb, authFeatures } from '../app/supabase'
 import { authMessage } from '../app/store'
 import { IDLE_CHOICES, idleMinutes, setIdleMinutes, lockNow } from '../components/IdleLock'
 import { describeDevice } from '../lib/devices'
 import { ruleHits, planAutoCategorise, type PayeeRule } from '../lib/rules'
+import { logGoalLinks } from '../app/goalLinks'
 import { GRANTABLE, ACCESS_LABEL, accessLevel, accessToMember, describeAccess, normaliseModules, canEditAccess, inviteEmailDraft, mailtoLink, type AccessLevel } from '../lib/access'
 import type { Member, InviteResult } from '../app/data/types'
 
@@ -66,6 +67,7 @@ function RulesTab() {
   const rules = settings.rules || []; type Row = PayeeRule & { hitsNow: number }
   const rows: Row[] = rules.map(r => ({ ...r, hitsNow: ruleHits(data, r) }))
   const save = (next: PayeeRule[]) => guarded(() => saveSettings({ rules: next }))
+  const goalOpts = data.goals.filter(g => g.status === 'Active' && g.kind !== 'debt_payoff')
   const cols: Col<Row>[] = [
     { k: 'enabled', label: 'On', type: 'bool', w: 40 },
     { k: 'pattern', label: 'Payee pattern', type: 'text', w: 180, placeholder: 'kroger' },
@@ -75,21 +77,30 @@ function RulesTab() {
     { k: 'account_id', label: 'Set account', type: 'select', opts: ['', ...accts.map(a => a.id)], labels: { '': '—', ...acctLabels }, w: 160 },
     { k: 'rename', label: 'Rename payee to', type: 'text', w: 140, placeholder: 'Kroger' },
     { k: 'exclude_from_budget', label: 'Not in budget', type: 'bool', w: 70 },
+    { k: 'tags', label: 'Add tags', type: 'text', w: 130, placeholder: 'tag, tag', sortVal: r => (r.tags || []).join(',') || null },
+    { k: 'review', label: 'Flag for review', type: 'bool', w: 70 },
+    { k: 'goal_id', label: 'Count toward goal', type: 'select', opts: ['', ...goalOpts.map(g => g.id)], labels: { '': '—', ...Object.fromEntries(goalOpts.map(g => [g.id, g.name])) }, w: 160 },
     { k: 'hitsNow', label: 'Matches', type: 'ro', cls: 'num', fmt: r => String(r.hitsNow) },
     { k: 'source', label: 'From', type: 'ro', fmt: r => <Pill cls={r.source === 'learned' ? 'info' : 'idle'}>{r.source === 'learned' ? 'learned' : 'manual'}</Pill> },
   ]
   const plan = planAutoCategorise(data, settings)
-  const runAll = () => { if (!plan.length) return; guarded(async () => { for (const p of plan) await update('transactions', p.t.id, p.patch) }, `${plan.length} transaction${plan.length === 1 ? '' : 's'} categorized`) }
+  const runAll = () => { if (!plan.length) return; guarded(async () => { for (const p of plan) await update('transactions', p.t.id, p.patch); await logGoalLinks(plan.map(p => p.t.id)) }, `Rules applied to ${plan.length} transaction${plan.length === 1 ? '' : 's'}`) }
+  // re-run (0.21.0): every rule over every matching transaction, already-categorized ones included — after editing a rule
+  const rerun = async () => { const all = planAutoCategorise(data, settings, { onlyUncategorised: false }).filter(p => p.how === 'rule'); if (!all.length) return useStore.getState().toast('Every matching transaction already follows your rules')
+    if (!(await confirm(`Re-apply your rules to ${all.length} matching transaction${all.length === 1 ? '' : 's'}? Categories, renames, tags and goals set by a rule replace what is there now. One undo puts them back.`, 'Re-run rules'))) return
+    guarded(async () => { const before = all.map(p => { const inv: Record<string, unknown> = {}; for (const k of Object.keys(p.patch)) inv[k] = (p.t as unknown as Record<string, unknown>)[k] ?? null; return { id: p.t.id, inv } })
+      for (const p of all) await update('transactions', p.t.id, p.patch); await logGoalLinks(all.map(p => p.t.id))
+      useStore.getState().pushUndo({ label: 're-run rules', run: async () => { for (const b of before) await update('transactions', b.id, b.inv) } }) }, `Rules re-applied to ${all.length}`) }
   return <div className="grid g12">
-    <Card span={12} title="Payee rules" hint="first matching rule wins (longest pattern first) · applied to manual entries, statement imports and email capture" right={canEdit ? <span className="btnrow"><Btn sm onClick={runAll} disabled={!plan.length}>Categorize {plan.length} uncategorized</Btn><Btn primary sm onClick={() => save([...rules, { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: '', match: 'contains', enabled: true, created_at: new Date().toISOString(), source: 'manual' }])}>+ Add rule</Btn></span> : undefined}>
+    <Card span={12} title="Payee rules" hint="first matching rule wins (longest pattern first) · applied to manual entries, statement imports and email capture" right={canEdit ? <span className="btnrow"><Btn sm onClick={runAll} disabled={!plan.length} title="Fill in what is missing: uncategorized rows, and tags or goals a rule adds">Apply to {plan.length} transaction{plan.length === 1 ? '' : 's'}</Btn><Btn sm onClick={rerun} title="Re-apply every rule to every match, replacing what is there">Re-run on all matches</Btn><Btn primary sm onClick={() => save([...rules, { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: '', match: 'contains', enabled: true, created_at: new Date().toISOString(), source: 'manual' }])}>+ Add rule</Btn></span> : undefined}>
       <Table rows={rows} cols={cols} editable={canEdit} defaultSort={{ k: 'pattern', dir: 1 }} empty="No rules yet. Rules are learned when you set a category on a transaction, or add one here."
-        onChange={(r, k, v) => save(rules.map(x => x.id === r.id ? { ...x, [k]: v === '' ? null : v } : x))}
+        onChange={(r, k, v) => save(rules.map(x => x.id === r.id ? { ...x, [k]: k === 'tags' ? String(v ?? '').split(',').map(t => t.trim().toLowerCase()).filter(Boolean) : v === '' ? null : v } : x))}
         onDelete={async r => { if (await confirm(`Delete the rule "${r.pattern}"?`)) save(rules.filter(x => x.id !== r.id)) }} />
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
         <label><input type="checkbox" checked={settings.learnRules !== false} onChange={e => guarded(() => saveSettings({ learnRules: e.target.checked }))} disabled={!canEdit} /> Learn a rule whenever I set a category by hand</label>
         <span className="note" style={{ margin: 0 }}>{Object.keys(settings.finmail?.rules || {}).length} remembered email payees are also used (Email → review).</span>
       </div>
-      <Note>Order of precedence when a transaction has no category: your rules → payees remembered from email review → the category you used most for that merchant before (2+ times). Nothing already categorised is changed unless a rule is applied from this page.</Note>
+      <Note>Order of precedence when a transaction has no category: your rules → payees remembered from email review → the category you used most for that merchant before (2+ times). Nothing already categorized is changed unless you re-run the rules from this page. A rule can also add tags, flag matches for review (they show on the Dashboard and under #review in the ledger) and count matches toward a goal (a contribution is logged for each).</Note>
     </Card>
   </div>
 }
@@ -279,6 +290,9 @@ function NotificationsTab() {
       <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0' }}><input type="checkbox" checked={!!prefs.large} onChange={e => set({ large: e.target.checked ? NOTIFY_DEFAULTS.large : 0 })} disabled={!canEdit} /><span><b style={{ fontWeight: 500 }}>Large charges at or above</b></span><input className="inp" inputMode="decimal" style={{ width: 110 }} defaultValue={prefs.large || ''} onBlur={e => { const v = parseNum(e.target.value) || 0; if (v !== (prefs.large || 0)) set({ large: v }) }} disabled={!canEdit || !prefs.large} aria-label="Large charge threshold" /></label>
       <Toggle k="paycheck" label="A paycheck that did not arrive on its pay date" />
       <Toggle k="sync" label="Bank sync failed, or no sync for 3 days" />
+      <Toggle k="price_rise" label="A bill or subscription charged more than usual" hint="more than $1 and 5% over the amount on the Bills page" />
+      <Toggle k="new_recurring" label="A new repeating charge" hint="the same merchant three months running at a similar amount, not yet on the Bills page" />
+      <Toggle k="reconcile" label="An account is due for reconciling" hint="5 weeks since the last reconciliation, repeated weekly" />
       <Toggle k="digest" label="Monday digest: the week ahead, last week's spending, what is overdue" hint="email, plus a short push" />
       <div className="btnrow" style={{ marginTop: 8 }}><Btn sm onClick={runPreview}>Preview today's alerts</Btn></div>
       {preview && (preview.length === 0 ? <div className="msg good" style={{ marginTop: 8 }}>Nothing would be sent right now.</div> : <ul className="alist" style={{ marginTop: 8 }}>{preview.map(a => <li key={a.key}><span className={`dot ${a.severity}`} /><span><span className="t">{a.title}</span><div className="m">{a.body}</div></span></li>)}</ul>)}
@@ -288,7 +302,31 @@ function NotificationsTab() {
         {recent.map(r => <tr key={r.id}><td style={{ whiteSpace: 'nowrap' }}>{new Date(r.at).toLocaleString()}</td><td>{r.channel}</td><td><Pill cls={r.status === 'sent' ? 'good' : r.status === 'failed' ? 'crit' : 'idle'}>{r.status}</Pill></td><td>{r.title}{r.status !== 'sent' && r.detail ? <div className="note" style={{ margin: 0 }}>{r.detail}</div> : null}</td></tr>)}
       </tbody></table></div>}
     </Card>
+    <MemberRouting prefs={prefs} />
   </div>
+}
+
+const ALERT_KINDS: Array<[string, string]> = [['bill_due', 'Bills due'], ['bill_overdue', 'Overdue bills'], ['low_cash', 'Low cash'], ['large_charge', 'Large charges'], ['paycheck', 'Missed paychecks'], ['sync', 'Bank sync'], ['price_rise', 'Price rises'], ['new_recurring', 'New repeating charges'], ['reconcile', 'Reconcile reminders']]
+/** Who gets what (0.21.0): per member, push to their devices, email to their own address, the Monday digest, and which alerts.
+ *  Unset rows follow the household switches above; when nobody picks email for themselves, the household address gets it. */
+function MemberRouting({ prefs }: { prefs: NotifyPrefs }) {
+  const { data, guarded, saveSettings, canEdit, user } = useData(); const members = data.members
+  const mm = prefs.members || {}
+  const setM = (uid: string, patch: Partial<MemberNotify>) => guarded(() => saveSettings({ notify: { ...prefs, members: { ...mm, [uid]: { ...(mm[uid] || {}), ...patch } } } }), 'Saved')
+  const reset = (uid: string) => { const next = { ...mm }; delete next[uid]; guarded(() => saveSettings({ notify: { ...prefs, members: next } }), 'Back to the household default') }
+  return <Card span={12} title="Who gets what" hint="each member's own channels · unset rows follow the household switches">
+    {!members.length ? <div className="empty">Members appear here once the household has them (Settings → Members).</div> : <div className="tblwrap"><table className="tbl"><caption className="sr-only">Notification routing by member</caption><thead><tr><th scope="col">Member</th><th scope="col">Push</th><th scope="col">Email</th><th scope="col">Email to</th><th scope="col">Monday digest</th><th scope="col">Alerts</th><th scope="col" /></tr></thead><tbody>
+      {members.map(m => { const p = mm[m.user_id] || {}; const custom = !!mm[m.user_id]; const kinds = p.kinds || null; const who = m.display_name || m.email
+        return <tr key={m.user_id}><td>{who}{m.user_id === user?.id ? <span className="note" style={{ margin: 0 }}> (you)</span> : null}<div className="note" style={{ margin: 0 }}>{m.role}{custom ? '' : ' · household default'}</div></td>
+          <td><input type="checkbox" checked={p.push ?? (prefs.push !== false)} onChange={e => setM(m.user_id, { push: e.target.checked })} disabled={!canEdit} aria-label={`Push for ${who}`} /></td>
+          <td><input type="checkbox" checked={p.email === true} onChange={e => setM(m.user_id, { email: e.target.checked })} disabled={!canEdit} aria-label={`Email for ${who}`} /></td>
+          <td><input className="inp" type="email" defaultValue={p.email_to || ''} placeholder={m.email} style={{ minWidth: 180 }} onBlur={e => { const v = e.target.value.trim() || null; if (v !== (p.email_to || null)) setM(m.user_id, { email_to: v }) }} disabled={!canEdit || p.email !== true} aria-label={`Email address for ${who}`} /></td>
+          <td><input type="checkbox" checked={p.digest !== false} onChange={e => setM(m.user_id, { digest: e.target.checked })} disabled={!canEdit} aria-label={`Monday digest for ${who}`} /></td>
+          <td><details><summary style={{ cursor: 'pointer' }}>{kinds ? `${kinds.length} of ${ALERT_KINDS.length}` : 'All'}</summary><div style={{ display: 'grid', gap: 2, padding: '6px 0' }}>{ALERT_KINDS.map(([k, l]) => <label key={k} style={{ fontSize: 13 }}><input type="checkbox" checked={!kinds || kinds.includes(k)} disabled={!canEdit} onChange={e => { const cur = kinds || ALERT_KINDS.map(x => x[0]); const next = e.target.checked ? [...new Set([...cur, k])] : cur.filter(x => x !== k); setM(m.user_id, { kinds: next.length === ALERT_KINDS.length ? null : next }) }} /> {l}</label>)}</div></details></td>
+          <td>{custom && canEdit && <Btn sm onClick={() => reset(m.user_id)}>Reset</Btn>}</td></tr> })}
+    </tbody></table></div>}
+    <Note>Push goes to every device the member turned on (each device opts in from the Push card). Email to a member goes to their own address; the household "Email me" address above is used only when no member has email on. The household switches under "What to alert on" still decide which alerts exist at all.</Note>
+  </Card>
 }
 
 /** Idle-lock minutes for this device (0.20.0). Stored in this browser only: a shared computer can lock fast while your phone does not. */

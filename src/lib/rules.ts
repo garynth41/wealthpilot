@@ -24,11 +24,13 @@ export function findRule(rules: PayeeRule[], payee?: string | null, kind?: strin
   const sorted = rules.filter(r => r.enabled).slice().sort((a, b) => (b.pattern.length - a.pattern.length) || (a.created_at || '').localeCompare(b.created_at || ''))
   return sorted.find(r => ruleMatches(r, payee, kind)) || null
 }
-export interface Suggestion { category_id?: string | null; account_id?: string | null; payee?: string | null; exclude_from_budget?: boolean; rule?: PayeeRule; how: 'rule' | 'remembered' | 'history' | null }
+export interface Suggestion { category_id?: string | null; account_id?: string | null; payee?: string | null; exclude_from_budget?: boolean; tags?: string[]; goal_id?: string | null; rule?: PayeeRule; how: 'rule' | 'remembered' | 'history' | null }
+/** The tag a rule adds when it flags a transaction for review (0.21.0); the ledger's tag filter and the Dashboard show it. */
+export const REVIEW_TAG = 'review'
 /** What should this transaction get? Rules first, then the email engine's remembered payee, then the most common category used for this merchant before. */
 export function suggest(d: Data, s: Settings, t: Pick<Transaction, 'payee' | 'kind'>): Suggestion {
   const r = findRule(s.rules || [], t.payee, t.kind)
-  if (r) return { category_id: r.category_id ?? undefined, account_id: r.account_id ?? undefined, payee: r.rename || undefined, exclude_from_budget: r.exclude_from_budget, rule: r, how: 'rule' }
+  if (r) { const tags = [...new Set([...(r.tags || []).map(x => x.trim().toLowerCase()).filter(Boolean), ...(r.review ? [REVIEW_TAG] : [])])]; return { category_id: r.category_id ?? undefined, account_id: r.account_id ?? undefined, payee: r.rename || undefined, exclude_from_budget: r.exclude_from_budget, tags: tags.length ? tags : undefined, goal_id: r.goal_id || undefined, rule: r, how: 'rule' } }
   const fm = s.finmail?.rules?.[emailKey(t.payee)]
   if (fm?.category) return { category_id: fm.category, account_id: fm.account || undefined, how: 'remembered' }
   const k = merchantKey(t.payee); if (k !== 'unknown') {
@@ -46,15 +48,19 @@ export function applySuggestion(t: Partial<Transaction>, sg: Suggestion, force =
   if (sg.account_id && (force || !t.account_id)) patch.account_id = sg.account_id
   if (sg.payee && sg.payee !== t.payee) patch.payee = sg.payee
   if (sg.exclude_from_budget != null && sg.exclude_from_budget !== !!t.exclude_from_budget) patch.exclude_from_budget = sg.exclude_from_budget
+  if (sg.tags?.length) { const have = t.tags || []; const next = [...new Set([...have, ...sg.tags])]; if (next.length !== have.length) patch.tags = next }
+  if (sg.goal_id && (force || !t.goal_id)) patch.goal_id = sg.goal_id
   return Object.keys(patch).length ? patch : null
 }
 /** Plan a bulk run over the ledger: which transactions would change and how. Pages show this before writing. */
 export function planAutoCategorise(d: Data, s: Settings, opts: { onlyUncategorised?: boolean } = { onlyUncategorised: true }) {
   const out: Array<{ t: Transaction; patch: Partial<Transaction>; how: NonNullable<Suggestion['how']> }> = []
   for (const t of d.transactions) {
-    if (t.status === 'void' || t.kind === 'transfer') continue
-    if (opts.onlyUncategorised && t.category_id) continue
+    if (t.status === 'void') continue
     const sg = suggest(d, s, t); if (!sg.how) continue
+    // transfers (savings moves, card payments) only take a rule's tags and goal, never a guessed category
+    if (t.kind === 'transfer') { if (sg.how !== 'rule' || !(sg.tags?.length || sg.goal_id)) continue; const patch = applySuggestion(t, { tags: sg.tags, goal_id: sg.goal_id, rule: sg.rule, how: 'rule' }); if (patch) out.push({ t, patch, how: 'rule' }); continue }
+    if (opts.onlyUncategorised && t.category_id && !(sg.how === 'rule' && (sg.tags?.length || sg.goal_id))) continue
     const patch = applySuggestion(t, sg, !opts.onlyUncategorised && sg.how === 'rule'); if (patch) out.push({ t, patch, how: sg.how })
   }
   return out
@@ -72,3 +78,20 @@ export function upsertRule(rules: PayeeRule[], r: PayeeRule): PayeeRule[] {
 }
 /** Which existing transactions does this rule hit? (for the rules table's "matches" column) */
 export function ruleHits(d: Data, r: PayeeRule) { return d.transactions.filter(t => t.status !== 'void' && t.kind !== 'transfer' && ruleMatches(r, t.payee, t.kind)).length }
+
+/** Goal contributions to record for transactions a rule marked as goal transfers (0.21.0): one per transaction, never twice. */
+export function goalLinks(d: Data, txns: Array<Pick<Transaction, 'id' | 'goal_id' | 'date' | 'amount' | 'status'>>) {
+  const have = new Set(d.contributions.map(c => c.transaction_id).filter(Boolean))
+  return txns.filter(t => t.goal_id && t.status !== 'void' && !have.has(t.id) && d.goals.some(g => g.id === t.goal_id)).map(t => ({ goal_id: t.goal_id!, date: t.date, amount: +t.amount || 0, transaction_id: t.id, notes: 'marked by a payee rule' }))
+}
+
+/** "Apply this to earlier ones too" (0.21.0): after a category or payee change on one row, the other rows from the same merchant that
+ *  do not have it yet — newest first, within `months`. Payee renames match the old name exactly; categories match the merchant. */
+export function similarEarlier(d: Data, row: Transaction, field: 'category_id' | 'payee', oldPayee: string | null | undefined, value: unknown, months = 12): Transaction[] {
+  if (!row.payee && !oldPayee) return []
+  const since = (() => { const x = new Date(row.date + 'T12:00:00'); x.setMonth(x.getMonth() - months); return x.toISOString().slice(0, 10) })()
+  const live = d.transactions.filter(t => t.id !== row.id && t.status !== 'void' && !t.duplicate_of && t.date >= since && t.kind === row.kind)
+  if (field === 'payee') { const from = norm(oldPayee); if (!from || norm(String(value)) === from) return []; return live.filter(t => norm(t.payee) === from).sort((a, b) => b.date.localeCompare(a.date)) }
+  const k = merchantKey(row.payee); if (k === 'unknown' || !value) return []
+  return live.filter(t => merchantKey(t.payee) === k && t.category_id !== value).sort((a, b) => b.date.localeCompare(a.date))
+}

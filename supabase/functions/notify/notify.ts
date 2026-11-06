@@ -7,19 +7,25 @@
 //   large_charge  an expense at or above the household's threshold that arrived in the last day
 //   paycheck      a pay schedule had a pay date yesterday or today and no income was recorded for it
 //   sync          the bank feed reported an error, or has not synced for 3 days
+//   price_rise    (0.21.0) a fixed-price bill or subscription charged more than its listed amount in the last 35 days
+//   new_recurring (0.21.0) the same merchant charged a similar amount in each of the last three months and is not in Bills
+//   reconcile     (0.21.0) an account last reconciled 35+ days ago (weekly reminder), or a bank-fed account never reconciled (once)
+// Who receives what: recipientsFor() — per-member channels with the household switches as the fallback.
 // Quiet hours are a delivery concern (the function sends at 07:30 local), not a rule.
 
-export interface NAccount { id: string; name: string; kind: string; status: string; balance: number; bank_balance?: number | null; include_in_cash: boolean; balance_as_of?: string | null }
+export interface NAccount { id: string; name: string; kind: string; status: string; balance: number; bank_balance?: number | null; include_in_cash: boolean; balance_as_of?: string | null; last_reconciled_on?: string | null; created_at?: string | null }
 export interface NRecurring { id: string; name: string; payee?: string | null; kind: string; amount: number; amount_varies?: boolean; frequency: string; day_of_month?: number | null; next_due?: string | null; starts_on?: string | null; ends_on?: string | null; status: string; autopay: boolean }
 export interface NOccurrence { recurring_id: string; due_date: string; status: string }
 export interface NTxn { id: string; date: string; kind: string; amount: number; payee?: string | null; recurring_id?: string | null; pay_schedule_id?: string | null; created_at?: string | null; status?: string | null; duplicate_of?: string | null }
 export interface NPay { id: string; name: string; frequency: string; anchor_date: string; semimonthly_days?: number[] | null; net_amount: number; starts_on?: string | null; ends_on?: string | null; status: string }
 export type NSync = { status: string; last_sync_at: string | null; last_error?: string | null } | null
-export interface NPrefs { bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean }
+export interface NPrefs { bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean }
 export interface NInput { today: string; now?: string; accounts: NAccount[]; recurring: NRecurring[]; occurrences: NOccurrence[]; transactions: NTxn[]; paySchedules: NPay[]; sync: NSync; reserveFloor: number; prefs: NPrefs; includeRetirementInCash?: boolean }
-export interface Alert { kind: 'bill_due' | 'bill_overdue' | 'low_cash' | 'large_charge' | 'paycheck' | 'sync'; key: string; title: string; body: string; url: string; severity: 'info' | 'warn' | 'crit'; amount?: number }
+export interface Alert { kind: 'bill_due' | 'bill_overdue' | 'low_cash' | 'large_charge' | 'paycheck' | 'sync' | 'price_rise' | 'new_recurring' | 'reconcile'; key: string; title: string; body: string; url: string; severity: 'info' | 'warn' | 'crit'; amount?: number }
 
-export const NOTIFY_DEFAULTS: Required<NPrefs> = { bills: true, low_cash: true, large: 500, paycheck: true, sync: true }
+export const NOTIFY_DEFAULTS: Required<NPrefs> = { bills: true, low_cash: true, large: 500, paycheck: true, sync: true, price_rise: true, new_recurring: true, reconcile: true }
+/** The alerts that also go in the Monday digest's "Worth a look" list. */
+export const DIGEST_NOTICES: Alert['kind'][] = ['price_rise', 'new_recurring', 'reconcile']
 const DAY = 86400000
 const iso = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 const parse = (s: string) => new Date(s.slice(0, 10) + 'T12:00:00Z')
@@ -28,6 +34,11 @@ const diff = (a: string, b: string) => Math.round((parse(a).getTime() - parse(b)
 const dim = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate()   // m: 1-12
 const clampDay = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '0')}-${String(Math.min(d, dim(y, m))).padStart(2, '0')}`
 const money = (n: number) => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+const money2 = (n: number) => '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const STOP = new Set(['the', 'inc', 'llc', 'co', 'com', 'www', 'pos', 'debit', 'purchase', 'card', 'payment', 'online', 'recurring', 'ach', 'autopay', 'bill', 'pmt'])
+/** A merchant key for grouping card lines: the first two meaningful words ('NETFLIX.COM 866-579' → 'netflix'). */
+export const mkey = (s?: string | null) => String(s || '').toLowerCase().replace(/[^a-z ]+/g, ' ').split(/\s+/).filter(w => w.length > 1 && !STOP.has(w)).slice(0, 2).join(' ')
+const monthIdx = (d: string) => +d.slice(0, 4) * 12 + (+d.slice(5, 7) - 1)
 
 /** Due dates of a recurring item inside [from, to] (same rules as lib/recurring.ts, compact). */
 export function dueDatesN(r: NRecurring, from: string, to: string): string[] {
@@ -106,7 +117,51 @@ export function computeAlerts(inp: NInput): Alert[] {
     if (inp.sync.status === 'error') out.push({ kind: 'sync', key: `sync:error:${bucket3}`, title: 'Bank sync failed', body: (inp.sync.last_error || 'The last sync reported an error').slice(0, 140), url: '/connections', severity: 'warn' })
     else if (inp.sync.last_sync_at && diff(t, inp.sync.last_sync_at.slice(0, 10)) >= 3) out.push({ kind: 'sync', key: `sync:stale:${bucket3}`, title: 'Bank feed has not updated for 3 days', body: `Last sync ${inp.sync.last_sync_at.slice(0, 10)}`, url: '/connections', severity: 'warn' })
   }
+  if (p.price_rise) for (const r of inp.recurring.filter(r => r.status === 'Active' && (r.kind === 'subscription' || r.kind === 'bill') && !r.amount_varies && +r.amount > 0)) {
+    const first = (r.payee || r.name || '').toLowerCase().split(' ')[0]
+    const last = live.filter(x => x.kind === 'expense' && diff(t, x.date) >= 0 && diff(t, x.date) <= 35 && (x.recurring_id === r.id || (first.length > 2 && (x.payee || '').toLowerCase().includes(first)))).sort((a, b) => b.date.localeCompare(a.date))[0]
+    if (last && last.amount > +r.amount + Math.max(1, +r.amount * 0.05) && last.amount < +r.amount * 3)
+      out.push({ kind: 'price_rise', key: `price_rise:${r.id}:${last.id}`, title: `${r.name} went up`, body: `${money2(+r.amount)} → ${money2(last.amount)} on ${last.date} — update the bill if this is the new price`, url: '/bills', severity: 'warn', amount: round(last.amount - +r.amount) })
+  }
+  if (p.new_recurring) {
+    const known = inp.recurring.filter(r => r.status !== 'Cancelled').map(r => mkey(r.payee || r.name)).filter(Boolean)
+    const groups = new Map<string, NTxn[]>()
+    for (const x of live) { if (x.kind !== 'expense' || x.recurring_id || diff(t, x.date) > 100 || diff(t, x.date) < 0) continue; const k = mkey(x.payee); if (!k) continue; const g = groups.get(k) || []; g.push(x); groups.set(k, g) }
+    for (const [k, g] of groups) {
+      if (known.some(n => n === k || n.split(' ')[0] === k.split(' ')[0])) continue
+      const latest = g.slice().sort((a, b) => b.date.localeCompare(a.date))[0]; if (diff(t, latest.date) > 35) continue
+      const m = monthIdx(latest.date); const byMonth = new Map<number, number>(); for (const x of g) { const i = monthIdx(x.date); byMonth.set(i, (byMonth.get(i) || 0) + x.amount) }
+      if (![m, m - 1, m - 2].every(i => byMonth.has(i))) continue
+      const amts = [m, m - 1, m - 2].map(i => byMonth.get(i)!); if (Math.max(...amts) > Math.min(...amts) * 1.15 + 1) continue
+      const avg = amts.reduce((a, b) => a + b, 0) / 3
+      out.push({ kind: 'new_recurring', key: `new_recurring:${k}:${latest.date.slice(0, 7)}`, title: `New repeating charge: ${latest.payee || k}`, body: `about ${money2(avg)} in each of the last 3 months — add it to Bills so the forecast counts it`, url: '/insights', severity: 'info', amount: round(avg) })
+    }
+  }
+  if (p.reconcile) for (const a of inp.accounts.filter(a => a.status === 'Active' && ['checking', 'savings', 'credit_card', 'store_card', 'line_of_credit'].includes(a.kind))) {
+    if (a.last_reconciled_on) { const age = diff(t, a.last_reconciled_on.slice(0, 10)); if (age >= 35) out.push({ kind: 'reconcile', key: `reconcile:${a.id}:${Math.floor(age / 7)}`, title: `${a.name}: time to reconcile`, body: `last reconciled ${a.last_reconciled_on.slice(0, 10)} — ${age} days ago`, url: '/reconcile', severity: 'info' }) }
+    else if (a.bank_balance != null && a.created_at && diff(t, a.created_at.slice(0, 10)) >= 35) out.push({ kind: 'reconcile', key: `reconcile:${a.id}:never`, title: `${a.name} has never been reconciled`, body: 'tick the bank statement against the register once so the verified balance means something', url: '/reconcile', severity: 'info' })
+  }
   const rank = { crit: 0, warn: 1, info: 2 }; return out.sort((a, b) => rank[a.severity] - rank[b.severity])
+}
+const round = (n: number) => Math.round(n * 100) / 100
+
+/** Who receives an alert of this kind (0.21.0). Each member's own choices win; anything they did not set falls back to the household
+ *  switches: push goes to every member's devices unless push is off; email goes to the household address (or the owner) unless a
+ *  member chose email for themselves. `kinds` limits a member to some alert kinds; 'digest' is the Monday digest. */
+export interface NMember { user_id: string; email?: string | null; role?: string | null }
+export interface NMemberPrefs { push?: boolean; email?: boolean; email_to?: string | null; digest?: boolean; kinds?: string[] | null }
+export interface NRouting { push?: boolean; email?: boolean; email_to?: string | null; members?: Record<string, NMemberPrefs> }
+export function recipientsFor(prefs: NRouting, members: NMember[], kind: string): { push: string[]; email: Array<{ to: string; user_id: string | null }> } {
+  const mm = prefs.members || {}; const push: string[] = []; const email: Array<{ to: string; user_id: string | null }> = []
+  for (const m of members) {
+    const p = mm[m.user_id] || {}
+    const wants = kind === 'digest' ? p.digest !== false : !p.kinds || p.kinds.includes(kind)
+    if (!wants) continue
+    if (p.push ?? (prefs.push !== false)) push.push(m.user_id)
+    if (p.email === true) { const to = String(p.email_to || m.email || '').trim().toLowerCase(); if (/@/.test(to)) email.push({ to, user_id: m.user_id }) }
+  }
+  if (prefs.email && !Object.values(mm).some(p => p.email === true)) { const to = String(prefs.email_to || members.find(m => m.role === 'owner')?.email || members[0]?.email || '').trim().toLowerCase(); if (/@/.test(to)) email.push({ to, user_id: null }) }
+  const seen = new Set<string>(); return { push, email: email.filter(e => !seen.has(e.to) && (seen.add(e.to), true)) }
 }
 
 /** The Monday digest: one email with the week ahead and the week behind. */

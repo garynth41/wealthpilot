@@ -209,6 +209,38 @@ for (const W of [1400, 390]) {
     await p.reload(); await p.waitForTimeout(900); ok((await p.locator('.lockscreen').count()) === 1, 'the lock survives a reload')
     await p.click('.lockscreen button:has-text("Unlock")'); await p.waitForTimeout(600); ok((await p.locator('main').count()) === 1 && (await p.locator('.lockscreen').count()) === 0, 'unlocking brings the page back')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
+    // 0.21.0: comment threads, "apply to earlier", rule review flags, paycheck allocation, per-member alert routing, statement PDFs
+    const LS = () => p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data)
+    await p.click('.slicer:has(.l:text-is("Range")) button:text-is("All")'); await p.waitForTimeout(500)
+    await p.locator('button[aria-label="Comments (2)"]').first().click(); await p.waitForTimeout(400)
+    ok(/Sam/.test(await p.locator('.modal').textContent()) && (await p.locator('.modal .thread li').count()) === 2, 'a transaction shows its comment thread with who said what')
+    await p.fill('#wp-comment', 'Smoke: confirmed with the receipt.'); await p.click('.modal button:has-text("Post")'); await p.waitForTimeout(500)
+    ok((await p.locator('.modal .thread li').count()) === 3 && (await LS()).comments.length === 3, 'posting a comment adds it to the thread and stores it'); await p.click('.modal .mfoot button:has-text("Close")'); await p.waitForTimeout(200)
+    ok((await p.locator('button[aria-label="Comments (3)"]').count()) === 1, 'the ledger button counts the comments')
+    const shellN = (await LS()).transactions.filter(t => t.payee === 'Shell').length
+    const sh = p.locator('input[aria-label="Payee"][value="Shell"]').first(); await sh.fill('Shell Oil'); await sh.press('Tab'); await p.waitForTimeout(600)
+    const act = p.locator('.toast-act:has-text("Apply to")'); ok((await act.count()) === 1 && new RegExp(`Apply to ${shellN - 1}`).test(await act.textContent()), `renaming a payee offers to rename the ${shellN - 1} earlier ones`)
+    if (await act.count()) { await act.click(); await p.waitForTimeout(800) }
+    ok((await LS()).transactions.filter(t => t.payee === 'Shell Oil').length === shellN, 'one tap renames every earlier Shell transaction')
+    await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); j.household.settings.rules = [...(j.household.settings.rules || []), { id: 'smoke-r', pattern: 'chipotle', match: 'contains', enabled: true, review: true, tags: ['lunch'], source: 'manual' }]; localStorage.setItem(k, JSON.stringify(j)) })
+    await p.goto('http://localhost:4173/#/settings'); await p.reload(); await p.waitForTimeout(900); await p.click('.seg button:has-text("Payee rules")'); await p.waitForTimeout(400)
+    ok((await p.locator('th:has-text("Flag for review")').count()) === 1 && (await p.locator('th:has-text("Count toward goal")').count()) === 1, 'payee rules can add tags, flag for review and count toward a goal')
+    await p.click('button:has-text("Apply to")'); await p.waitForTimeout(700)
+    const chip = (await LS()).transactions.filter(t => t.payee === 'Chipotle'); ok(chip.length > 0 && chip.every(t => t.tags.includes('review') && t.tags.includes('lunch')), 'applying the rule tags every match and flags it for review')
+    await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(800); const flag = p.locator('a:has-text("flagged for review")'); ok((await flag.count()) === 1, 'the Dashboard lists the flagged transactions under Needs attention')
+    if (await flag.count()) { await flag.click(); await p.waitForTimeout(800) }
+    ok(/flagged for review by your payee rules/.test(await p.locator('main').textContent()), 'the link opens the ledger filtered to #review')
+    await p.click('button:has-text("Mark all reviewed")'); await p.waitForTimeout(700); ok((await LS()).transactions.every(t => !(t.tags || []).includes('review')), '"Mark all reviewed" clears the flags')
+    await p.goto('http://localhost:4173/#/income'); await p.waitForTimeout(800); const contrib0 = (await LS()).contributions.length
+    await p.click('button:has-text("Allocate…") >> nth=0'); await p.waitForTimeout(500); const am = await p.locator('.modal').textContent()
+    ok(/Plan this paycheck/.test(am) && /Bills & subscriptions|Card & loan payments/.test(am) && /Goals/.test(am) && /Everyday spending/.test(am) && /(unassigned|short)/.test(am), 'allocating a paycheck splits it into bills, payments, goals and everyday spending with what is left')
+    await p.click('.modal button:has-text("to goals")'); await p.waitForTimeout(800); ok((await LS()).contributions.length >= contrib0 + 2, 'logging the goal transfers records a contribution per goal')
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(600); await p.click('.seg button:has-text("Notifications")'); await p.waitForTimeout(500); const notif = await p.locator('main').textContent()
+    ok(/Who gets what/.test(notif) && /Sam/.test(notif) && /charged more than usual/.test(notif) && /new repeating charge/i.test(notif) && /due for reconciling/.test(notif), 'Notifications has per-member routing and the three new alert rules')
+    await p.locator('input[aria-label="Monday digest for Sam"]').uncheck(); await p.waitForTimeout(500)
+    ok(await p.evaluate(() => { const j = JSON.parse(localStorage.getItem('wealthpilot.demo')); return j.household.settings.notify.members['demo-partner'].digest === false }), 'a member can be taken off the Monday digest')
+    await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(700); ok((await p.locator('th:has-text("PDF")').count()) === 1, 'statement history has a PDF column for statements filed from email')
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
     await p.reload(); await p.waitForTimeout(900); await p.click('button:has-text("Review")'); await p.waitForTimeout(400)
@@ -231,7 +263,7 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
     // 0.19.0: accessibility gate — axe-core WCAG 2.0/2.1 A + AA on eight pages; any serious or critical violation fails the run
     const axeSrc = readFileSync(fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8')
-    for (const route of ['/', '/transactions', '/budget', '/reports', '/plan', '/debts', '/investments', '/settings']) {
+    for (const route of ['/', '/transactions', '/budget', '/reports', '/plan', '/debts', '/investments', '/income', '/settings']) {
       await p.goto('http://localhost:4173/#' + route); await p.waitForTimeout(900); await p.evaluate(axeSrc)
       const res = await p.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }))
       const bad = res.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')

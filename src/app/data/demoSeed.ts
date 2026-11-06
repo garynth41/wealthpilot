@@ -156,6 +156,10 @@ export function demoSeed(): { household: Household; data: Data } {
     // sample tax data (demo only): year-to-date federal withholding from the W-2 pay stubs, last year's return, Lewis Center-style local rates
     tax: { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, priorYearTax: 10200, priorYearAgi: 84000, autoAggregate: true, paychecksLeft: null, extraWithholdingPerCheck: 0, plannedEstimates: 0, seSetAsidePct: 25,
       items: [{ id: 'dt1', kind: 'withholding', label: 'Federal withholding to date (pay stub, Oct 31)', amount: 8560, source: 'manual' }, { id: 'dt2', kind: 'pretax_deduction', label: '401(k) deferrals + health premiums', amount: 7800, source: 'manual' }, { id: 'dt3', kind: 'estimated_payment', label: 'Q2 estimated payment (consulting)', amount: 600, source: 'manual' }] } } }
-  d.members = [{ household_id: hh, user_id: 'demo-user', email: 'demo@example.com', role: 'owner', read_only: false }]
+  d.members = [{ household_id: hh, user_id: 'demo-user', email: 'demo@example.com', role: 'owner', read_only: false }, { household_id: hh, user_id: 'demo-partner', email: 'sam@example.com', display_name: 'Sam', role: 'editor', read_only: false }]
+  // a comment thread (0.21.0) on the split Target run
+  { const target = d.transactions.find(x => x.payee === 'Target' && x.amount === 54.18); if (target) { const at = (h: number) => new Date(Date.parse(target.date + 'T18:00:00') + h * 3600000).toISOString()
+    d.comments.push({ id: demoId(), household_id: hh, transaction_id: target.id, body: 'Was the $23 the birthday gift for Maya? If so it should be Gifts, not Shopping.', author_email: 'sam@example.com', created_by: 'demo-partner', created_at: at(2), updated_at: at(2) },
+      { id: demoId(), household_id: hh, transaction_id: target.id, body: 'No — that was paper towels and detergent. Shopping is right.', author_email: 'demo@example.com', created_by: 'demo-user', created_at: at(3), updated_at: at(3) }) } }
   return { household, data: d }
 }

@@ -36,7 +36,7 @@ export async function gmApi(clientId: string, path: string, params?: Record<stri
   return r.json()
 }
 const b64 = (s: string) => { try { const bin = atob(String(s).replace(/-/g, '+').replace(/_/g, '/')); return new TextDecoder('utf-8').decode(Uint8Array.from(bin, c => c.charCodeAt(0))) } catch { return '' } }
-interface GPart { mimeType?: string; filename?: string; body?: { data?: string }; parts?: GPart[] }
+interface GPart { mimeType?: string; filename?: string; body?: { data?: string; attachmentId?: string; size?: number }; parts?: GPart[] }
 interface GMessage { id: string; threadId?: string; internalDate?: string; labelIds?: string[]; payload?: GPart & { headers?: Array<{ name: string; value: string }> } }
 function walk(p: GPart | undefined, acc: { text: string; html: string }) { if (!p) return acc; if (!p.filename && p.body?.data) { if (p.mimeType === 'text/plain') acc.text += b64(p.body.data) + '\n'; else if (p.mimeType === 'text/html') acc.html += b64(p.body.data) } (p.parts || []).forEach(x => walk(x, acc)); return acc }
 const parseAddr = (v: string) => { const m = String(v || '').match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/); return m ? { name: m[1].trim(), email: m[2].trim().toLowerCase() } : { name: '', email: String(v || '').trim().toLowerCase() } }
@@ -56,7 +56,7 @@ export async function gmRun(s: Settings, seen: Set<string>, progress?: (t: strin
   for (let i = 0; i < GM_QUERIES.length; i++) { progress?.(`Looking for bills, payments and deposits (${i + 1}/${GM_QUERIES.length})…`); let page: string | undefined, n = 0
     do { const r = await gmApi(clientId, 'threads', { q: `after:${gmDate(since)} ${GM_QUERIES[i]} ${GM_EXCL}`, maxResults: '100', ...(page ? { pageToken: page } : {}) }, account); (r.threads || []).forEach((t: { id: string }) => ids.add(t.id)); page = r.nextPageToken; n++ } while (page && n < 3) }
   const list = [...ids].slice(0, 500); const facts: FactEv[] = []; let done = 0; if (stats) { stats.scanned += ids.size; stats.matched += list.length }
-  const worker = async () => { while (list.length) { const id = list.shift()!; try { const th = await gmApi(clientId, 'threads/' + id, { format: 'full' }, account); for (const raw of (th.messages || []) as GMessage[]) { const m = gmMsg(raw, me, account); if (m.sent || seen.has(m.id) || iso(m.date) < since) continue; const f = extract(m); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: th.id, src: 'gmail', url: m.url, subject: m.subject || '', date: iso(m.date) }] }) } } catch (e) { if (/expired|sign-in/i.test((e as Error).message)) throw e; console.warn('money thread', e) } done++; progress?.(`Reading money emails — ${done} of ${done + list.length}…`) } }
+  const worker = async () => { while (list.length) { const id = list.shift()!; try { const th = await gmApi(clientId, 'threads/' + id, { format: 'full' }, account); for (const raw of (th.messages || []) as GMessage[]) { const m = gmMsg(raw, me, account); if (m.sent || seen.has(m.id) || iso(m.date) < since) continue; const f = extract(m); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: th.id, src: 'gmail', url: m.url, subject: m.subject || '', date: iso(m.date), pdf: gmPdfParts(raw.payload).length > 0 }] }) } } catch (e) { if (/expired|sign-in/i.test((e as Error).message)) throw e; console.warn('money thread', e) } done++; progress?.(`Reading money emails — ${done} of ${done + list.length}…`) } }
   await Promise.all([worker(), worker(), worker(), worker()])
   return facts
 }
@@ -64,7 +64,7 @@ export async function gmRun(s: Settings, seen: Set<string>, progress?: (t: strin
 /* ---------------- Outlook / Microsoft Graph ---------------- */
 const OL = { token: null as string | null, exp: 0 }
 const OL_SCOPE = 'openid offline_access User.Read Mail.Read'
-const OL_SEL = 'id,conversationId,subject,from,receivedDateTime,sentDateTime,body,webLink,parentFolderId'
+const OL_SEL = 'id,conversationId,subject,from,receivedDateTime,sentDateTime,body,webLink,parentFolderId,hasAttachments'
 /** The same money vocabulary the Gmail searches use, applied locally to each Outlook message (Microsoft's $search is unreliable on personal Outlook.com mailboxes). */
 export const MONEY_RE = new RegExp([
   'statement', 'your bill', 'bill is (?:ready|available)', 'new bill', 'invoice', 'amount due', 'balance due', 'minimum payment', 'payment (?:is )?due', 'due date',
@@ -113,7 +113,7 @@ export async function olApi(s: Settings, pathOrUrl: string, params?: Record<stri
   if (r.status === 401) { OL.token = null; throw new Error('Microsoft sign-in expired — click Sync again') }
   if (!r.ok) { let m = ''; try { m = (await r.json()).error.message } catch { /* */ } throw new Error('Outlook ' + r.status + (m ? ': ' + m : '')) } return r.json()
 }
-interface OMsg { id: string; conversationId?: string; subject?: string; from?: { emailAddress?: { name?: string; address?: string } }; receivedDateTime?: string; sentDateTime?: string; body?: { contentType?: string; content?: string }; webLink?: string; parentFolderId?: string }
+interface OMsg { id: string; hasAttachments?: boolean; conversationId?: string; subject?: string; from?: { emailAddress?: { name?: string; address?: string } }; receivedDateTime?: string; sentDateTime?: string; body?: { contentType?: string; content?: string }; webLink?: string; parentFolderId?: string }
 /** List every message received since `since` (newest first, up to 2,000), skip sent / deleted / junk / drafts, keep the ones that read like money mail, extract facts. */
 export async function olRun(s: Settings, seen: Set<string>, progress?: (t: string) => void, stats?: MailStats): Promise<FactEv[]> {
   const since = sinceDate(s); const meJ = await olApi(s, 'me', { $select: 'mail,userPrincipalName' }); const me = String(meJ.mail || meJ.userPrincipalName || '').toLowerCase()
@@ -128,10 +128,33 @@ export async function olRun(s: Settings, seen: Set<string>, progress?: (t: strin
     if (!isMoneyMail({ subject: m.subject, fromName: m.from?.emailAddress?.name, fromEmail: fromAddr, text })) continue
     st.matched++
     const msg: Msg = { id: m.id, threadId: m.conversationId, date: new Date(m.receivedDateTime || m.sentDateTime || Date.now()), from: { name: m.from?.emailAddress?.name || '', email: fromAddr }, subject: m.subject || '', body: text.slice(0, 12000), html: html ? html.slice(0, 60000) : undefined, sent: false, url: m.webLink }
-    const f = extract(msg); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: 'ol:' + (m.conversationId || m.id), src: 'outlook', url: m.webLink || '', subject: m.subject || '', date: when }] } as FactEv) } }
+    const f = extract(msg); if (!f) continue; facts.push({ ...f, ev: [{ msg_id: m.id, thread_id: 'ol:' + (m.conversationId || m.id), src: 'outlook', url: m.webLink || '', subject: m.subject || '', date: when, pdf: !!m.hasAttachments }] } as FactEv) } }
   progress?.('Reading Outlook messages…')
   let j = await olApi(s, 'me/messages', { $filter: `receivedDateTime ge ${since}T00:00:00Z`, $orderby: 'receivedDateTime desc', $select: OL_SEL, $top: '50' }); take(j.value); let pages = 1
   while (j['@odata.nextLink'] && pages < 40) { progress?.(`Reading Outlook — ${st.scanned} messages checked, ${st.matched} look like bills or payments…`); j = await olApi(s, j['@odata.nextLink'], null); take(j.value); pages++ }
   return facts
+}
+/* ---------------- PDF attachments (0.21.0) ---------------- */
+// Statement and receipt PDFs are fetched only when an applied item asks for them (and the household turned the option on), straight
+// from the mailbox to private storage. The email body is never stored; the file name has long digit runs masked.
+export const PDF_MAX = 15 * 1024 * 1024
+export interface MailPdf { name: string; bytes: Uint8Array }
+/** A stored file name keeps at most the last four digits of any long number (account numbers), but leaves dates like 2026-10-31 readable. */
+export const maskFileName = (n: string) => String(n || '').replace(/\d[\d -]{4,}\d/g, m => /^\d{4}-\d{2}-\d{2}$/.test(m) ? m : '••' + m.replace(/\D/g, '').slice(-4))
+const isPdf = (mime?: string, name?: string) => mime === 'application/pdf' || /\.pdf$/i.test(name || '')
+function gmPdfParts(p: GPart | undefined, acc: GPart[] = []): GPart[] { if (!p) return acc; if (p.filename && p.body?.attachmentId && isPdf(p.mimeType, p.filename) && (p.body.size || 0) <= PDF_MAX) acc.push(p); (p.parts || []).forEach(x => gmPdfParts(x, acc)); return acc }
+const fromB64 = (s: string) => { const bin = atob(String(s).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(bin, c => c.charCodeAt(0)) }
+/** The PDF attachments of one message (at most `max`, each up to 15 MB). */
+export async function fetchPdfs(s: Settings, ev: Pick<Evidence, 'msg_id' | 'src'>, max = 2): Promise<MailPdf[]> {
+  const out: MailPdf[] = []
+  if (ev.src === 'gmail') {
+    const clientId = s.gmail?.clientId || '', account = s.gmail?.account || ''
+    const m = await gmApi(clientId, 'messages/' + ev.msg_id, { format: 'full' }, account) as GMessage
+    for (const p of gmPdfParts(m.payload).slice(0, max)) { const a = await gmApi(clientId, `messages/${ev.msg_id}/attachments/${p.body!.attachmentId}`, undefined, account); if (a?.data) out.push({ name: p.filename || 'statement.pdf', bytes: fromB64(a.data) }) }
+  } else if (ev.src === 'outlook') {
+    const list = await olApi(s, `me/messages/${ev.msg_id}/attachments`, { $select: 'id,name,contentType,size' })
+    for (const a of ((list.value || []) as Array<{ id: string; name?: string; contentType?: string; size?: number }>).filter(a => isPdf(a.contentType, a.name) && (a.size || 0) <= PDF_MAX).slice(0, max)) { const f = await olApi(s, `me/messages/${ev.msg_id}/attachments/${a.id}`); if (f?.contentBytes) out.push({ name: a.name || 'statement.pdf', bytes: fromB64(f.contentBytes) }) }
+  }
+  return out
 }
 export const mailLink = (e: { src?: string; url?: string; thread_id?: string }) => e.url || (e.src === 'outlook' ? 'https://outlook.live.com/mail/' : `https://mail.google.com/mail/#all/${e.thread_id || ''}`)

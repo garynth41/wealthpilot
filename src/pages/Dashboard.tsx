@@ -17,6 +17,8 @@ import { fmtMoney, sum } from '../lib/money'
 import { addDays, diffDays, fmtD, fmtDY, today } from '../lib/dates'
 import { AddTxn } from './Transactions'
 import { linkTo } from '../lib/focus'
+import { REVIEW_TAG } from '../lib/rules'
+import { PaycheckCard } from './Allocate'
 
 export function DashboardPage() { return <Dashboard /> }
 export function Dashboard() {
@@ -38,11 +40,12 @@ export function Dashboard() {
   if (cal.firstZero) attention.push({ c: 'crit', t: `Cash runs out ${fmtDY(cal.firstZero)}`, m: 'in the 30-day calendar — move a bill or add income', d: 'Forecast' }); else if (cal.firstFloor) attention.push({ c: 'warn', t: `Below your reserve floor on ${fmtDY(cal.firstFloor)}`, m: `lowest point ${fmtMoney(cal.low.bal)}`, d: 'Forecast' })
   if (ps && ps.pace != null && ps.pace > 1.1) attention.push({ c: 'warn', t: 'Variable spending is ahead of pace', m: `${Math.round(ps.pace * 100)}% of the pro-rated budget`, d: 'Budget' })
   ps?.lines.filter(l => l.state === 'crit').slice(0, 3).forEach(l => attention.push({ c: 'warn', t: `${l.cat.name} is over budget`, m: `${fmtMoney(l.actual)} of ${fmtMoney(l.available)}`, d: 'Budget' }))
+  { const n = data.transactions.filter(x => x.status !== 'void' && (x.tags || []).includes(REVIEW_TAG)).length; if (n) attention.push({ c: 'info', t: `${n} transaction${n === 1 ? '' : 's'} flagged for review`, m: 'your payee rules asked you to look at these', d: 'Review' }) }
   if (ps && ps.uncat > 0) attention.push({ c: 'info', t: `${fmtMoney(ps.uncat)} uncategorized this period`, m: 'categorize it so the budget is right', d: 'Transactions' })
   data.hardship.filter(h => !['Closed', 'Not needed', 'Declined', 'Enrolled'].includes(h.status) && h.next_followup && h.next_followup <= t).forEach(h => attention.push({ c: 'warn', id: h.id, t: `Call ${h.entity}`, m: `follow-up ${h.next_followup === t ? 'today' : 'was ' + fmtDY(h.next_followup!)}`, d: 'Hardship' }))
   if (!attention.length) attention.push({ c: 'good', t: 'Nothing needs attention', m: 'bills are on track, cash is above the floor, the budget is within plan' })
   const last30 = rangeStat(data, addDays(t, -29), t); const grpRows = Object.entries(last30.byGroup).sort((a, b) => b[1] - a[1]).slice(0, 7)
-  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Hardship: '/hardship', Reconcile: '/reconcile', 'Cash & Account Operations': '/connections' }
+  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Hardship: '/hardship', Reconcile: '/reconcile', 'Cash & Account Operations': '/connections' }
   return <>
     <div style={{ marginBottom: 14 }}><Seg value={view} options={[['overview', 'Overview'], ['balances', 'Account balances']]} onChange={setView} /></div>
     {view === 'balances' && <div className="grid g12">
@@ -61,6 +64,7 @@ export function Dashboard() {
       <KPI l="Savings rate" v={ps?.rate != null ? Math.round(ps.rate * 100) + '%' : last30.income ? Math.round(last30.net / last30.income * 100) + '%' : '—'} cls={(ps?.rate ?? (last30.income ? last30.net / last30.income : 0)) >= settings.savingsTargetPct / 100 ? 'good' : 'warn'} s={ps?.rate != null ? 'this period' : 'last 30 days'} /></div>
     {canEdit && <div className="btnrow" style={{ marginBottom: 14 }}><Btn primary onClick={() => open(<AddTxn onDone={close} />, { wide: true })}>+ Log a transaction</Btn><Link className="btn" to="/bills">Pay a bill</Link><Link className="btn" to="/email">Check email</Link><Link className="btn" to="/accounts">Update balances</Link></div>}
     <div className="grid g12">
+      <PaycheckCard />
       <Card span={5} title="Needs attention" hint="what to do today"><AList items={attention.map(a => ({ c: a.c, t: a.d ? <Link to={linkTo(link[a.d] || '/', a.id)}>{a.t}</Link> : a.t, m: a.m }))} /></Card>
       <Card span={7} className="fill" title="Cash — next 30 days" hint="balance on top · each day's money in and out below"><Chart fill title="Cash — next 30 days" data={cashChartData(cal, c)} layout={cashChartLayout(cal, c)} height={300} /><Note>Lowest point {fmtMoney(cal.low.bal)} on {fmtDY(cal.low.date)} · in {fmtMoney(cal.inTot)} · out {fmtMoney(cal.outTot)} · hover a day for its paychecks and bills · <Link to="/forecast">full forecast</Link></Note></Card>
       <Card span={6} title="Coming up" hint="next 14 days">{up.length ? <div className="tblwrap" style={{ maxHeight: 300 }}><table className="tbl"><thead><tr><th>Date</th><th>Item</th><th className="num">Amount</th><th>Status</th></tr></thead><tbody>{up.map((u, i) => <tr key={i} className={`st-${STATUS_PILL[u.status].cls === 'info' ? 'wait' : STATUS_PILL[u.status].cls}`}><td>{fmtD(u.date)}</td><td><Link to={linkTo('/bills', u.r.id)}>{u.r.name}</Link></td><td className="num">{fmtMoney(u.amount)}</td><td><Pill cls={STATUS_PILL[u.status].cls}>{STATUS_PILL[u.status].label}</Pill></td></tr>)}</tbody></table></div> : <div className="empty">Nothing due in the next two weeks.</div>}<Note><Link to="/bills">All bills & subscriptions →</Link></Note></Card>
