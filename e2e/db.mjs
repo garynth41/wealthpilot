@@ -43,7 +43,9 @@ ok(!!(await owner.rpc('request_household_deletion', { p_household: hh, p_confirm
 const { data: when, error: de } = await owner.rpc('request_household_deletion', { p_household: hh, p_confirm: NAME.toLowerCase() })
 ok(!de && Math.round((Date.parse(when) - Date.now()) / 86400000) === 7, 'deletion is scheduled 7 days out ' + (de?.message || ''))
 ok(await refused(owner.from('transactions').insert({ household_id: hh, date: '2026-01-02', kind: 'expense', amount: 5, account_id: acct.id, status: 'cleared', source: 'manual' }).select('id')), 'while a deletion is pending even an owner cannot change data')
-ok(!!(await owner.from('households').update({ deletion_scheduled_for: new Date().toISOString() }).eq('id', hh)).error, 'the deletion date cannot be moved up by hand')
+await owner.from('households').update({ deletion_scheduled_for: new Date().toISOString() }).eq('id', hh)   // refused (no error: the row is simply not writable)
+const { data: still } = await owner.from('households').select('deletion_scheduled_for').eq('id', hh).single()
+ok(Date.parse(still?.deletion_scheduled_for) === Date.parse(when), 'the deletion date cannot be moved up by hand')
 
 // --- the app in a browser ---
 const root = fileURLToPath(new URL('../dist-staging', import.meta.url)); const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.png': 'image/png' }
@@ -64,16 +66,23 @@ try {
   await p.reload(); await p.waitForTimeout(4000); const n1 = await p.locator('table.tbl tbody tr').count(); ok(n1 === n0 + 1, `a transaction saved in the app is still there after a reload (${n0} → ${n1})`)
   await p.goto('http://localhost:4176/#/accounts'); await p.waitForTimeout(1500); await p.click('button[aria-label="Balance history for E2E Checking"]'); await p.waitForTimeout(900)
   ok(/Balance history — E2E Checking/.test(await p.locator('.modal').textContent()), 'the History dialog reads the database\'s balance history'); await p.keyboard.press('Escape')
-  // offline: the copy this device kept opens read-only, then the app comes back by itself
-  await p.goto('http://localhost:4176/#/'); await p.waitForTimeout(2500); await ctx.setOffline(true); await p.reload().catch(() => {}); await p.waitForTimeout(3500)
-  ok((await p.locator('[data-testid="offline-banner"]').count()) === 1 && (await p.locator('h1').first().textContent()) === 'Dashboard', 'with no connection the app opens from this device\'s copy, read-only')
-  await ctx.setOffline(false); await p.waitForTimeout(5000); ok((await p.locator('[data-testid="offline-banner"]').count()) === 0, 'back online, the banner goes and the data reloads')
+  // offline: the copy this device kept opens read-only, then the app comes back by itself. The database is cut off rather than the
+  // whole network: on https the service worker serves the app itself offline, but browsers only run it on https, and this server is http.
+  await p.goto('http://localhost:4176/#/'); await p.waitForTimeout(2500)
+  const cut = r => r.abort('internetdisconnected'); await p.route('**/*.supabase.co/**', cut); await p.reload()
+  await p.locator('[data-testid="offline-banner"]').waitFor({ timeout: 20000 }).catch(() => {})   // the sign-in check retries before giving up
+  const ob = await p.locator('[data-testid="offline-banner"]').count(), oh = await p.locator('h1').first().textContent().catch(() => '(no heading)')
+  ok(ob === 1 && oh === 'Dashboard', `with no connection the app opens from this device's copy, read-only (banner ${ob}, page ${oh})`)
+  await p.unroute('**/*.supabase.co/**', cut); await p.evaluate(() => window.dispatchEvent(new Event('online')))
+  await p.locator('[data-testid="offline-banner"]').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {})
+  ok((await p.locator('[data-testid="offline-banner"]').count()) === 0, 'back online, the banner goes and the data reloads')
   await p.screenshot({ path: 'e2e/shots/staging_dashboard.png' })
   // signing out clears the copy
   await p.evaluate(async () => { const r = indexedDB.open('wealthpilot-offline'); await new Promise(res => { r.onsuccess = res; r.onerror = res }) })
 } finally {
   ok(!errors.length, 'no page errors ' + errors.join(' | '))
   await b.close(); srv.close()
-  const { data: gone } = await owner.rpc('e2e_cleanup'); console.log(`cleaned up ${gone ?? 0} test household(s)`)
+  // deleting the household row takes every table with it (the nightly purge does the same, as the service role)
+  const { data: gone, error: ce } = await owner.rpc('e2e_cleanup'); ok(!ce && gone >= 1, `deleting a household removes it and everything in it (${gone ?? 0}) ${ce?.message || ''}`)
 }
 console.log('db fails', F); process.exit(F ? 1 : 0)

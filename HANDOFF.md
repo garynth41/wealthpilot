@@ -25,7 +25,9 @@
 
 ## Runbooks (0.25.0)
 
-**Every database change: staging first.** `node scripts/staging-schema.mjs --from NNNN > /tmp/s.sql`, apply it to `wealthpilot-staging`, let CI's `staging` job pass, then apply the migration file to production (`dshswfcpovdpxcidolqb`) and run `get_advisors`.
+**Every database change: staging first.** `node scripts/staging-schema.mjs --from NNNN > /tmp/s.sql`, apply it to `wealthpilot-staging` (`leivqwnstptwoqwuuglh`), let CI's `staging` job pass, then apply the migration file to production (`dshswfcpovdpxcidolqb`) and run `get_advisors`. To run the staging tests by hand: build with `VITE_SUPABASE_URL=$STAGING_URL VITE_SUPABASE_KEY=$STAGING_KEY npx vite build --outDir dist-staging`, then `npm run e2e:db` with the three `STAGING_*` variables set.
+
+**Staging test users** (set up 2026-11-06): `e2e-owner@wealthpilot.test` and `e2e-viewer@wealthpilot.test`, password in the GitHub secret `STAGING_E2E_PASSWORD` only. They were created from bcrypt hashes through a one-time function that worked only while no test user existed and was dropped straight after; `supabase/staging/e2e.sql` does the same from the SQL editor (paste the two hashes). To change the password: new hashes → `update auth.users set encrypted_password = '<hash>' where email like 'e2e-%@wealthpilot.test'` on staging, then update the secret.
 
 **Rotating the scheduled jobs' secret** (once a year, or at once if it may have leaked). In the Supabase SQL editor (production):
 1. `select public.rotate_cron_secret();` — a new random value replaces the old one in Vault. The jobs read it at run time and the functions check it against Vault, so nothing else changes. The value is never shown.

@@ -72,6 +72,57 @@ revoke all on function public.cancel_household_deletion(uuid) from public, anon;
 grant execute on function public.request_household_deletion(uuid, text) to authenticated;
 grant execute on function public.cancel_household_deletion(uuid) to authenticated;
 
+-- When the household row itself is deleted (the nightly purge, service role only — users have no delete policy on households),
+-- its rows go with it through ON DELETE CASCADE. Three older triggers would stop that: the last-owner guard, the immutable audit
+-- trail and the activity log (which would try to log every cascaded row against a household that no longer exists). Each now
+-- steps aside once the parent household is gone; for a household that still exists nothing changes. Found by the staging tests.
+create or replace function public.guard_last_owner() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.households where id = old.household_id) then return coalesce(new, old); end if;
+  if (tg_op = 'DELETE' or new.role <> 'owner') and old.role = 'owner' and not exists (select 1 from public.household_members where household_id = old.household_id and role = 'owner' and user_id <> old.user_id) then
+    raise exception 'a household must keep at least one owner';
+  end if;
+  return coalesce(new, old);
+end $$;
+revoke execute on function public.guard_last_owner() from public, anon, authenticated;
+
+create or replace function public.audit_immutable() returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if not exists (select 1 from public.households where id = old.household_id) then return coalesce(new, old); end if;
+  raise exception 'audit_events are immutable';
+end $$;
+revoke all on function public.audit_immutable() from public, anon, authenticated;
+
+-- audit summaries (same function as 0017) — plus: nothing is logged for rows that are going because their household was deleted
+create or replace function public.touch_and_log() returns trigger language plpgsql security definer set search_path to 'public' as $function$
+declare hh uuid; rid text; summ text; em text; j jsonb;
+begin
+  if tg_op = 'UPDATE' and coalesce(current_setting('wealthpilot.quiet_audit', true), '') = 'on' then new.updated_at := now(); return new; end if;
+  if tg_op = 'DELETE' then j := to_jsonb(old); else j := to_jsonb(new); end if;
+  hh := (j->>'household_id')::uuid; rid := j->>'id';
+  if tg_op <> 'INSERT' and not exists (select 1 from public.households where id = hh) then
+    if tg_op = 'DELETE' then return old; else return new; end if;
+  end if;
+  select email into em from public.household_members where household_id = hh and user_id = auth.uid() limit 1;
+  if tg_op <> 'DELETE' then
+    new.updated_at := now();
+    if tg_op = 'INSERT' then new.created_by := coalesce(new.created_by, auth.uid()); end if;
+    new.updated_by := auth.uid();
+  end if;
+  summ := case tg_table_name
+    when 'transactions' then coalesce(j->>'payee','') || ' ' || coalesce(j->>'amount','')
+    when 'accounts' then j->>'name' when 'recurring' then j->>'name' when 'goals' then j->>'name' when 'categories' then j->>'name' when 'pay_schedules' then j->>'name' when 'holdings' then coalesce(j->>'symbol', j->>'name')
+    when 'budget_periods' then coalesce(j->>'label', j->>'start_date') when 'planned_items' then j->>'label' when 'hardship_outreach' then j->>'entity' when 'email_items' then coalesce(j->>'payee','') || ' ' || coalesce(j->>'amount','')
+    when 'scenarios' then j->>'name' when 'transaction_comments' then left(j->>'body', 80)
+    when 'holding_lots' then coalesce(j->>'quantity','') || ' bought ' || coalesce(j->>'acquired_on','')
+    when 'insurance_policies' then coalesce(j->>'name','') || ' · ' || coalesce(j->>'kind','')
+    when 'estate_items' then coalesce(j->>'label','') || ' · ' || coalesce(j->>'status','')
+    when 'credit_scores' then coalesce(j->>'person','') || ' ' || coalesce(j->>'score','') || ' on ' || coalesce(j->>'date','')
+    else null end;
+  insert into public.activity_log(household_id, user_id, user_email, action, table_name, record_id, summary) values (hh, auth.uid(), em, lower(tg_op), tg_table_name, rid, left(summ, 200));
+  if tg_op = 'DELETE' then return old; else return new; end if;
+end $function$;
+
 -- a record that a household existed and was deleted (no data, no access for users)
 create table if not exists public.deleted_households (
   id uuid primary key, name text, requested_by uuid, requested_at timestamptz, deleted_at timestamptz not null default now(), files_removed int not null default 0

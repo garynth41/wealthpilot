@@ -4,3 +4,4 @@ dist
 e2e/shots
 *.log
 .DS_Store
+dist-staging
