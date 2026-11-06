@@ -21,7 +21,7 @@ export const recentPaychecks = (d: Data, days = 3, asOf = today()) => d.transact
 export type AllocGroup = 'bills' | 'debt' | 'planned' | 'goals' | 'plan' | 'everyday'
 export interface AllocLine { group: AllocGroup; label: string; amount: number; date?: string; goalId?: string; accountId?: string | null }
 export interface Allocation { paycheck: Transaction; schedule: PaySchedule | null; amount: number; until: string; nextPay: string | null; days: number; lines: AllocLine[]; byGroup: Record<AllocGroup, number>; committed: number; leftover: number; short: number }
-export const GROUP_LABEL: Record<AllocGroup, string> = { bills: 'Bills & subscriptions', debt: 'Card & loan payments', planned: 'Planned items', goals: 'Goals', plan: 'Your plan\'s extra', everyday: 'Everyday spending' }
+export const GROUP_LABEL: Record<AllocGroup, string> = { bills: 'Bills & subscriptions', debt: 'Card & loan payments', planned: 'Planned items & estimated tax', goals: 'Goals', plan: 'Your plan\'s extra', everyday: 'Everyday spending' }
 
 export function allocatePaycheck(d: Data, s: Settings, pay: Transaction, asOf = today()): Allocation {
   const schedule = scheduleFor(d, pay)
@@ -33,7 +33,7 @@ export function allocatePaycheck(d: Data, s: Settings, pay: Transaction, asOf = 
   const lines: AllocLine[] = []
   for (const x of cal.items) {
     if (x.amt >= 0 || x.date < start || x.date > until || x.src === 'flex' || x.src === 'pay') continue
-    lines.push({ group: x.src === 'debt' ? 'debt' : x.src === 'planned' ? 'planned' : 'bills', label: x.label, amount: round2(-x.amt), date: x.date })
+    lines.push({ group: x.src === 'debt' ? 'debt' : x.src === 'planned' || x.src === 'tax' ? 'planned' : 'bills', label: x.label, amount: round2(-x.amt), date: x.date })
   }
   // goals: each active goal's monthly contribution, shared across the paychecks in a month
   const perMonth = schedule ? PER_YEAR[schedule.frequency] / 12 : 2

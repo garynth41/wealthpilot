@@ -70,7 +70,7 @@ export function buildPlan(d: Data, s: Settings, raw?: Partial<PlanAssumptions>):
   // goals: active, not debt-payoff (that money is the debt bucket), highest priority first
   const gl = d.goals.filter(g => g.status === 'Active' && g.kind !== 'debt_payoff').slice().sort((x, y) => x.priority - y.priority || x.sort_order - y.sort_order)
   const cashIds = new Set(d.accounts.filter(x => x.include_in_cash).map(x => x.id))
-  const goals = gl.map(g => { const p = goalProgress(d, g); return { g, saved: p.saved, target: +g.target_amount || 0, reachedOn: p.reached ? t : null as string | null, extraFirst: 0 } })
+  const goals = gl.map(g => { const p = goalProgress(d, g); return { g, saved: p.saved, target: p.target, reachedOn: p.reached ? t : null as string | null, extraFirst: 0 } })
   const heldInCash = Math.min(cashOnHand(d, s), sum(goals.filter(x => x.g.account_id && cashIds.has(x.g.account_id)).map(x => Math.min(x.saved, x.g.account_id ? balanceOf(d.accounts.find(z => z.id === x.g.account_id)!, d) : 0))))
   const startCash = round2(cashOnHand(d, s) - heldInCash)
   const debts = liabilities(d).filter(x => debtBal(x) >= 1).map(x => ({ acct: x, b: debtBal(x), pay: assumedPay(x, debtPlanned(x)), rate: 0 }))

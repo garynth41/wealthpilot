@@ -11,7 +11,9 @@ const url = Deno.env.get('SUPABASE_URL')!, anon = Deno.env.get('SUPABASE_ANON_KE
 const admin = createClient(url, service, { auth: { persistSession: false } })
 const KEEP_DAYS = 30
 // collection name in the export → table (mirrors TABLE in src/app/data/types.ts)
-const TABLES: Record<string, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
+const TABLES: Record<string, string> = { accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations',
+  // 0.22.0: every table the app restores (splits, receipts' file rows, comments and scenarios were missing before)
+  splits: 'transaction_splits', attachments: 'attachments', comments: 'transaction_comments', scenarios: 'scenarios', lots: 'holding_lots', insurance: 'insurance_policies', estate: 'estate_items' }
 
 async function logError(household_id: string | null, message: string, context: Record<string, unknown> = {}) {
   try { await admin.from('app_errors').insert({ household_id, source: 'backup', message: message.slice(0, 2000), context }) } catch { /* never fail the run over logging */ }

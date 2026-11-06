@@ -16,6 +16,7 @@ export const MODULES: Module[] = [
   { k: 'investments', label: 'Investments & retirement', paths: ['/investments'], tables: ['holdings'] },
   { k: 'tax', label: 'Tax planning', paths: ['/tax'], tables: [] },
   { k: 'goals', label: 'Savings goals & plan', paths: ['/goals', '/plan'], tables: ['goals', 'goal_contributions'] },
+  { k: 'protection', label: 'Insurance & estate', paths: ['/protection'], tables: ['insurance_policies', 'estate_items'] },
   { k: 'hardship', label: 'Hardship & creditor outreach', paths: ['/hardship'], tables: ['hardship_outreach'] },
   { k: 'reports', label: 'Reports & trends', paths: ['/reports', '/trends'], tables: [], hint: 'always on' },
   { k: 'settings', label: 'Settings', paths: ['/settings'], tables: [], hint: 'always on — members only see their own security and the categories' },

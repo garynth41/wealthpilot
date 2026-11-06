@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { BudgetPeriod, Category } from '../app/data/types'
-import { Card, KPI, Btn, Pill, Note, AList, useModal, Seg } from '../components/ui'
+import { Card, KPI, Btn, Pill, Note, AList, useModal, Seg, MHead, MBody, MFoot, Field } from '../components/ui'
 import { Chart, C } from '../components/Chart'
 import { spanFor, nextSpan, prevSpan, findPeriod, periodLabel, type Span } from '../lib/periods'
-import { periodStat, insights, type LineStat } from '../lib/budget'
+import { periodStat, insights, assignment, moveMoney, coverFrom, envelopeCarry, previousPeriod, BUDGET_MODE_LABEL, type LineStat, type BudgetMode, type LinePatch, type PeriodStat } from '../lib/budget'
 import { cadencePlan, sinkingFunds, sinkingTotals } from '../lib/sinking'
 import { fmtMoney, fm2, parseNum, round2 } from '../lib/money'
 import { fmtD, today } from '../lib/dates'
@@ -18,7 +18,13 @@ export function BudgetPage() {
   useEffect(() => { setSpan(spanFor(data, settings)) }, [settings.periodType, settings.periodAnchor, settings.semimonthlyDays?.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const period = findPeriod(data, span); const isCur = span.start <= today() && span.end >= today()
   const spread = async (pid: string) => { const d = useStore.getState().data; const p = d.periods.find(x => x.id === pid); if (!p) return; const plan = cadencePlan(d, p); for (const u of plan.updates) await update('lines', u.id, { planned: u.planned }); for (const n of plan.inserts) await insert('lines', { period_id: pid, category_id: n.category_id, planned: n.planned, rollover_in: 0 }) }
-  const start = () => guarded(async () => { const pid = await repo!.startPeriod(span.type, span.start, span.end, span.type === 'month' ? null as unknown as string : span.label); await refresh(); await spread(pid) }, `${span.label} started`)
+  const mode = (settings.budgetMode || 'standard') as BudgetMode
+  /** envelopes (0.22.0): every line carries its whole balance — unspent stays, overspent starts the next period owing */
+  const carry = async (pid: string) => { const d = useStore.getState().data; const p = d.periods.find(x => x.id === pid); const prev = p ? previousPeriod(d, p) : null; if (!p || !prev) return 0
+    const ch = envelopeCarry(d, useStore.getState().settings(), prev, p); for (const c of ch) { if (c.lineId) await update('lines', c.lineId, { rollover_in: c.rollover_in }); else await insert('lines', { period_id: pid, category_id: c.category_id, planned: c.planned ?? 0, rollover_in: c.rollover_in }) } return ch.length }
+  const start = () => guarded(async () => { const pid = await repo!.startPeriod(span.type, span.start, span.end, span.type === 'month' ? null as unknown as string : span.label); await refresh(); await spread(pid); if (mode === 'envelope') await carry(pid) }, `${span.label} started`)
+  const applyLines = (patches: LinePatch[]) => guarded(async () => { if (!period) return; for (const x of patches) { if (x.lineId) await update('lines', x.lineId, { planned: x.planned }); else await insert('lines', { period_id: period.id, category_id: x.category_id, planned: x.planned, rollover_in: 0 }) } })
+  const setMode = (m: BudgetMode) => guarded(() => saveSettings({ budgetMode: m }), `${BUDGET_MODE_LABEL[m]} budgeting`)
   const ps = useMemo(() => (period ? periodStat(data, settings, period) : null), [data, settings, period])
   const ins = ps ? insights(settings, ps) : []
   const setPlanned = (l: LineStat, v: number | null) => guarded(async () => { if (!period) return; const val = v ?? 0; if (l.lineId) await update('lines', l.lineId, { planned: val }); else await insert('lines', { period_id: period.id, category_id: l.cat.id, planned: val, rollover_in: 0 }) })
@@ -32,21 +38,27 @@ export function BudgetPage() {
     <Btn onClick={() => setSpan(prevSpan(data, settings, span))} title="Previous period">‹</Btn><b style={{ fontSize: 16 }}>{span.label}</b><Btn onClick={() => setSpan(nextSpan(data, settings, span))} title="Next period">›</Btn>
     {period ? <Pill cls={period.status === 'closed' ? 'idle' : isCur ? 'good' : span.start > today() ? 'info' : 'warn'}>{period.status === 'closed' ? 'Closed' : isCur ? 'Current period' : span.start > today() ? 'Planned' : 'Past · open'}</Pill> : <Pill cls="idle">Not started</Pill>}
     {!isCur && <Btn sm onClick={() => setSpan(spanFor(data, settings))}>Today</Btn>}
+    <span role="group" aria-label="Budgeting method">{canEdit ? <Seg value={mode} options={[['standard', 'Standard'], ['zero', 'Zero-based'], ['envelope', 'Envelopes']]} onChange={setMode} /> : <Pill cls="info">{BUDGET_MODE_LABEL[mode]}</Pill>}</span>
     <span style={{ flex: 1 }} /><span className="note" style={{ margin: 0 }}>Budgeting by <b>{{ month: 'calendar month', week: 'week', biweekly: 'two-week period', semimonthly: 'half month', pay: 'pay period', custom: 'custom period' }[settings.periodType]}</b> · <Link to="/settings">change</Link></span>
     {period && canEdit && <Btn sm onClick={close_}>{period.status === 'closed' ? 'Reopen' : 'Close period'}</Btn>}{period && canEdit && <Btn sm onClick={useAsDefaults} title="Make this period's planned amounts the default for every new period">Save as defaults</Btn>}</div>
-    <Note>Each period is its own budget. Planned amounts copy from the previous period (categories with rollover carry unspent money forward); actuals are always the sum of the transactions dated inside the period.</Note></Card>
+    <Note>{mode === 'zero' ? <>Zero-based: give every dollar of this period's expected income a job — planned spending, savings and debt lines should add up to the income, leaving $0 to assign. </> : mode === 'envelope' ? <>Envelopes: each line is an envelope. Unspent money stays in it for next period; an overspent envelope is covered by moving money from another, or starts next period owing. </> : null}Each period is its own budget. Planned amounts copy from the previous period{mode === 'envelope' ? '' : ' (categories with rollover carry unspent money forward)'}; actuals are always the sum of the transactions dated inside the period.</Note></Card>
   if (!period) return <div className="grid g12">{head}<Card span={12}><div className="empty"><p>No budget for <b>{span.label}</b> yet.</p>{canEdit && <Btn primary onClick={start}>Start {span.label}</Btn>}<div className="note">Planned amounts come from the previous period, or from each category's default budget the first time.</div></div></Card></div>
   const P = ps!; const pct = (n: number) => (P.spA ? Math.round(n / P.spA * 100) : 0)
+  const asg = assignment(P); const prevP = previousPeriod(data, period); const carryDiff = mode === 'envelope' && prevP ? envelopeCarry(data, settings, prevP, period).length : 0
+  const cover = (l: LineStat) => { const c = coverFrom(P, l.cat.id); if (!c.from) { useStore.getState().toast(`No envelope has money left to cover ${l.cat.name} — raise its plan or lower another's`, true); return } const m = moveMoney(P, c.from.cat.id, l.cat.id, c.amount); applyLines(m.patches).then(() => useStore.getState().toast(`Moved ${fmtMoney(m.moved)} from ${c.from!.cat.name} to ${l.cat.name}${m.moved < c.short ? ` — ${fmtMoney(c.short - m.moved)} still to cover` : ''}`)) }
+  const assignRest = (catId: string) => { const l = P.lines.find(x => x.cat.id === catId); const cat = cats.find(c => c.id === catId); if (!cat || asg.toAssign <= 0) return; applyLines([{ lineId: l?.lineId, category_id: catId, planned: round2((l?.planned || 0) + asg.toAssign) }]).then(() => useStore.getState().toast(`${fmtMoney(asg.toAssign)} assigned to ${cat.name}`)) }
   const bar = (l: LineStat) => { const p = l.available > 0 ? Math.min(100, Math.round(l.actual / l.available * 100)) : l.actual > 0 ? 100 : 0; return <><span className="usebar"><i style={{ width: p + '%', background: `var(--${l.state === 'crit' ? 'crit' : l.state === 'warn' ? 'warn' : 'good'})` }} /></span>{l.available > 0 ? Math.round(l.actual / l.available * 100) + '%' : '—'}</> }
   const lineRow = (l: LineStat, income = false) => <tr key={l.cat.id} className={`st-${l.state === 'idle' ? 'idle' : l.state}`}>
     <td>{l.cat.name}{l.rollover > 0 && <span className="pill info" style={{ marginLeft: 6 }} title="carried in from the previous period">+{fmtMoney(l.rollover)} rolled over</span>}</td><td style={{ color: 'var(--ink-3)', fontSize: 12 }}>{l.cat.priority} · {l.cat.cost_type}</td>
     <td className="num">{editable ? <input className="num" inputMode="decimal" key={l.planned} defaultValue={l.planned ? l.planned.toFixed(2) : ''} placeholder="0.00" style={{ width: 96 }} onBlur={e => { const v = parseNum(e.target.value); if ((v ?? 0) !== l.planned) setPlanned(l, v) }} /> : fm2(l.planned)}</td>
     <td className="num"><b>{fm2(l.actual)}</b></td><td className="num" style={{ color: `var(--${(income ? -l.left : l.left) < 0 ? 'crit' : 'good'})` }}>{income ? (l.actual - l.available >= 0 ? '+' : '') + fm2(l.actual - l.available) : fm2(l.left)}</td><td>{bar(l)}</td>
-    <td>{canEdit && <Btn sm onClick={() => open(<AddTxn onDone={close} preset={{ kind: income ? 'income' : 'expense', category_id: l.cat.id, date: today() <= span.end && today() >= span.start ? today() : span.end }} />, { wide: true })}>Log</Btn>}{editable && l.lineId && <button className="del" title="Remove this line from the period" onClick={() => guarded(() => remove('lines', l.lineId!))}>✕</button>}</td></tr>
+    <td>{editable && !income && mode === 'envelope' && l.left < -0.005 && <Btn sm danger onClick={() => cover(l)} title="Move money from another envelope to cover this one">Cover {fmtMoney(-l.left)}</Btn>}{editable && !income && mode === 'envelope' && l.left > 0.005 && <Btn sm onClick={() => open(<MoveMoney ps={P} from={l.cat.id} onApply={x => { applyLines(x); close() }} onDone={close} />)} title="Move some of this envelope to another">Move</Btn>}{canEdit && <Btn sm onClick={() => open(<AddTxn onDone={close} preset={{ kind: income ? 'income' : 'expense', category_id: l.cat.id, date: today() <= span.end && today() >= span.start ? today() : span.end }} />, { wide: true })}>Log</Btn>}{editable && l.lineId && <button className="del" title="Remove this line from the period" onClick={() => guarded(() => remove('lines', l.lineId!))}>✕</button>}</td></tr>
   const byGroup = (lines: LineStat[]) => { const g = new Map<string, LineStat[]>(); lines.forEach(l => { const k = l.cat.group || 'Other'; g.set(k, [...(g.get(k) || []), l]) }); return [...g.entries()] }
   const thead = (income = false) => <thead><tr><th>{income ? 'Income source' : 'Category'}</th><th></th><th className="num">{income ? 'Expected' : 'Planned'}</th><th className="num">{income ? 'Received' : 'Spent'}</th><th className="num">{income ? 'Difference' : 'Left'}</th><th>Used</th><th></th></tr></thead>
   return <div className="grid g12">{head}
+    {mode !== 'standard' && <div className={`span12 banner ${asg.state === 'good' ? 'good' : asg.state === 'warn' ? 'info' : 'crit'}`} role="status">{asg.state === 'good' ? <><b>Every dollar has a job.</b> {fmtMoney(asg.assigned)} planned against {fmtMoney(asg.income)} of expected income.</> : asg.toAssign > 0 ? <><b>{fmtMoney(asg.toAssign)} to assign</b> — {fmtMoney(asg.income)} of expected income, {fmtMoney(asg.assigned)} planned.{editable && <> <select className="inp" style={{ width: 'auto', minHeight: 34 }} defaultValue="" aria-label="Assign the rest to" onChange={e => { if (e.target.value) { assignRest(e.target.value); e.target.value = '' } }}><option value="">Assign the rest to…</option>{cats.filter(c => c.kind === 'expense').map(c => <option key={c.id} value={c.id}>{c.group ? c.group + ' › ' : ''}{c.name}</option>)}</select></>}</> : <><b>Over-assigned by {fmtMoney(-asg.toAssign)}</b> — planned spending is more than the {fmtMoney(asg.income)} expected this period. Trim a line{mode === 'envelope' ? ' or move money between envelopes' : ''}.</>}{carryDiff > 0 && editable && <> <Btn sm onClick={() => guarded(() => carry(period.id), 'Envelope balances carried in from the previous period')}>Carry {carryDiff} envelope balance{carryDiff === 1 ? '' : 's'} in</Btn></>}</div>}
     <div className="span12 kpis">
+      {mode !== 'standard' && <KPI l="To assign" v={fmtMoney(asg.toAssign)} cls={asg.state === 'good' ? 'good' : asg.state === 'warn' ? 'warn' : 'crit'} s={asg.state === 'good' ? 'every dollar has a job' : asg.toAssign > 0 ? 'income without a job yet' : 'more planned than expected income'} />}
       <KPI l="Income" v={fmtMoney(P.incA)} cls={P.incA >= P.incB && P.incB > 0 ? 'good' : P.incA > 0 ? 'warn' : 'info'} s={`of ${fmtMoney(Math.max(P.incB, P.expectedPay))} expected${P.expectedPay ? ` · ${fmtMoney(P.expectedPay)} from pay schedules` : ''}`} />
       <KPI l="Spending" v={fmtMoney(P.spA)} cls={P.spA > P.spB ? 'crit' : 'good'} s={`of ${fmtMoney(P.spB)} planned${P.spA > P.spB ? ' · over by ' + fmtMoney(P.spA - P.spB) : ''}`} />
       <KPI l={isCur || span.start > today() ? 'Left to spend' : 'Under / over'} v={fmtMoney(P.left)} cls={P.left < 0 ? 'crit' : 'good'} s={isCur ? `${Math.round(P.elapsed * 100)}% of the period gone · ${Math.max(0, Math.round((1 - P.elapsed) * P.days))} days left` : span.start > today() ? 'planned' : 'final'} />
@@ -75,6 +87,18 @@ export function BudgetPage() {
   </div>
 }
 export const r2 = round2
+
+/** Envelopes: move part of one envelope's balance to another. */
+function MoveMoney({ ps, from, onApply, onDone }: { ps: PeriodStat; from: string; onApply: (p: LinePatch[]) => void; onDone: () => void }) {
+  const src = ps.lines.find(l => l.cat.id === from); const [to, setTo] = useState(''); const [amt, setAmt] = useState(src ? Math.max(0, src.left).toFixed(2) : '0')
+  const m = to ? moveMoney(ps, from, to, parseNum(amt) || 0) : { patches: [], moved: 0 }
+  return <><MHead title={`Move money from ${src?.cat.name || 'envelope'}`} /><MBody>
+    <Note>{src ? `${fmtMoney(Math.max(0, src.left))} left in ${src.cat.name}.` : ''} Moving lowers its plan and raises the other envelope's by the same amount.</Note>
+    <div className="grid2"><Field label="To envelope"><select className="inp" value={to} onChange={e => setTo(e.target.value)}><option value="">Choose…</option>{ps.lines.filter(l => l.cat.id !== from).sort((a, b) => a.left - b.left).map(l => <option key={l.cat.id} value={l.cat.id}>{l.cat.name} · {l.left < 0 ? 'over by ' + fmtMoney(-l.left) : fmtMoney(l.left) + ' left'}</option>)}</select></Field>
+      <Field label="Amount"><input className="inp" inputMode="decimal" value={amt} onChange={e => setAmt(e.target.value)} /></Field></div>
+    {to && m.moved < (parseNum(amt) || 0) - 0.005 && <div className="msg warn">Only {fmtMoney(m.moved)} can move — that is what {src?.cat.name} has left.</div>}
+  </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn primary disabled={!m.moved} onClick={() => onApply(m.patches)}>Move {fmtMoney(m.moved)}</Btn></MFoot></>
+}
 
 /** Sinking funds: categories budgeted per year (or per month) are spread over each period; this card shows what has been set aside year-to-date vs spent. */
 function SinkingCard({ period, onSpread }: { period: BudgetPeriod | null | undefined; onSpread?: () => void }) {

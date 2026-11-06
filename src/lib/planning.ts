@@ -41,13 +41,13 @@ export function goalAllocation(d: Data, s: Settings): AllocationResult {
   const goals = d.goals.filter(g => g.status === 'Active').slice().sort((a, b) => a.priority - b.priority || a.sort_order - b.sort_order)
   const acctLeft = new Map<string, number>(assets(d).map(a => [a.id, balanceOf(a, d)]))
   const rows: Allocation[] = []
-  for (const g of goals.filter(g => g.account_id)) { const p = goalProgress(d, g); if (g.kind === 'debt_payoff') { rows.push({ goal: g, saved: p.saved, target: g.target_amount, left: p.left, pct: p.pct, allocated: p.saved, fromAccount: g.account_id!, covered: 'tracked' }); continue }
-    const avail = acctLeft.get(g.account_id!) ?? 0; const take = Math.min(avail, g.target_amount); acctLeft.set(g.account_id!, round2(avail - take))
-    rows.push({ goal: g, saved: p.saved, target: g.target_amount, left: p.left, pct: p.pct, allocated: round2(take), fromAccount: g.account_id!, covered: take >= g.target_amount - 0.005 ? 'full' : take > 0 ? 'partial' : 'none' }) }
+  for (const g of goals.filter(g => g.account_id)) { const p = goalProgress(d, g); if (g.kind === 'debt_payoff') { rows.push({ goal: g, saved: p.saved, target: p.target, left: p.left, pct: p.pct, allocated: p.saved, fromAccount: g.account_id!, covered: 'tracked' }); continue }
+    const avail = acctLeft.get(g.account_id!) ?? 0; const take = Math.min(avail, p.target); acctLeft.set(g.account_id!, round2(avail - take))
+    rows.push({ goal: g, saved: p.saved, target: p.target, left: p.left, pct: p.pct, allocated: round2(take), fromAccount: g.account_id!, covered: take >= p.target - 0.005 ? 'full' : take > 0 ? 'partial' : 'none' }) }
   // pool for unlinked goals: unassigned savings + checking cash above the floor (counts-as-cash accounts only)
   const pool0 = round2(sum(assets(d).filter(a => a.include_in_cash || (s.includeRetirementInCash && a.kind === 'retirement')).map(a => acctLeft.get(a.id) ?? 0)) - (+s.reserveFloor || 0)); let pool = Math.max(0, pool0)
-  for (const g of goals.filter(g => !g.account_id)) { const p = goalProgress(d, g); const take = Math.min(pool, g.target_amount); pool = round2(pool - take)
-    rows.push({ goal: g, saved: p.saved, target: g.target_amount, left: p.left, pct: p.pct, allocated: round2(take), fromAccount: null, covered: take >= g.target_amount - 0.005 ? 'full' : take > 0 ? 'partial' : 'none' }) }
+  for (const g of goals.filter(g => !g.account_id)) { const p = goalProgress(d, g); const take = Math.min(pool, p.target); pool = round2(pool - take)
+    rows.push({ goal: g, saved: p.saved, target: p.target, left: p.left, pct: p.pct, allocated: round2(take), fromAccount: null, covered: take >= p.target - 0.005 ? 'full' : take > 0 ? 'partial' : 'none' }) }
   const allocated = round2(sum(rows.filter(r => r.covered !== 'tracked').map(r => r.allocated)))
   const allocatable = round2(sum(assets(d).filter(a => a.include_in_cash).map(a => balanceOf(a, d))))
   const shortfall = round2(sum(rows.filter(r => r.covered !== 'tracked').map(r => Math.max(0, r.target - r.allocated))))
@@ -59,7 +59,7 @@ export interface Milestone { pct: number; amount: number; date: string | null; r
 /** 25 / 50 / 75 / 100 % milestones with the date each was (or will be) hit at the current monthly contribution. */
 export function goalMilestones(d: Data, g: Goal, asOf = today()): Milestone[] {
   const p = goalProgress(d, g); const contribs = d.contributions.filter(c => c.goal_id === g.id).slice().sort((a, b) => a.date.localeCompare(b.date))
-  return [0.25, 0.5, 0.75, 1].map(pct => { const amount = round2(g.target_amount * pct)
+  return [0.25, 0.5, 0.75, 1].map(pct => { const amount = round2(p.target * pct)
     if (p.saved >= amount - 0.005) { let run = +g.starting_amount, on: string | null = null; if (run < amount - 0.005) for (const c of contribs) { run += c.amount; if (run >= amount - 0.005) { on = c.date; break } }; return { pct, amount, date: on, reached: true, reachedOn: on } }   // reachedOn null = covered by the starting amount (or by the linked account's balance)
     const months = g.monthly_contribution > 0 ? (amount - p.saved) / g.monthly_contribution : null
     return { pct, amount, date: months != null && isFinite(months) ? addDays(asOf, Math.round(months * 30.44)) : null, reached: false } })
@@ -72,7 +72,7 @@ export function goalWhatIf(d: Data, g: Goal, opts: { monthly?: number; lump?: nu
   const date = months == null ? null : addDays(asOf, Math.round(months * 30.44))
   const monthsToTarget = g.target_date ? Math.max(0, diffDays(g.target_date, asOf) / 30.44) : null
   const onTime = g.target_date && date ? date <= g.target_date : null
-  const byTarget = monthsToTarget != null ? round2(Math.min(g.target_amount, p.saved + (opts.lump || 0) + monthly * monthsToTarget)) : null
+  const byTarget = monthsToTarget != null ? round2(Math.min(p.target, p.saved + (opts.lump || 0) + monthly * monthsToTarget)) : null
   const neededForTarget = monthsToTarget != null ? round2(monthsToTarget > 0.1 ? left / monthsToTarget : left) : null
   return { monthly, months: months == null ? null : round2(months), date, onTime, byTarget, neededForTarget }
 }

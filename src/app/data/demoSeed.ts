@@ -107,7 +107,7 @@ export function demoSeed(): { household: Household; data: Data } {
   // goals
   d.goals.push({ id: demoId(), household_id: hh, ref: 'G-001', name: 'Emergency fund (6 months)', kind: 'emergency_fund', target_amount: 18000, target_date: addDays(t, 540), account_id: sav.id, starting_amount: 7150, monthly_contribution: 300, priority: 1, status: 'Active', color: '#15803d', sort_order: 1 })
   d.goals.push({ id: demoId(), household_id: hh, ref: 'G-002', name: 'Pay off Amex', kind: 'debt_payoff', target_amount: 2840.2, target_date: addDays(t, 300), account_id: amex.id, starting_amount: 0, monthly_contribution: 300, priority: 2, status: 'Active', color: '#f97316', sort_order: 2 })
-  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-003', name: 'Spring break trip', kind: 'purchase', target_amount: 2400, target_date: addDays(t, 150), account_id: sav.id, starting_amount: 600, monthly_contribution: 200, priority: 3, status: 'Active', color: '#3b5a8c', sort_order: 3 })
+  d.goals.push({ id: demoId(), household_id: hh, ref: 'G-003', name: 'Spring break trip', kind: 'purchase', target_amount: 2400, target_date: addDays(t, 150), inflation_pct: 3, target_base_date: addDays(t, -60), account_id: sav.id, starting_amount: 600, monthly_contribution: 200, priority: 3, status: 'Active', color: '#3b5a8c', sort_order: 3 })
   d.transactions.filter(x => x.kind === 'transfer' && x.to_account_id === sav.id).forEach(x => d.contributions.push({ id: demoId(), household_id: hh, goal_id: d.goals[0].id, date: x.date, amount: x.amount, transaction_id: x.id }))
 
   // holdings: the 401(k) is a target-date fund + bond fund; add a small brokerage account with a few positions
@@ -122,6 +122,13 @@ export function demoSeed(): { household: Household; data: Data } {
   hold({ account_id: brok.id, symbol: 'BTC', name: 'Bitcoin', asset_class: 'crypto', sector: 'Crypto', risk: 'high', quantity: 0.012, price: 67200, cost_basis: 650 })
   hold({ account_id: brok.id, name: 'Settlement cash', asset_class: 'cash', sector: 'Cash', risk: 'low', quantity: 1, price: 433.2, cost_basis: 433.2 })
 
+  // tax lots (0.22.0): VTI was bought in two lots — an older long-term gain and a recent short-term loss worth harvesting
+  { const vti = d.holdings.find(h => h.symbol === 'VTI'); if (vti) d.lots.push({ id: demoId(), household_id: hh, holding_id: vti.id, acquired_on: addDays(t, -800), quantity: 15, cost: 3000 }, { id: demoId(), household_id: hh, holding_id: vti.id, acquired_on: addDays(t, -120), quantity: 7, cost: 2100, notes: 'bought near the high' }) }
+  // insurance register (0.22.0): employer health, a term life policy, auto — no renters or disability yet, so the gaps card has something to say
+  d.insurance.push({ id: demoId(), household_id: hh, ref: 'Y-001', kind: 'health', name: 'Medical (employer PPO)', carrier: 'Anthem', insured: 'Household', premium: 186, premium_frequency: 'monthly', deductible: 1500, through_employer: true, status: 'Active', sort_order: 1 },
+    { id: demoId(), household_id: hh, ref: 'Y-002', kind: 'term_life', name: '20-year term life', carrier: 'Haven Life', insured: 'Gary', policy_last4: '4471', coverage: 250000, premium: 28.5, premium_frequency: 'monthly', renews_on: addDays(t, 40), beneficiary: 'Spouse (primary); children equally (contingent)', through_employer: false, status: 'Active', sort_order: 2 },
+    { id: demoId(), household_id: hh, ref: 'Y-003', kind: 'auto', name: 'Auto — Honda CR-V', carrier: 'Progressive', insured: 'Household', coverage: 100000, deductible: 500, premium: 612, premium_frequency: 'semiannual', renews_on: addDays(t, 75), through_employer: false, status: 'Active', sort_order: 3 })
+  { const k = d.accounts.find(a => a.name === 'Fidelity 401(k)'); if (k) Object.assign(k, { beneficiary: 'Spouse (primary)', beneficiary_reviewed_on: addDays(t, -1400) }) }
   // planned items, snapshots, hardship
   d.planned.push({ id: demoId(), household_id: hh, ref: 'X-001', date: addDays(t, 20), label: 'Tax refund', category: 'Tax refund', amount: 1240, status: 'Planned' })
   d.planned.push({ id: demoId(), household_id: hh, ref: 'X-002', date: addDays(t, 45), label: 'New tires', category: 'Vehicle', amount: -650, status: 'Planned' })

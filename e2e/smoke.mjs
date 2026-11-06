@@ -17,7 +17,7 @@ for (const W of [1400, 390]) {
   if (await p.locator('#pw').count()) { await p.fill('#pw', 'hunter22'); const t0 = await p.getAttribute('#pw', 'type'); await p.click('.pwtoggle'); const t1 = await p.getAttribute('#pw', 'type'); await p.click('.pwtoggle'); const t2 = await p.getAttribute('#pw', 'type'); ok(t0 === 'password' && t1 === 'text' && t2 === 'password' && await p.inputValue('#pw') === 'hunter22', `${W}: password eye toggles hidden → shown → hidden (${t0}/${t1}/${t2})`); ok((await p.locator('.msg.crit').count()) === 0, `${W}: toggling the eye did not submit the form`); await p.fill('#pw', '') }
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
-  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/plan', '/tax', '/reports', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
+  const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/plan', '/protection', '/tax', '/reports', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
   for (const path of pages) { await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(900); const h = await p.locator('h1').first().textContent(); const sw = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth); ok(h && sw <= 1, `${W}: ${path} renders "${h}" (sideways overflow ${sw}px)`); await p.screenshot({ path: `e2e/shots/${W}_${path.replace('/', '') || 'home'}.png`, fullPage: true }) }
   if (W === 1400) {
     // add a transaction
@@ -241,6 +241,29 @@ for (const W of [1400, 390]) {
     ok(await p.evaluate(() => { const j = JSON.parse(localStorage.getItem('wealthpilot.demo')); return j.household.settings.notify.members['demo-partner'].digest === false }), 'a member can be taken off the Monday digest')
     await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(700); ok((await p.locator('th:has-text("PDF")').count()) === 1, 'statement history has a PDF column for statements filed from email')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
+    // 0.22.0: tax lots + loss harvesting, insurance & estate, zero-based / envelope budgets, inflation-grown goals
+    await p.goto('http://localhost:4173/#/investments'); await p.waitForTimeout(1000); const inv5 = await p.locator('main').textContent()
+    ok(/Tax-loss harvesting/.test(inv5) && /VTI/.test(await p.locator('.card:has-text("Tax-loss harvesting")').textContent()), 'tax-loss harvesting lists the VTI lot bought near the high')
+    await p.click('button[aria-label^="Tax lots for VTI"]'); await p.waitForTimeout(400); const lm = await p.locator('.modal').textContent()
+    ok(/long-term/.test(lm) && /short · long on/.test(lm), 'the lots dialog splits VTI into a long-term and a short-term lot')
+    await p.fill('.modal input[placeholder="10"]', '1'); await p.fill('.modal input[placeholder="0.00"]', '270'); await p.click('.modal button:has-text("Add lot")'); await p.waitForTimeout(600)
+    ok((await LS()).holdings.find(h => h.symbol === 'VTI').quantity === 23 && Math.abs((await LS()).holdings.find(h => h.symbol === 'VTI').cost_basis - 5370) < 0.01, 'adding a lot updates the holding\'s quantity and cost basis')
+    await p.click('.modal .mfoot button:has-text("Close")'); await p.waitForTimeout(300)
+    ok(/wash sale/.test(await p.locator('.card:has-text("Tax-loss harvesting")').textContent()), 'buying VTI again today flags the wash-sale rule on the harvest')
+    await p.goto('http://localhost:4173/#/protection'); await p.waitForTimeout(1000); const pr = await p.locator('main').textContent()
+    ok(/Insurance & Estate/.test(await p.locator('h1').first().textContent()) && /No renters insurance/.test(pr) && /No disability insurance/.test(pr) && /Life insurance need/.test(pr), 'Insurance & Estate shows policies, the life-insurance need and the coverage gaps')
+    const r0 = (await LS()).recurring.length; await p.click('button:has-text("Add to Bills") >> nth=0'); await p.waitForTimeout(600)
+    ok((await LS()).recurring.length === r0 + 1 && (await LS()).insurance.some(x => x.recurring_id), 'a premium can be added to Bills from the register')
+    await p.click('button:has-text("Start the checklist")'); await p.waitForTimeout(900); const est0 = (await LS()).estate
+    ok(est0.length >= 12 && est0.some(e => e.key === 'will'), `starting the estate checklist adds the template (${est0.length} items)`)
+    await p.selectOption('select[aria-label="Status of Will"]', 'done'); await p.waitForTimeout(500)
+    ok((await LS()).estate.find(e => e.key === 'will').done_on != null, 'marking the will done records the date')
+    await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(900); await p.click('.seg button:has-text("Zero-based")'); await p.waitForTimeout(600)
+    ok(/To assign/.test(await p.locator('main').textContent()) && (await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).household.settings.budgetMode)) === 'zero', 'zero-based budgeting shows what is left to assign')
+    await p.click('.seg button:has-text("Envelopes")'); await p.waitForTimeout(600); ok(/each line is an envelope/.test(await p.locator('main').textContent()), 'envelope budgeting explains how envelopes carry over')
+    await p.click('.seg button:has-text("Standard")'); await p.waitForTimeout(400)
+    await p.goto('http://localhost:4173/#/goals'); await p.waitForTimeout(800); ok(/in today's dollars, grown 3%\/yr/.test(await p.locator('main').textContent()), 'a goal with inflation shows its target grown to the target date')
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
     await p.reload(); await p.waitForTimeout(900); await p.click('button:has-text("Review")'); await p.waitForTimeout(400)
@@ -263,7 +286,7 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
     // 0.19.0: accessibility gate — axe-core WCAG 2.0/2.1 A + AA on eight pages; any serious or critical violation fails the run
     const axeSrc = readFileSync(fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8')
-    for (const route of ['/', '/transactions', '/budget', '/reports', '/plan', '/debts', '/investments', '/income', '/settings']) {
+    for (const route of ['/', '/transactions', '/budget', '/reports', '/plan', '/debts', '/investments', '/income', '/protection', '/settings']) {
       await p.goto('http://localhost:4173/#' + route); await p.waitForTimeout(900); await p.evaluate(axeSrc)
       const res = await p.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }))
       const bad = res.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')

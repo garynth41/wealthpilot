@@ -9,7 +9,7 @@ import { balanceFor, dropKnown } from '../../lib/simplefin'
 import { verifiedBalance } from '../../lib/reconcile'
 
 const KEY = LS('demo')
-const PREFIX: Partial<Record<Collection, string>> = { reconciliations: 'K', transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I', scenarios: 'N' }
+const PREFIX: Partial<Record<Collection, string>> = { reconciliations: 'K', transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I', scenarios: 'N', insurance: 'Y' }
 
 export class MemoryRepo implements Repo {
   readonly mode = 'demo' as const
@@ -26,7 +26,8 @@ export class MemoryRepo implements Repo {
   private persist() { try { localStorage.setItem(KEY, JSON.stringify({ household: this.household, data: this.data })) } catch { /* quota or private mode */ } }
   reset() { const s = demoSeed(); this.household = s.household; this.data = s.data; this.persist(); this.emit() }
   private emit() { this.listeners.forEach(f => f()) }
-  async loadAll() { return { household: this.household, data: this.data, role: 'owner' as Role, readOnly: false, modules: null } }
+  /** a copy of every array, so the store's state never aliases the repo's (an insert would otherwise appear twice until the next refresh) */
+  async loadAll() { const data = Object.fromEntries(Object.entries(this.data).map(([k, v]) => [k, Array.isArray(v) ? [...v] : v])) as unknown as Data; return { household: this.household, data, role: 'owner' as Role, readOnly: false, modules: null } }
   private nextRef(coll: Collection) { const p = PREFIX[coll]; if (!p) return undefined; const rows = this.data[coll] as Array<{ ref?: string | null }>; const n = Math.max(0, ...rows.map(r => +String(r.ref || '').split('-')[1] || 0)) + 1; return `${p}-${String(n).padStart(3, '0')}` }
   async insert<C extends Collection>(coll: C, row: Partial<RowOf<C>>) {
     const r = { ...row, id: (row as { id?: string }).id || demoId(), household_id: this.household.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as RowOf<C> & { ref?: string | null }
@@ -47,6 +48,7 @@ export class MemoryRepo implements Repo {
     // cascades mirroring the schema
     if (coll === 'periods') this.data.lines = this.data.lines.filter(l => l.period_id !== id)
     if (coll === 'transactions') { this.data.splits = (this.data.splits || []).filter(s => s.transaction_id !== id); this.data.attachments = (this.data.attachments || []).filter(a => a.transaction_id !== id); this.data.comments = (this.data.comments || []).filter(c => c.transaction_id !== id) }
+    if (coll === 'holdings') this.data.lots = (this.data.lots || []).filter(l => l.holding_id !== id)
     if (coll === 'statements') this.data.attachments = (this.data.attachments || []).filter(a => a.statement_id !== id)
     if (coll === 'recurring') this.data.occurrences = this.data.occurrences.filter(o => o.recurring_id !== id)
     if (coll === 'goals') this.data.contributions = this.data.contributions.filter(c => c.goal_id !== id)

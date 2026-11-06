@@ -122,3 +122,15 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
 }
 /** Which withholding change (per paycheck) would land the federal balance at zero. */
 export function withholdingToBreakEven(d: Data, s: Settings, p: Partial<TaxProfile>, asOf = today()): number | null { const e = estimateTax(d, s, { ...p, extraWithholdingPerCheck: 0 }, asOf); if (!e.paychecksLeft) return null; return round2(-e.balance / e.paychecksLeft) }
+/** The federal long-term capital-gains rate at this estimate's taxable income (0 / 15 / 20%). */
+export function ltcgRate(e: Pick<TaxEstimate, 'year' | 'status' | 'taxableIncome'>): number { const L = tableFor(e.year).ltcg[e.status]; return e.taxableIncome <= L.zeroUpTo ? 0 : e.taxableIncome <= L.fifteenUpTo ? 0.15 : 0.2 }
+/** Estimated-tax payments still due this tax year (0.22.0), for the cash calendar: the planned estimates spread over the deadlines left,
+ *  plus the safe-harbor shortfall's share per deadline. Nothing when the household has no tax profile. */
+export function estimatedTaxDue(d: Data, s: Settings, from: string, to: string, asOf = today()): Array<{ date: string; label: string; amount: number }> {
+  if (!s.tax || s.taxInCalendar === false) return []
+  const T = tableFor((s.tax.year as number) || LATEST_TAX_YEAR); const dates = T.calendar.filter(c => c.kind === 'estimate' && c.date >= asOf); if (!dates.length || !dates.some(c => c.date >= from && c.date <= to)) return []
+  const e = estimateTax(d, s, undefined, asOf); const p = resolveProfile(d, s, undefined, asOf)
+  const per = round2((p.plannedEstimates || 0) / dates.length + e.safeHarbor.quarterlyNeeded)
+  if (per < 1) return []
+  return dates.filter(c => c.date >= from && c.date <= to).map(c => ({ date: c.date, label: 'Estimated tax · ' + c.label.split(' · ')[0].replace(/ \(Form 1040-ES\)/, ''), amount: per }))
+}

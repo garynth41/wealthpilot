@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useData } from '../app/hooks'
 import type { Holding, RetirementInputs } from '../app/data/types'
 import { ASSET_CLASS_LABEL } from '../app/data/types'
-import { Card, KPI, Btn, Pill, Note, Field, Seg, Empty, useConfirm } from '../components/ui'
+import { Card, KPI, Btn, Pill, Note, Field, Seg, Empty, useConfirm, useModal } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { Chart, C, PALETTE, Gauge, cssVar } from '../components/Chart'
 import { portfolio, holdingValue, holdingGain, retirementAssets } from '../lib/portfolio'
@@ -15,10 +15,12 @@ import { useStore } from '../app/store'
 import type { Pension } from '../app/data/types'
 import { fmtMoney, fm2, fmtPct, parseNum } from '../lib/money'
 import { today } from '../lib/dates'
+import { LotsModal, HarvestCard } from './Lots'
+import { lotsFor } from '../lib/lots'
 
 const SECTORS = ['Diversified', 'Fixed income', 'Cash', 'Technology', 'Healthcare', 'Financials', 'Consumer', 'Industrials', 'Energy', 'Utilities', 'Real estate', 'Communication', 'Materials', 'Crypto', 'Other']
 export function InvestmentsPage() {
-  const { data, settings, saveSettings, insert, update, remove, guarded, canEdit, accts, acctLabels, mode, household, refresh } = useData(); const confirm = useConfirm(); const c = C(); const pal = PALETTE(); const [pulling, setPulling] = useState(false)
+  const { data, settings, saveSettings, insert, update, remove, guarded, canEdit, accts, acctLabels, mode, household, refresh } = useData(); const confirm = useConfirm(); const { open, close } = useModal(); const c = C(); const pal = PALETTE(); const [pulling, setPulling] = useState(false)
   const invAccts = accts.filter(a => a.kind === 'investment' || a.kind === 'retirement'); const [acctF, setAcctF] = useState('')
   const pf = useMemo(() => portfolio(data, acctF || null), [data, acctF]); const ra = useMemo(() => retirementAssets(data), [data])
   const cols: Col<Holding>[] = [
@@ -44,9 +46,10 @@ export function InvestmentsPage() {
     {pf.concentrationWarning && <div className="banner warn" style={{ marginBottom: 12 }}>{pf.concentrationWarning}.</div>}
     <div className="grid g12">
       <Card span={12} title="Holdings" hint="positions in your investment and retirement accounts · value = quantity × price · update prices when you check your statements" right={<span className="btnrow"><select className="inp" style={{ width: 'auto', padding: '4px 8px' }} value={acctF} onChange={e => setAcctF(e.target.value)} aria-label="Show holdings in"><option value="">All accounts</option>{invAccts.map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select>{canEdit && mode === 'db' && auto.length > 0 && <Btn sm onClick={pull} disabled={pulling}>{pulling ? 'Updating…' : 'Update prices now'}</Btn>}{canEdit && <Btn primary sm onClick={add}>+ Add holding</Btn>}</span>}>
-        <Table rows={pf.holdings} cols={cols} editable={canEdit} name="holdings" defaultSort={{ k: '_v', dir: -1 }} onChange={(h, k, v) => guarded(() => update('holdings', h.id, { [k]: v === '' ? null : v, ...(k === 'price' ? { price_as_of: today() } : {}) } as Partial<Holding>))} onDelete={async h => { if (await confirm(`Delete ${h.symbol || h.name}?`)) guarded(() => remove('holdings', h.id), 'Deleted') }} empty="No holdings yet — add the funds and stocks in your 401(k), IRA and brokerage accounts." />
+        <Table rows={pf.holdings} cols={cols} editable={canEdit} name="holdings" defaultSort={{ k: '_v', dir: -1 }} onChange={(h, k, v) => guarded(() => update('holdings', h.id, { [k]: v === '' ? null : v, ...(k === 'price' ? { price_as_of: today() } : {}) } as Partial<Holding>))} actions={h => h.asset_class === 'cash' ? null : <Btn sm onClick={() => open(<LotsModal h={h} onDone={close} />, { wide: true })} title="Purchase lots: dates and costs for short- and long-term gains" aria-label={`Tax lots for ${h.symbol || h.name} (${lotsFor(data, h.id).length})`}>{lotsFor(data, h.id).length ? `Lots (${lotsFor(data, h.id).length})` : 'Lots'}</Btn>} onDelete={async h => { if (await confirm(`Delete ${h.symbol || h.name}?`)) guarded(() => remove('holdings', h.id), 'Deleted') }} empty="No holdings yet — add the funds and stocks in your 401(k), IRA and brokerage accounts." />
         <Note>{auto.length ? <>{auto.length} holding{auto.length === 1 ? '' : 's'} with a symbol {auto.length === 1 ? 'is' : 'are'} priced by the daily feed after the US close (stocks, ETFs, mutual funds; crypto as e.g. BTC → BTC-USD){stale ? <> · <b>{stale}</b> not updated in the last 4 days{mode === 'demo' ? ' (the offline demo has no feed)' : ''}</> : ''}. </> : null}Set <b>Price from</b> to “Typed by hand” for private assets, cash or anything the feed cannot quote. The account balance on Accounts is used wherever it is larger than the itemised holdings.</Note>
       </Card>
+      <HarvestCard />
       <Card span={4} title="Asset allocation">{pie('Asset allocation', pf.byClass)}</Card>
       <Card span={4} title="Sector allocation">{pie('Sector allocation', pf.bySector)}</Card>
       <Card span={4} title="Risk allocation">{pie('Risk allocation', pf.byRisk)}<div className="tblwrap"><table className="tbl"><tbody>{pf.byRisk.map(s => <tr key={s.key}><td>{s.label}</td><td className="num">{fmtMoney(s.value)}</td><td className="num">{Math.round(s.pct * 100)}%</td></tr>)}</tbody></table></div></Card>

@@ -18,6 +18,8 @@ export interface Account extends Stamped {
   credit_limit?: number | null; apr: number
   /** promotional rate (0.20.0): promo_apr applies through promo_until, then apr takes over */
   promo_apr?: number | null; promo_until?: ISODate | null
+  /** 0.22.0: who inherits the account (retirement / brokerage beneficiary, POD/TOD on bank accounts) and when it was last checked */
+  beneficiary?: string | null; beneficiary_reviewed_on?: ISODate | null
   statement_date?: ISODate | null; statement_balance?: number | null; minimum_payment: number; due_date?: ISODate | null; planned_payment?: number | null
   autopay: boolean; autopay_account_id?: UUID | null; last_paid_due?: ISODate | null
   include_in_cash: boolean; include_in_net_worth: boolean
@@ -100,6 +102,8 @@ export interface Goal extends Stamped {
   ref?: string | null; name: string; kind: 'savings' | 'emergency_fund' | 'debt_payoff' | 'sinking_fund' | 'purchase' | 'other'
   target_amount: number; target_date?: ISODate | null; account_id?: UUID | null; starting_amount: number; monthly_contribution: number; priority: number
   status: 'Active' | 'Paused' | 'Reached' | 'Cancelled'; color?: string | null; icon?: string | null; notes?: string | null; sort_order: number
+  /** 0.22.0: the target is in dollars of target_base_date (default: when the goal was created) and grows at inflation_pct a year to the target date */
+  inflation_pct?: number | null; target_base_date?: ISODate | null
 }
 export interface GoalContribution extends Stamped { goal_id: UUID; date: ISODate; amount: number; transaction_id?: UUID | null; notes?: string | null }
 
@@ -111,6 +115,14 @@ export interface Holding extends Stamped {
   /** 'auto' = the daily price feed updates price/price_as_of from the symbol; 'manual' = typed by hand (private assets, cash) */
   price_source?: 'auto' | 'manual'
 }
+/** A purchase lot of a holding (0.22.0): date, quantity and total cost — for short/long-term gains and tax-loss harvesting (lib/lots.ts). */
+export interface HoldingLot extends Stamped { holding_id: UUID; acquired_on: ISODate; quantity: number; cost: number; notes?: string | null }
+export type InsuranceKind = 'life' | 'term_life' | 'health' | 'dental' | 'vision' | 'disability' | 'long_term_care' | 'auto' | 'home' | 'renters' | 'umbrella' | 'pet' | 'travel' | 'other'
+export const INSURANCE_KIND_LABEL: Record<InsuranceKind, string> = { life: 'Life (permanent)', term_life: 'Term life', health: 'Health', dental: 'Dental', vision: 'Vision', disability: 'Disability', long_term_care: 'Long-term care', auto: 'Auto', home: 'Homeowners', renters: 'Renters', umbrella: 'Umbrella liability', pet: 'Pet', travel: 'Travel', other: 'Other' }
+/** An insurance policy (0.22.0). Only the last four characters of the policy number are kept. */
+export interface InsurancePolicy extends Stamped { ref?: string | null; kind: InsuranceKind; name: string; carrier?: string | null; insured?: string | null; policy_last4?: string | null; coverage?: number | null; deductible?: number | null; premium: number; premium_frequency: 'monthly' | 'quarterly' | 'semiannual' | 'yearly'; renews_on?: ISODate | null; beneficiary?: string | null; through_employer: boolean; recurring_id?: UUID | null; status: 'Active' | 'Lapsed' | 'Cancelled'; notes?: string | null; sort_order: number }
+/** One line of the estate checklist (0.22.0): will, powers of attorney, beneficiaries, where the documents are. */
+export interface EstateItem extends Stamped { key?: string | null; label: string; area: string; status: 'todo' | 'in_progress' | 'done' | 'na'; done_on?: ISODate | null; review_on?: ISODate | null; location?: string | null; notes?: string | null; sort_order: number }
 export interface PlannedItem extends Stamped { ref?: string | null; date: ISODate; label: string; category: string; amount: number; status: 'Planned' | 'Done' | 'Cancelled'; transaction_id?: UUID | null; notes?: string | null }
 export interface NetWorthSnapshot extends Stamped { date: ISODate; cash: number; assets: number; liabilities: number; by_account: Record<string, number>; notes?: string | null }
 export interface Hardship extends Stamped {
@@ -166,6 +178,9 @@ export interface Settings {
   savedViews?: SavedView[]          // Transactions filter presets (0.19.0)
   notify?: NotifyPrefs              // alert channels and thresholds (0.19.0, see lib/notify.ts)
   plan?: AppliedPlan                // the Plan view's applied allocation (0.20.0) — Debts, Goals and Retirement read it
+  budgetMode?: 'standard' | 'zero' | 'envelope'   // 0.22.0: zero-based (assign every dollar of income) or envelope (every line rolls over, overspending is covered from another line)
+  taxInCalendar?: boolean           // 0.22.0: federal estimated-tax payments in the cash calendar (default on when a tax profile exists)
+  defaultInflationPct?: number      // 0.22.0: inflation used for new goals and the insurance needs estimate (default 3)
 }
 /** What 'Apply this plan' wrote (0.20.0), so other pages agree with the Plan view and a re-apply replaces rather than adds. */
 export interface AppliedPlan { scenarioId?: string | null; name?: string | null; assumptions: Record<string, unknown>; appliedAt: string; debtExtra: number; goalExtra: Record<string, number>; retireExtra: number; strategy?: 'avalanche' | 'snowball' }
@@ -190,17 +205,18 @@ export interface PayeeRule { id: string; pattern: string; match: 'contains' | 's
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'comments' | 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
-export const TABLE: Record<Collection, string> = { comments: 'transaction_comments', scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
+export type Collection = 'lots' | 'insurance' | 'estate' | 'comments' | 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
+export const TABLE: Record<Collection, string> = { lots: 'holding_lots', insurance: 'insurance_policies', estate: 'estate_items', comments: 'transaction_comments', scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
   transactions: Transaction[]; splits: TransactionSplit[]; attachments: Attachment[]; comments: TransactionComment[]; scenarios: Scenario[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
   planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
+  lots: HoldingLot[]; insurance: InsurancePolicy[]; estate: EstateItem[]
   /** immutable cash-operations audit trail, newest first */
   audit: AuditEvent[]
   emailLedger: EmailLedgerRow[]; members: Member[]; invites: Invite[]; activity: ActivityRow[]
   /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
   duplicates: Transaction[]
 }
-export const emptyData = (): Data => ({ comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

@@ -69,3 +69,42 @@ export function insights(s: Settings, ps: PeriodStat) {
 }
 /** Monthly debt commitment: planned payments on liabilities (or what was paid in the month if more). */
 export function monthlyDebt(d: Data, m = curMonth()) { return sum(liabilities(d).map(a => Math.max(debtPlanned(a), debtPaidInRange(d, a, monthStart(m), monthEnd(m))))) }
+
+// ---------------- budgeting modes (0.22.0) ----------------
+export type BudgetMode = 'standard' | 'zero' | 'envelope'
+export const BUDGET_MODE_LABEL: Record<BudgetMode, string> = { standard: 'Standard', zero: 'Zero-based', envelope: 'Envelopes' }
+/** Zero-based: the period's expected income (budgeted income lines or the pay schedules, whichever is larger) minus everything planned
+ *  on spending lines is what is still to assign. The aim is exactly $0 — every dollar has a job. */
+export function assignment(ps: PeriodStat) {
+  const income = round2(Math.max(ps.incB, ps.expectedPay)); const assigned = round2(sum(ps.lines.map(l => l.planned)))
+  const toAssign = round2(income - assigned)
+  return { income, assigned, toAssign, state: Math.abs(toAssign) < 0.5 ? 'good' as const : toAssign > 0 ? 'warn' as const : 'crit' as const }
+}
+export interface LinePatch { lineId?: string; category_id: string; planned: number }
+/** Envelopes: move money from one line's leftover to another. Never takes more than the source line has left. */
+export function moveMoney(ps: PeriodStat, fromCat: string, toCat: string, amount: number): { patches: LinePatch[]; moved: number } {
+  const from = ps.lines.find(l => l.cat.id === fromCat), to = ps.lines.find(l => l.cat.id === toCat) || null
+  if (!from || fromCat === toCat || !(amount > 0)) return { patches: [], moved: 0 }
+  const moved = round2(Math.min(amount, Math.max(0, from.left))); if (moved <= 0) return { patches: [], moved: 0 }
+  return { moved, patches: [{ lineId: from.lineId, category_id: fromCat, planned: round2(from.planned - moved) }, { lineId: to?.lineId, category_id: toCat, planned: round2((to?.planned || 0) + moved) }] }
+}
+/** Envelopes: where to cover an overspent line from — the line with the most left, discretionary lines first. */
+export function coverFrom(ps: PeriodStat, catId: string): { from: LineStat | null; amount: number; short: number } {
+  const l = ps.lines.find(x => x.cat.id === catId); const short = l ? round2(Math.max(0, -l.left)) : 0; if (!short) return { from: null, amount: 0, short: 0 }
+  const rank = { Discretionary: 0, Important: 1, Essential: 2 } as Record<string, number>
+  const from = ps.lines.filter(x => x.cat.id !== catId && x.left > 0.005).sort((a, b) => (rank[a.cat.priority] ?? 1) - (rank[b.cat.priority] ?? 1) || b.left - a.left)[0] || null
+  return { from, amount: from ? round2(Math.min(short, from.left)) : 0, short }
+}
+/** Envelopes: every spending line carries its whole balance into the next period — unspent money stays in the envelope, an overspent
+ *  envelope starts the next period owing. Returns the lines of `next` whose carry-in should change (or be created). */
+export function envelopeCarry(d: Data, s: Settings, prev: BudgetPeriod, next: BudgetPeriod): Array<{ lineId?: string; category_id: string; rollover_in: number; planned?: number }> {
+  const ps = periodStat(d, s, prev); const out: Array<{ lineId?: string; category_id: string; rollover_in: number; planned?: number }> = []
+  for (const l of ps.lines) {
+    const carry = round2(l.left); const nl = d.lines.find(x => x.period_id === next.id && x.category_id === l.cat.id)
+    if (nl) { if (Math.abs(+nl.rollover_in - carry) > 0.005) out.push({ lineId: nl.id, category_id: l.cat.id, rollover_in: carry }) }
+    else if (Math.abs(carry) > 0.005) out.push({ category_id: l.cat.id, rollover_in: carry, planned: 0 })
+  }
+  return out
+}
+/** The period right before this one, if it was started. */
+export const previousPeriod = (d: Data, p: BudgetPeriod) => d.periods.filter(x => x.id !== p.id && x.start_date < p.start_date).sort((a, b) => b.start_date.localeCompare(a.start_date))[0] || null

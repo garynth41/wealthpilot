@@ -7,8 +7,9 @@ import { payDates, monthlyIncome } from './paySchedule'
 import { upcoming, recMonthly, recActive, isOutflow } from './recurring'
 import { rangeStat, monthlyDebt } from './budget'
 import { payoffProjection, assumedPay } from './debts'
+import { estimatedTaxDue } from './tax'
 
-export interface CalItem { date: string; label: string; amt: number; kind: 'in' | 'out'; src: 'pay' | 'bill' | 'sub' | 'debt' | 'planned' | 'goal' | 'flex' | 'relief'; bal?: number; id?: string }
+export interface CalItem { date: string; label: string; amt: number; kind: 'in' | 'out'; src: 'pay' | 'bill' | 'sub' | 'debt' | 'planned' | 'goal' | 'flex' | 'relief' | 'tax'; bal?: number; id?: string }
 /** Money in and out, day by day, starting from cash on hand. Uses pay schedules, recurring items (unpaid), planned one-offs and the variable-spend run-rate. */
 export function cashCalendar(d: Data, s: Settings, days = 60) {
   const t = today(), to = addDays(t, days), items: CalItem[] = []
@@ -19,6 +20,8 @@ export function cashCalendar(d: Data, s: Settings, days = 60) {
   liabilities(d).forEach(a => { if (recActive(d).some(r => r.liability_account_id === a.id)) return; const pay = debtPlanned(a); if (!(pay > 0) || !a.due_date) return; const dday = parse(a.due_date).getDate(); const paid = debtDueState(a).label === 'Paid'
     for (let k = 0; k < 5; k++) { const dd = addMonthsClamp(a.due_date.slice(0, 10), k, dday); if (k === 0 && (paid || dd < t)) continue; if (dd < t) continue; add({ date: dd, label: `${acctLabel(a, d.accounts)} payment`, amt: -pay, kind: 'out', src: 'debt', id: a.id }) } })
   d.planned.filter(p => p.status === 'Planned').forEach(p => add({ date: p.date.slice(0, 10), label: p.label, amt: +p.amount || 0, kind: (+p.amount || 0) >= 0 ? 'in' : 'out', src: 'planned', id: p.id }))
+  // federal estimated-tax deadlines (0.22.0): planned estimates and any safe-harbor shortfall, from the tax planner
+  estimatedTaxDue(d, s, t, to).forEach(x => add({ date: x.date, label: x.label, amt: -x.amount, kind: 'out', src: 'tax' }))
   // everyday spending: variable categories at the recent run-rate, spread over the weeks ahead (less what has already been spent this period of the month)
   const varCats = d.categories.filter(c => c.kind === 'expense' && c.cost_type !== 'Fixed' && !c.archived && !recActive(d).some(r => r.category_id === c.id))
   const last90 = rangeStat(d, addDays(t, -90), addDays(t, -1)); const perWeek = sum(varCats.map(c => last90.byCat[c.name] || 0)) / (90 / 7)
@@ -64,7 +67,7 @@ export function runwayProjection(d: Data, s: Settings, opts?: { months?: number;
   const essentials = essFixed + essVar
   const baseSpend = (o.leanOnly ? essentials : b.fixed + b.variable) * (1 - o.cutPct / 100)
   const debts = liabilities(d).map(a => ({ a, p: payoffProjection(debtBal(a), a.apr, assumedPay(a, debtPlanned(a)), o.months + 1), pay: assumedPay(a, debtPlanned(a)) }))
-  const events = [...d.planned.filter(p => p.status === 'Planned').map(p => ({ date: p.date.slice(0, 10), amount: +p.amount || 0 })), ...o.extraEvents]
+  const events = [...d.planned.filter(p => p.status === 'Planned').map(p => ({ date: p.date.slice(0, 10), amount: +p.amount || 0 })), ...estimatedTaxDue(d, s, t, addDays(t, (o.months + 1) * 31)).map(x => ({ date: x.date, amount: -x.amount })), ...o.extraEvents]
   const xs: string[] = [], ys: number[] = [], inc: number[] = [], out: number[] = []; let cash = b.cash
   for (let m = 0; m <= o.months; m++) {
     const d0 = parse(t); d0.setMonth(d0.getMonth() + m); const from = iso(d0); const d1 = parse(t); d1.setMonth(d1.getMonth() + m + 1); const to = iso(d1)
