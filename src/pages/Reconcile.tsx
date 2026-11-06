@@ -7,7 +7,7 @@ import type { Transaction, Account } from '../app/data/types'
 import { Card, KPI, Btn, Pill, Note, Field, Seg, Empty, useConfirm } from '../components/ui'
 import { accountState, outstanding, unreconciled, suggestMatches, reconcileStatement, defaultCleared, findIssues, effectOn, itemType, AUTO_MATCH_SCORE, type RTxn } from '../lib/reconcile'
 import { keeperPatch, type DTxn } from '../lib/dedupe'
-import { fmtD, fmtDY, today, ago } from '../lib/dates'
+import { fmtD, fmtDY, today, ago, fmtDT } from '../lib/dates'
 import { fm2, fmtMoney, parseNum } from '../lib/money'
 import { acctLabel, isLiability } from '../lib/accounts'
 import { post } from '../lib/ledger'
@@ -136,12 +136,12 @@ export function ReconcilePage() {
     {tab === 'history' && <div className="grid g12">
       <Card span={12} title="Completed reconciliations" hint="immutable">
         {data.reconciliations.filter(r => r.account_id === a.id).length === 0 ? <Empty>None yet.</Empty> : <div className="tblwrap"><table className="tbl"><thead><tr><th>Statement</th><th className="num">Statement balance</th><th className="num">Cleared</th><th className="num">Outstanding</th><th className="num">In transit</th><th className="num">Reconciled</th><th className="num">Variance</th><th>Status</th><th>By</th></tr></thead><tbody>
-          {data.reconciliations.filter(r => r.account_id === a.id).sort((x, y) => y.statement_date.localeCompare(x.statement_date)).map(r => <tr key={r.id}><td>{fmtDY(r.statement_date)}</td><td className="num">{fm2(r.statement_balance)}</td><td className="num">{r.item_count}</td><td className="num">{fm2(r.outstanding_checks)}</td><td className="num">{fm2(r.deposits_in_transit)}</td><td className="num">{fm2(r.reconciled_balance)}</td><td className="num">{fm2(r.variance)}</td><td><Pill cls={r.status === 'completed' ? 'good' : 'warn'}>{r.status === 'completed' ? 'balanced' : 'adjusted'}</Pill>{r.adjustment_reason && <div className="note" style={{ margin: 0 }}>{r.adjustment_reason}</div>}</td><td style={{ fontSize: 12 }}>{r.completed_by_email || ''}<br />{new Date(r.completed_at).toLocaleString()}</td></tr>)}
+          {data.reconciliations.filter(r => r.account_id === a.id).sort((x, y) => y.statement_date.localeCompare(x.statement_date)).map(r => <tr key={r.id}><td>{fmtDY(r.statement_date)}</td><td className="num">{fm2(r.statement_balance)}</td><td className="num">{r.item_count}</td><td className="num">{fm2(r.outstanding_checks)}</td><td className="num">{fm2(r.deposits_in_transit)}</td><td className="num">{fm2(r.reconciled_balance)}</td><td className="num">{fm2(r.variance)}</td><td><Pill cls={r.status === 'completed' ? 'good' : 'warn'}>{r.status === 'completed' ? 'balanced' : 'adjusted'}</Pill>{r.adjustment_reason && <div className="note" style={{ margin: 0 }}>{r.adjustment_reason}</div>}</td><td style={{ fontSize: 12 }}>{r.completed_by_email || ''}<br />{fmtDT(r.completed_at)}</td></tr>)}
         </tbody></table></div>}
       </Card>
       <Card span={12} title="Audit trail" hint="imports · syncs · matches · overrides · reconciliations · corrections · balance changes — cannot be edited or deleted">
         {data.audit.filter(e => !e.account_id || e.account_id === a.id).length === 0 ? <Empty>No events yet.</Empty> : <div className="tblwrap" style={{ maxHeight: 480 }}><table className="tbl"><thead><tr><th>When</th><th>Event</th><th>What</th><th>Who</th></tr></thead><tbody>
-          {data.audit.filter(e => !e.account_id || e.account_id === a.id).slice(0, 300).map(e => <tr key={e.id}><td style={{ whiteSpace: 'nowrap' }}>{new Date(e.created_at).toLocaleString()}</td><td><Pill cls={AUDIT_PILL[e.kind] || 'idle'}>{e.kind.replace(/_/g, ' ')}</Pill></td><td>{e.summary}</td><td style={{ fontSize: 12 }}>{e.user_email || 'system'}</td></tr>)}
+          {data.audit.filter(e => !e.account_id || e.account_id === a.id).slice(0, 300).map(e => <tr key={e.id}><td style={{ whiteSpace: 'nowrap' }}>{fmtDT(e.created_at)}</td><td><Pill cls={AUDIT_PILL[e.kind] || 'idle'}>{e.kind.replace(/_/g, ' ')}</Pill></td><td>{e.summary}</td><td style={{ fontSize: 12 }}>{e.user_email || 'system'}</td></tr>)}
         </tbody></table></div>}
       </Card>
     </div>}

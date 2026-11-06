@@ -180,6 +180,7 @@ export interface Settings {
   plan?: AppliedPlan                // the Plan view's applied allocation (0.20.0) — Debts, Goals and Retirement read it
   budgetMode?: 'standard' | 'zero' | 'envelope'   // 0.22.0: zero-based (assign every dollar of income) or envelope (every line rolls over, overspending is covered from another line)
   taxInCalendar?: boolean           // 0.22.0: federal estimated-tax payments in the cash calendar (default on when a tax profile exists)
+  setupDismissed?: boolean          // 0.23.0: the Dashboard's getting-started checklist was hidden
   defaultInflationPct?: number      // 0.22.0: inflation used for new goals and the insurance needs estimate (default 3)
 }
 /** What 'Apply this plan' wrote (0.20.0), so other pages agree with the Plan view and a re-apply replaces rather than adds. */

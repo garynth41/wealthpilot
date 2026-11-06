@@ -5,7 +5,8 @@ import './styles.css'
 import { installErrorCapture } from './lib/errors'
 import { RootBoundary } from './components/RootBoundary'
 import { reloadForNewVersion } from './lib/chunks'
-installErrorCapture()
+import { initDisplay } from './lib/display'
+installErrorCapture(); initDisplay()
 // Vite fires this when a page's code or CSS cannot be preloaded — after a deploy, the old file names are gone. Reload once to the new version.
 window.addEventListener('vite:preloadError', e => { if (reloadForNewVersion()) e.preventDefault() })
 createRoot(document.getElementById('root')!).render(<StrictMode><RootBoundary><App /></RootBoundary></StrictMode>)

@@ -12,6 +12,9 @@ import { sb } from '../app/supabase'
 import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
 import { focusIdFrom, highlight } from '../lib/focus'
 import { Palette, ShortcutsHelp } from './Palette'
+import { HelpDrawer } from './HelpDrawer'
+import { PullToRefresh } from './PullToRefresh'
+import { subscribeDisplay, displayVersion, privacyOn, togglePrivacy } from '../lib/display'
 
 export interface View { path: string; title: string; sub: string; zone: string; icon: string; tab?: string }
 export const VIEWS: View[] = [
@@ -56,7 +59,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const setAllZones = (open: boolean) => setClosedZones(() => { const n = new Set(open ? [] : zonesRef.current); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
   const zonesRef = { current: [] as string[] }
   const [drawer, setDrawer] = useState(false); const { open } = useModal(); const online = useOnline()
-  const [palette, setPalette] = useState(false)
+  const [palette, setPalette] = useState(false); const [help, setHelp] = useState(false); const priv = useSyncExternalStore(subscribeDisplay, privacyOn); const dv = useSyncExternalStore(subscribeDisplay, displayVersion)
   // keyboard shortcuts (0.19.0): never while typing in a field; G-then-letter jumps; ? shows the list; Ctrl-Z undoes the last ledger edit
   useEffect(() => {
     let g = 0
@@ -69,7 +72,9 @@ export function Layout({ children }: { children: ReactNode }) {
       if (e.key === '/') { e.preventDefault(); setPalette(true); return }
       if (e.key === '?') { e.preventDefault(); open(<><MHead title="Keyboard shortcuts" /><MBody><ShortcutsHelp /></MBody></>); return }
       if (e.key === '[') { nav(-1); return } if (e.key === ']') { nav(1); return }
+      if (e.key === 'F1') { e.preventDefault(); setHelp(true); return }
       if (e.key.toLowerCase() === 'l' && !(g && Date.now() - g < 1500)) { e.preventDefault(); lockNow(); return }
+      if (e.key.toLowerCase() === 'h' && !(g && Date.now() - g < 1500)) { e.preventDefault(); togglePrivacy(); useStore.getState().toast(privacyOn() ? 'Amounts hidden — press H to show them' : 'Amounts shown'); return }
       if (e.key.toLowerCase() === 'g') { g = Date.now(); return }
       if (g && Date.now() - g < 1500) { const map: Record<string, string> = { d: '/', t: '/transactions', b: '/bills', a: '/accounts', f: '/forecast', p: '/plan', r: '/reports', s: '/settings' }; const to = map[e.key.toLowerCase()]; g = 0; if (to) { e.preventDefault(); nav(to) } return }
       if (e.key.toLowerCase() === 'n' && loc.pathname === '/transactions') { const btn = document.querySelector<HTMLButtonElement>('button.btn.primary.sm'); if (btn && /Add transaction/.test(btn.textContent || '')) { e.preventDefault(); btn.click() } }
@@ -78,7 +83,7 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [loc.pathname])   // eslint-disable-line react-hooks/exhaustive-deps
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
   const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname)
-  useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
+  useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); setHelp(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
   useEffect(() => { try { localStorage.setItem(LS('rail'), collapsed ? 'collapsed' : 'open') } catch { /* */ } }, [collapsed])
   const zones = [...new Set(visible.map(v => v.zone))]; zonesRef.current = zones
   const focusId = focusIdFrom(loc.search)
@@ -92,7 +97,8 @@ export function Layout({ children }: { children: ReactNode }) {
   return <div className={`app ${collapsed ? 'rail-collapsed' : ''}`}>
     <a href="#main" className="skip">Skip to content</a>
     {palette && <Palette onClose={() => setPalette(false)} />}
-    <header className="mbar"><button onClick={() => setDrawer(d => !d)} aria-label="Menu">☰</button><button onClick={() => nav(-1)} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><ThemeBtn /></header>
+    {help && <HelpDrawer path={view.path} title={view.title} onClose={() => setHelp(false)} />}
+    <header className="mbar"><button onClick={() => setDrawer(d => !d)} aria-label="Menu">☰</button><button onClick={() => nav(-1)} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><button onClick={togglePrivacy} aria-label={priv ? 'Show amounts' : 'Hide amounts'} aria-pressed={priv} title="Hide amounts">{priv ? '◉' : '◎'}</button><button onClick={() => setHelp(true)} aria-label="Help for this page">ⓘ</button><ThemeBtn /></header>
     <div className={`backdrop ${drawer ? 'show' : ''}`} onClick={() => setDrawer(false)} aria-hidden="true" />
     <aside className={`rail ${drawer ? 'open' : ''}`}>
       <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo size={28} /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!collapsed}>{collapsed ? '›' : '‹'}</button></div>
@@ -109,12 +115,13 @@ export function Layout({ children }: { children: ReactNode }) {
     </aside>
     <main className="main" id="main" tabIndex={-1}>
       <nav className="histnav" aria-label="History"><button className="hn-btn" onClick={() => nav(-1)} title="Back"><span aria-hidden>←</span> Back</button><button className="hn-btn" onClick={() => nav(1)} title="Forward">Forward <span aria-hidden>→</span></button><span className="hn-crumb">{view.path !== '/' && <><NavLink to="/">Home</NavLink> › <span>{view.zone}</span> › </>}<b>{view.title}</b></span></nav>
-      <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Search and jump (Ctrl K)" style={{ padding: '6px 10px' }}>⌕ <kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
+      <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Search and jump (Ctrl K)" style={{ padding: '6px 10px' }}>⌕ <kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button className="btn" onClick={() => setHelp(true)} title="Help for this page (F1)" aria-label="Help for this page" style={{ padding: '6px 10px' }}>ⓘ Help</button><button className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? '◉ Hidden' : '◎'}</button><button className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
       {outdated() && <div className="banner crit">A newer release (v{useStore.getState().latest}) is available — this tab is still running <b>v{APP_VERSION}</b>. <Btn sm primary onClick={() => { try { navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.update())) } catch { /* */ } location.reload() }}>Reload now</Btn></div>}
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
       {!online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes will fail until you are back online.'}</div>}
       {access && accessLevel(access) !== 'owner' && accessLevel(access) !== 'full' && <div className="banner info">{describeAccess(access)}{accessLevel(access) === 'limited' ? ' — other sections are hidden.' : '.'}</div>}
-      <div className={useStore.getState().canEdit() ? '' : 'ro'} key={useThemeName()}>{children}</div>
+      {priv && <div className="banner info privacy-note" role="status">Amounts are hidden on this device. <Btn sm onClick={togglePrivacy}>Show amounts</Btn> <span className="note" style={{ display: 'inline', margin: 0 }}>(or press H)</span></div>}
+      <div className={useStore.getState().canEdit() ? '' : 'ro'} key={useThemeName() + '·' + dv}><PullToRefresh>{children}</PullToRefresh></div>
     </main>
     <nav className="tabbar" aria-label="Quick tabs">{tabs.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')}><Icon n={v.icon} /><span>{v.tab}</span></NavLink>)}<button onClick={() => setDrawer(true)}><Icon n="menu" /><span>Menu</span></button></nav>
     <Toasts />

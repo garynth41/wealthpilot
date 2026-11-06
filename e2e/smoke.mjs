@@ -264,6 +264,27 @@ for (const W of [1400, 390]) {
     await p.click('.seg button:has-text("Standard")'); await p.waitForTimeout(400)
     await p.goto('http://localhost:4173/#/goals'); await p.waitForTimeout(800); ok(/in today's dollars, grown 3%\/yr/.test(await p.locator('main').textContent()), 'a goal with inflation shows its target grown to the target date')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
+    // 0.23.0: help drawer, privacy mode, number format, arrangeable dashboard, home-screen shortcuts
+    await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(900)
+    await p.click('.topbar button[aria-label="Help for this page"]'); await p.waitForTimeout(300); const hd = await p.locator('.helpdrawer').textContent()
+    ok(/Help · Dashboard/.test(hd) && /Safe to spend is cash on hand/.test(hd) && /Keyboard/.test(hd), 'the help drawer explains the page it was opened on')
+    await p.keyboard.press('Escape'); await p.waitForTimeout(200); ok((await p.locator('.helpdrawer').count()) === 0, 'Esc closes the help drawer')
+    await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(700); await p.keyboard.press('F1'); await p.waitForTimeout(300); ok(/Zero-based/.test(await p.locator('.helpdrawer').textContent()), 'F1 opens the Budget help with the budgeting methods'); await p.keyboard.press('Escape')
+    await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(800); await p.keyboard.press('h'); await p.waitForTimeout(500)
+    const kv = await p.locator('.kpi .v').allTextContents(); ok(kv.filter(v => /•••/.test(v)).length >= 5 && (await p.locator('.privacy-note').count()) === 1, 'H hides the amounts on screen')
+    await p.keyboard.press('h'); await p.waitForTimeout(500); ok(!(await p.locator('.kpi .v').allTextContents()).some(v => /•••/.test(v)), 'H again shows them')
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(700); await p.click('.seg button:has-text("General")'); await p.waitForTimeout(300); await p.selectOption('select[aria-label="Number and date format"]', 'de-DE'); await p.waitForTimeout(400)
+    await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(800); const deKpi = (await p.locator('.kpi .v').allTextContents()).join(' ')
+    ok(/\d\.\d{3}\s\$/.test(deKpi), `a German number format writes 1.234 $ (${deKpi.slice(0, 40)})`)
+    await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(700); await p.click('.seg button:has-text("General")'); await p.waitForTimeout(300); await p.selectOption('select[aria-label="Number and date format"]', 'auto'); await p.waitForTimeout(400)
+    await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(800); await p.click('button:has-text("Arrange dashboard")'); await p.waitForTimeout(300)
+    await p.locator('.modal .arrange li:has-text("Runway") input[type=checkbox]').uncheck(); await p.click('.modal button:has-text("Done")'); await p.waitForTimeout(400)
+    ok((await p.locator('.card:has-text("months to zero")').count()) === 0, 'a dashboard card can be hidden')
+    await p.click('button:has-text("Arrange dashboard")'); await p.waitForTimeout(300); await p.click('.modal button[aria-label="Move Goals up"]'); await p.click('.modal button:has-text("Reset to default")'); await p.click('.modal button:has-text("Done")'); await p.waitForTimeout(400)
+    ok((await p.locator('.card:has-text("months to zero")').count()) === 1, 'Reset brings the default dashboard back')
+    const mf = await p.evaluate(() => fetch('manifest.webmanifest').then(r => r.json())); ok(mf.shortcuts?.length === 4 && mf.shortcuts[0].url.includes('add=1'), 'the installed app offers home-screen shortcuts')
+    await p.goto('http://localhost:4173/#/transactions?add=1'); await p.waitForTimeout(900); ok(/Add transaction/.test(await p.locator('.modal').textContent().catch(() => '')), 'the "Add a transaction" shortcut opens the add form'); await p.keyboard.press('Escape'); await p.waitForTimeout(200)
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.18.0: a review pair renders a router link inside the dialog (this used to crash the page with "basename of null" and look like a hang)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); const t = j.data.transactions.find(x => x.kind === 'expense' && x.account_id); const a = { ...t, id: 'dup-a-' + Date.now(), external_id: 'sfin:a1', payee: 'Twin Coffee', amount: 4.25, duplicate_of: null, dedupe_ok: false }; const b = { ...a, id: 'dup-b-' + Date.now(), external_id: 'sfin:b1' }; j.data.transactions.push(a, b); localStorage.setItem(k, JSON.stringify(j)) })
     await p.reload(); await p.waitForTimeout(900); await p.click('button:has-text("Review")'); await p.waitForTimeout(400)
@@ -309,4 +330,25 @@ for (const W of [1400, 390]) {
   await sp.goto('http://localhost:4173/#/insights'); await sp.waitForTimeout(3500)
   const h = await sp.locator('h1').first().textContent().catch(() => ''); const body = await sp.locator('body').textContent()
   ok(hits >= 2 && h === 'Spending Intelligence' && !/Something went wrong/.test(body), `a missing page file after a deploy reloads once and the page opens (requests ${hits}, heading "${h}")`); await sp.close() }
+// 0.23.0: phones — swipe a ledger card left to categorize it
+{ const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }); const mp = await ctx.newPage()
+  await mp.goto('http://localhost:4173/'); await mp.waitForTimeout(700); await mp.evaluate(() => localStorage.clear()); await mp.reload(); await mp.waitForTimeout(600); await mp.click('text=Open the offline demo'); await mp.waitForTimeout(1200)
+  await mp.goto('http://localhost:4173/#/transactions'); await mp.waitForTimeout(1000)
+  const swiped = await mp.evaluate(() => { const el = [...document.querySelectorAll('.stack .card')].find(c => c.querySelector('select[aria-label="Type"]')?.value === 'expense'); if (!el) return false; const r = el.getBoundingClientRect()
+    const fire = (type, x) => { const t = new Touch({ identifier: 1, target: el, clientX: x, clientY: r.top + 30 }); el.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true })) }
+    fire('touchstart', r.right - 20); fire('touchend', r.left + 20); return true })
+  await mp.waitForTimeout(500); ok(swiped && /Categorize ·/.test(await mp.locator('.modal').textContent().catch(() => '')) && (await mp.locator('.modal .quickcats button').count()) >= 3, 'swiping a ledger card left opens one-tap categories')
+  await mp.locator('.modal .quickcats button').first().click(); await mp.waitForTimeout(500); ok((await mp.locator('.modal').count()) === 0, 'one tap files it'); await ctx.close() }
+// 0.23.0: empty-state audit — a household with nothing in it renders every page with guidance, no errors and no NaN / undefined / Invalid Date
+{ const ep = await b.newPage({ viewport: { width: 1400, height: 900 } }); const errs = []; ep.on('pageerror', e => errs.push(e.message))
+  await ep.goto('http://localhost:4173/'); await ep.waitForTimeout(600)
+  await ep.evaluate(() => { localStorage.clear(); localStorage.setItem('wealthpilot.demo', JSON.stringify({ household: { id: 'demo-household', name: 'Empty household', currency: 'USD', settings: {} }, data: {} })) })
+  await ep.reload(); await ep.waitForTimeout(600); await ep.click('text=Open the offline demo'); await ep.waitForTimeout(1000)
+  ok(/Get set up/.test(await ep.locator('main').textContent()) && /0 of 7 steps/.test(await ep.locator('main').textContent()), 'an empty household sees the getting-started checklist')
+  const badPages = []
+  for (const path of ['/', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) {
+    await ep.goto('http://localhost:4173/#' + path); await ep.waitForTimeout(700); const txt = await ep.locator('main').textContent().catch(() => '')
+    if (/NaN|undefined|Infinity|Invalid Date|\[object Object\]/.test(txt) || /Something went wrong/.test(await ep.locator('body').textContent())) badPages.push(path) }
+  ok(!badPages.length && !errs.length, `every page renders for an empty household${badPages.length ? ' — bad: ' + badPages.join(', ') : ''}${errs.length ? ' — errors: ' + errs.slice(0, 2).join(' | ') : ''}`)
+  await ep.close() }
 console.log('smoke fails', F); await b.close(); srv.close()

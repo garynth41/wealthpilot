@@ -25,3 +25,9 @@ export function spendingHeatmap(d: Data, weeks = 26, asOf = today()): { cells: H
   for (let i = 0; i < weeks * 7; i++) { const date = addDays(start, i); if (date > asOf) break; const amount = round2(by.get(date) || 0); const level = (amount <= 0 ? 0 : amount <= thresholds[0] ? 1 : amount <= thresholds[1] ? 2 : amount <= thresholds[2] ? 3 : 4) as HeatCell['level']; cells.push({ date, amount, week: Math.floor(i / 7), dow: i % 7, level }) }
   return { cells, max: nz.length ? nz[nz.length - 1] : 0, thresholds, total: round2([...by.values()].reduce((a, b) => a + b, 0)) }
 }
+
+/** True when no chart trace has a single non-zero number to draw — the chart would be empty axes (0.23.0). */
+export function noData(data: ReadonlyArray<object>): boolean {
+  const nums = (v: unknown): number[] => (Array.isArray(v) ? (v as unknown[]).flatMap(x => (Array.isArray(x) ? nums(x) : typeof x === 'number' && isFinite(x) ? [x] : [])) : [])
+  return data.every(t => { const tr = t as Record<string, unknown>; const vals = [...nums(tr.y), ...(tr.orientation === 'h' ? nums(tr.x) : []), ...nums(tr.values), ...nums(tr.z)]; return vals.every(v => v === 0) })
+}

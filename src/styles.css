@@ -257,3 +257,34 @@ tr.focus-hit > td{background:var(--accent-soft)!important}
 .alloc .ln span:first-child { overflow: hidden; text-overflow: ellipsis; }
 .allocbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--line); margin: 8px 0 4px; }
 .allocbar > i { display: block; height: 100%; }
+
+/* help drawer (0.23.0) */
+.helpback { position: fixed; inset: 0; background: rgba(10, 12, 15, .35); z-index: 80; }
+.helpdrawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); background: var(--surface); border-left: 1px solid var(--line-strong); box-shadow: var(--shadow); z-index: 81; display: flex; flex-direction: column; }
+.helpdrawer .hd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.helpdrawer .hd-head h2 { margin: 0; font-size: 16px; }
+.helpdrawer .hd-body { padding: 4px 16px 24px; overflow-y: auto; }
+.helpdrawer .hd-intro { color: var(--ink-2); line-height: 1.55; }
+.helpdrawer h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin: 18px 0 6px; }
+.helpdrawer ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.5; font-size: 13.5px; }
+/* pull to refresh (0.23.0) */
+.ptr { display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; overflow: hidden; color: var(--ink-3); font-size: 12.5px; transition: height .12s ease-out; }
+/* privacy mode (0.23.0): formatted amounts are masked; what is drawn or typed is blurred until hovered or focused */
+.privacy .js-plotly-plot .ytick, .privacy .js-plotly-plot .y2tick, .privacy .js-plotly-plot .xtick, .privacy .js-plotly-plot .hoverlayer, .privacy .js-plotly-plot .annotation, .privacy .js-plotly-plot .indicatorlayer, .privacy .js-plotly-plot .textpoint { filter: blur(5px); }
+.privacy input[inputmode="decimal"]:not(:focus), .privacy input.num:not(:focus) { filter: blur(4px); }
+.btn.on { background: var(--sel); color: var(--on-sel); border-color: var(--sel); }
+@media print { .privacy-note, .helpdrawer, .helpback, .ptr { display: none !important; } }
+/* getting-started checklist and dashboard arrangement (0.23.0) */
+.setup { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.setup li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; }
+.setup .tick { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--on-accent); }
+.setup li.done .tick { background: var(--good); border-color: var(--good); }
+.setup li.done b { color: var(--ink-3); text-decoration: line-through; font-weight: 500; }
+.arrange { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.arrange li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.quickcats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.quickcats .btn { min-height: 44px; justify-content: center; text-align: center; white-space: normal; }
+.swipehint { margin: 0 0 8px; }
+.chart-empty { display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--ink-3); font-size: 13px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface-2); flex: 1 1 auto; }
+/* phone header (0.23.0): six controls must fit a 360px screen */
+@media (max-width: 900px) { .mbar { gap: 2px; } .mbar button, .mbar .btn { width: 40px; height: 44px; padding: 0 !important; border: 0; box-sizing: border-box; flex: 0 0 40px; font-size: 20px; } }

@@ -4,7 +4,7 @@ import { useStore } from '../app/store'
 import type { SyncStatus } from '../app/data/types'
 import { Card, Btn, Note, Pill, Field, useConfirm } from '../components/ui'
 import { autoMatch, guessKind, balanceFor } from '../lib/simplefin'
-import { today, fmtDY } from '../lib/dates'
+import { today, fmtDY, fmtDT } from '../lib/dates'
 import type { SyncConnection } from '../app/data/types'
 import { fm2 } from '../lib/money'
 import { acctLabel } from '../lib/accounts'
@@ -68,7 +68,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     {isOwner && <Btn sm danger onClick={async () => { if (await confirm('Disconnect the bank? The saved key is deleted; imported transactions stay.', 'Disconnect')) run(async () => { await repo!.syncDisconnect(); await load() }, 'Disconnected') }}>Disconnect</Btn>}</span>}>
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
       <Pill cls={c.status === 'connected' ? 'good' : 'crit'}>{c.status === 'connected' ? 'Connected' : 'Needs attention'}</Pill>
-      <span className="note" style={{ margin: 0 }}>{c.last_sync_at ? `Last sync ${new Date(c.last_sync_at).toLocaleString()}` : 'Not synced yet'}</span>
+      <span className="note" style={{ margin: 0 }}>{c.last_sync_at ? `Last sync ${fmtDT(c.last_sync_at)}` : 'Not synced yet'}</span>
     </div>
     {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.status === 'error' ? <b>Last sync failed: </b> : <b>Note from SimpleFIN (sync still worked): </b>}{c.last_error}{/45 days/i.test(c.last_error) && c.status !== 'error' ? ' — WealthPilot now asks for at most 44 days at a time, so this note clears on the next sync.' : ''}</div>}
     <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>At the bank</th><th className="num">Balance</th><th>Goes into</th></tr></thead><tbody>
@@ -83,7 +83,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     {dirty && mappedCount > 0 && <div className="msg info">Review the destinations above{newCount ? ` — ${newCount} new account${newCount === 1 ? ' will be' : 's will be'} created from the bank` : ''}, then press <b>Save matching &amp; sync now</b>.</div>}
     <Note>Each sync sets the balance of matched accounts from the bank and adds new transactions as <b>imported</b> (already-entered or already-imported items are skipped, so it is safe to run twice). Run <b>Auto-categorize</b> on Transactions afterwards. Credit-card and loan balances are stored as the amount owed.</Note>
     {st.log.length > 0 && <details style={{ marginTop: 6 }}><summary className="note" style={{ cursor: 'pointer', marginTop: 0 }}>Sync history ({st.log.length})</summary>
-      <div className="tblwrap"><table className="tbl"><thead><tr><th>When</th><th>How</th><th>Result</th></tr></thead><tbody>{st.log.map(l => <tr key={l.id}><td>{new Date(l.started_at).toLocaleString()}</td><td>{l.trigger === 'daily' ? 'Daily' : l.trigger === 'connect' ? 'Connect' : 'Manual'}</td><td><Pill cls={l.ok ? 'good' : 'crit'}>{l.ok ? 'OK' : 'Failed'}</Pill> {l.message}</td></tr>)}</tbody></table></div></details>}
+      <div className="tblwrap"><table className="tbl"><thead><tr><th>When</th><th>How</th><th>Result</th></tr></thead><tbody>{st.log.map(l => <tr key={l.id}><td>{fmtDT(l.started_at)}</td><td>{l.trigger === 'daily' ? 'Daily' : l.trigger === 'connect' ? 'Connect' : 'Manual'}</td><td><Pill cls={l.ok ? 'good' : 'crit'}>{l.ok ? 'OK' : 'Failed'}</Pill> {l.message}</td></tr>)}</tbody></table></div></details>}
   </Card>
 }
 export const syncKpi = (s: SyncStatus | null): { v: string; cls: string; s: string } => !s || !s.available ? { v: 'Not available', cls: 'idle', s: 'needs a real household with the bank-sync upgrade' } : !s.connection ? { v: 'Not connected', cls: 'idle', s: 'SimpleFIN — about $15/year' } : s.connection.status === 'error' ? { v: 'Needs attention', cls: 'crit', s: s.connection.last_error || 'last sync failed' } : { v: 'Connected', cls: 'good', s: s.connection.last_sync_at ? `last sync ${new Date(s.connection.last_sync_at).toLocaleDateString()}` : 'not synced yet' }

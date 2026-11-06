@@ -7,10 +7,11 @@ import { APP_NAME, APP_VERSION, APP_BUILD } from '../app/config'
 import { Card, Btn, Pill, Note, Field, useConfirm, Seg, useModal, MHead, MBody, MFoot, PasswordInput } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { MailSetup } from './Email'
-import { fmtMoney, parseNum } from '../lib/money'
+import { fmtMoney, fm2, fmtNum, parseNum } from '../lib/money'
+import { LOCALES, localePreference, setLocale, resolvedLocale, privacyOn, setPrivacy } from '../lib/display'
 import { NOTIFY_DEFAULTS, computeAlerts, type Alert } from '../lib/notify'
 import type { NotifyPrefs, MemberNotify } from '../app/data/types'
-import { fmtDY, today, ago } from '../lib/dates'
+import { fmtDY, today, ago, fmtDT } from '../lib/dates'
 import { hasSupabase, sb, authFeatures } from '../app/supabase'
 import { authMessage } from '../app/store'
 import { IDLE_CHOICES, idleMinutes, setIdleMinutes, lockNow } from '../components/IdleLock'
@@ -42,6 +43,7 @@ export function SettingsPage() {
       <Card span={6} title="Planning thresholds"><div className="grid2"><Field label="Reserve floor" hint="cash you will not go below"><input className="inp" inputMode="decimal" value={s.reserveFloor} onChange={e => setS({ ...s, reserveFloor: parseNum(e.target.value) || 0 })} /></Field><Field label="Savings-rate target %"><input className="inp" inputMode="numeric" value={s.savingsTargetPct} onChange={e => setS({ ...s, savingsTargetPct: +e.target.value || 0 })} /></Field><Field label="Runway green at (months)"><input className="inp" inputMode="numeric" value={s.runwayGreen} onChange={e => setS({ ...s, runwayGreen: +e.target.value || 0 })} /></Field><Field label="Runway yellow at (months)"><input className="inp" inputMode="numeric" value={s.runwayYellow} onChange={e => setS({ ...s, runwayYellow: +e.target.value || 0 })} /></Field><Field label="Over budget is red above %"><input className="inp" inputMode="numeric" value={s.budgetCritPct} onChange={e => setS({ ...s, budgetCritPct: +e.target.value || 0 })} /></Field><Field label="Bill reminder window (days)"><input className="inp" inputMode="numeric" value={s.dueSoonDays} onChange={e => setS({ ...s, dueSoonDays: +e.target.value || 0 })} /></Field></div>
         <label className="gm-ign" style={{ fontSize: 13 }}><input type="checkbox" checked={!!s.includeRetirementInCash} onChange={e => setS({ ...s, includeRetirementInCash: e.target.checked })} /> count retirement accounts as cash (last resort)</label></Card>
       <Card span={12} title="Email capture (Gmail / Outlook)" hint="where the Google and Microsoft client IDs go"><div className="btnrow"><Pill cls={settings.gmail?.clientId ? 'good' : 'idle'}>Gmail {settings.gmail?.clientId ? 'client ID saved' : 'not set up'}</Pill><Pill cls={settings.outlook?.clientId ? 'good' : 'idle'}>Outlook {settings.outlook?.clientId ? 'client ID saved' : 'not set up'}</Pill><Btn primary onClick={() => open(<MailSetup onDone={close} />, { wide: true })} disabled={!canEdit}>Open email capture settings</Btn></div><Note>Paste the Google OAuth client ID and/or Microsoft application ID here, plus how far back to read and whether to file automatically. The same box opens from <b>Email Money Capture → Set up Gmail</b>.</Note></Card>
+      <DeviceDisplay />
       <Card span={6} title="Save"><Btn primary onClick={saveGeneral} disabled={!canEdit}>Save settings</Btn><Note>Settings are shared by everyone in the household.</Note></Card>
     </div>}
     {tab === 'categories' && <Card title="Categories" hint="group · priority (Essential / Important / Discretionary) · fixed or variable · default budget copied into each new period · rollover carries unspent money forward" right={canEdit ? <Btn primary sm onClick={() => guarded(() => insert('categories', { name: 'New category', group: 'Other', kind: 'expense', priority: 'Important', cost_type: 'Variable', default_budget: 0, budget_cadence: 'period', rollover: false, sort_order: data.categories.length + 1, archived: false }), 'Added')}>+ Add category</Btn> : undefined}>
@@ -57,7 +59,7 @@ export function SettingsPage() {
       <Card span={6} title="Restore" hint="from a JSON backup"><input type="file" ref={fileRef} accept="application/json" className="inp" /><div className="btnrow" style={{ marginTop: 8 }}><Btn onClick={() => importJson('merge')} disabled={!canEdit}>Merge into this household</Btn><Btn danger onClick={() => importJson('replace')} disabled={!canEdit}>Replace everything</Btn></div></Card>
       <Card span={12} title="Database" hint="Supabase"><Note>Project: <code>{import.meta.env.VITE_SUPABASE_URL || '(not configured)'}</code> · schema in <code>supabase/migrations/</code>. Row-level security limits every row to household members; email bodies are never stored.</Note></Card>
     </div>}
-    {tab === 'activity' && <Card title="Activity log" hint="who changed what · newest first">{data.activity.length ? <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Table</th><th>Summary</th></tr></thead><tbody>{data.activity.map(a => <tr key={a.id}><td>{new Date(a.created_at).toLocaleString()}</td><td>{a.user_email || '—'}</td><td><Pill cls={a.action === 'delete' ? 'crit' : a.action === 'insert' ? 'good' : 'info'}>{a.action}</Pill></td><td>{a.table_name}</td><td>{a.summary || a.record_id}</td></tr>)}</tbody></table></div> : <div className="empty">{mode === 'demo' ? 'The activity log is kept by the database and is not available in the offline demo.' : 'No activity yet.'}</div>}</Card>}
+    {tab === 'activity' && <Card title="Activity log" hint="who changed what · newest first">{data.activity.length ? <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Table</th><th>Summary</th></tr></thead><tbody>{data.activity.map(a => <tr key={a.id}><td>{fmtDT(a.created_at)}</td><td>{a.user_email || '—'}</td><td><Pill cls={a.action === 'delete' ? 'crit' : a.action === 'insert' ? 'good' : 'info'}>{a.action}</Pill></td><td>{a.table_name}</td><td>{a.summary || a.record_id}</td></tr>)}</tbody></table></div> : <div className="empty">{mode === 'demo' ? 'The activity log is kept by the database and is not available in the offline demo.' : 'No activity yet.'}</div>}</Card>}
   </>
 }
 
@@ -223,7 +225,7 @@ function ErrorsPanel() {
     {err && <div className="msg warn">{err}</div>}
     {rows && rows.length === 0 && <div className="empty">No errors recorded.</div>}
     {rows && rows.length > 0 && <div className="tblwrap" style={{ maxHeight: 320 }}><table className="tbl"><caption className="sr-only">Recent errors</caption><thead><tr><th>When</th><th>Source</th><th>Version</th><th>Message</th></tr></thead><tbody>
-      {rows.map(r => <tr key={r.id} onClick={() => setOpen(open === r.id ? null : r.id)} style={{ cursor: 'pointer' }}><td style={{ whiteSpace: 'nowrap' }}>{new Date(r.at).toLocaleString()}</td><td><Pill cls={r.source === 'browser' ? 'info' : 'warn'}>{r.source}</Pill></td><td className="id">{r.version || '—'}</td><td>{r.message}{open === r.id && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: 'var(--ink-3)', margin: '6px 0 0' }}>{r.url}{'\n'}{r.stack || ''}{'\n'}{JSON.stringify(r.context)}</pre>}</td></tr>)}
+      {rows.map(r => <tr key={r.id} onClick={() => setOpen(open === r.id ? null : r.id)} style={{ cursor: 'pointer' }}><td style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.at)}</td><td><Pill cls={r.source === 'browser' ? 'info' : 'warn'}>{r.source}</Pill></td><td className="id">{r.version || '—'}</td><td>{r.message}{open === r.id && <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: 'var(--ink-3)', margin: '6px 0 0' }}>{r.url}{'\n'}{r.stack || ''}{'\n'}{JSON.stringify(r.context)}</pre>}</td></tr>)}
     </tbody></table></div>}
     <Note>Click a row for the stack trace. Errors are the app's own messages only — never transaction data. Reporting is capped at 20 per session.</Note>
   </Card>
@@ -299,13 +301,24 @@ function NotificationsTab() {
     </Card>
     <Card span={6} title="Sent recently" hint="the last 25 — push and email, with why one was skipped" right={mode === 'db' ? <Btn sm onClick={loadRecent}>Refresh</Btn> : undefined}>
       {mode !== 'db' ? <div className="empty">Sign in to see the log.</div> : !recent ? <div className="empty">Loading…</div> : recent.length === 0 ? <div className="empty">Nothing sent yet.</div> : <div className="tblwrap" style={{ maxHeight: 320 }}><table className="tbl"><caption className="sr-only">Notifications</caption><thead><tr><th scope="col">When</th><th scope="col">Channel</th><th scope="col">Status</th><th scope="col">What</th></tr></thead><tbody>
-        {recent.map(r => <tr key={r.id}><td style={{ whiteSpace: 'nowrap' }}>{new Date(r.at).toLocaleString()}</td><td>{r.channel}</td><td><Pill cls={r.status === 'sent' ? 'good' : r.status === 'failed' ? 'crit' : 'idle'}>{r.status}</Pill></td><td>{r.title}{r.status !== 'sent' && r.detail ? <div className="note" style={{ margin: 0 }}>{r.detail}</div> : null}</td></tr>)}
+        {recent.map(r => <tr key={r.id}><td style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.at)}</td><td>{r.channel}</td><td><Pill cls={r.status === 'sent' ? 'good' : r.status === 'failed' ? 'crit' : 'idle'}>{r.status}</Pill></td><td>{r.title}{r.status !== 'sent' && r.detail ? <div className="note" style={{ margin: 0 }}>{r.detail}</div> : null}</td></tr>)}
       </tbody></table></div>}
     </Card>
     <MemberRouting prefs={prefs} />
   </div>
 }
 
+/** This device (0.23.0): the number and date format and privacy mode — stored in this browser, like the theme. */
+function DeviceDisplay() {
+  const { settings, saveSettings, guarded, canEdit } = useData()
+  const [loc, setLoc] = useState(localePreference()); const [priv, setPriv] = useState(privacyOn())
+  const sample = `${fm2(1234567.89)} · ${fmtNum(1234.5, 1)} · ${fmtDY(today())}`
+  return <Card span={6} title="This device" hint="saved in this browser only">
+    <Field label="Numbers and dates" hint={`now: ${sample}`}><select className="inp" value={loc} onChange={e => { setLoc(e.target.value); setLocale(e.target.value) }} aria-label="Number and date format">{LOCALES.map(([v, l]) => <option key={v} value={v}>{l}{v === 'auto' ? ` (${resolvedLocale()})` : ''}</option>)}</select></Field>
+    <label className="gm-ign" style={{ fontSize: 13, display: 'block', marginTop: 8 }}><input type="checkbox" checked={priv} onChange={e => { setPriv(e.target.checked); setPrivacy(e.target.checked) }} /> Privacy mode — hide amounts on screen (keyboard <kbd>H</kbd>); exports keep real figures</label>
+    {settings.setupDismissed && canEdit && <div style={{ marginTop: 8 }}><Btn sm onClick={() => guarded(() => saveSettings({ setupDismissed: false }), 'The checklist is back on the Dashboard')}>Show the getting-started checklist again</Btn></div>}
+    <Note>Amounts stay in US dollars; the format changes how they are written (1,234.56 or 1.234,56) and how dates read. Typing "12,5" counts as 12.5 where the comma is the decimal mark.</Note></Card>
+}
 const ALERT_KINDS: Array<[string, string]> = [['bill_due', 'Bills due'], ['bill_overdue', 'Overdue bills'], ['low_cash', 'Low cash'], ['large_charge', 'Large charges'], ['paycheck', 'Missed paychecks'], ['sync', 'Bank sync'], ['price_rise', 'Price rises'], ['new_recurring', 'New repeating charges'], ['reconcile', 'Reconcile reminders']]
 /** Who gets what (0.21.0): per member, push to their devices, email to their own address, the Monday digest, and which alerts.
  *  Unset rows follow the household switches above; when nobody picks email for themselves, the household address gets it. */

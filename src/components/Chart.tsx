@@ -5,6 +5,8 @@ import type Plotly from 'plotly.js-basic-dist-min'
 let plotlyP: Promise<typeof Plotly> | null = null
 const loadPlotly = () => (plotlyP ||= import('plotly.js-basic-dist-min').then(m => (m as unknown as { default: typeof Plotly }).default || (m as unknown as typeof Plotly)))
 import { MHead, MBody, useModal } from './ui'
+import { separators } from '../lib/display'
+import { noData } from '../lib/visuals'
 
 type Data = Partial<Plotly.PlotData>[]; type Layout = Partial<Plotly.Layout>
 export const cssVar = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim()
@@ -32,9 +34,17 @@ function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean): {
       if (longest > chars) { if (per < 46) { (L.xaxis as Record<string, unknown>).tickangle = -40; L.height = ((L.height as number) || 260) + Math.min(80, longest * 3.2); if (per < 26) { const k = Math.ceil(26 / per), tv = xs.filter((_, i) => (xs.length - 1 - i) % k === 0); (L.xaxis as Record<string, unknown>).tickvals = tv; (L.xaxis as Record<string, unknown>).ticktext = tv.map(String) } } else { let lines = 1; const n = Math.max(8, chars); d = d.map(t => vx.includes(t) ? { ...t, x: (t.x as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }) } : t); L.height = ((L.height as number) || 260) + (lines - 1) * 15 } } } }
   if (L.showlegend) { const names = d.filter(t => t.showlegend !== false && t.name).map(t => String(t.name)); const px = (isMobile() ? 12 : 13) * 0.58; let rows = 1, x = 0; names.forEach(nm => { const w = nm.length * px + 44; if (x + w > W - 30 && x > 0) { rows++; x = 0 } x += w }); if (W < 520 && names.length > 2) { const per = Math.max(...names.map(n => n.length)) > 12 ? 1 : 2; L.legend = { ...L.legend, ...({ entrywidth: 1 / per, entrywidthmode: 'fraction' } as Record<string, unknown>) }; rows = Math.ceil(names.length / per) } L.margin = { ...L.margin, t: Math.max((L.margin?.t as number) || 0, big ? 46 : 34) + (rows - 1) * 21 }; L.height = ((L.height as number) || 260) + (rows - 1) * 21 }
   if ((L.margin?.l as number) > W * 0.4) L.margin = { ...L.margin, l: Math.round(W * 0.4) }
+  // numbers on axes and in hovers follow the reader's locale (0.23.0): Plotly takes the decimal then the grouping character
+  if (!L.separators) { const sp = separators(); L.separators = sp.decimal + (sp.group === '\u202f' || sp.group === '\u00a0' ? ' ' : sp.group) }
   return { data: d, layout: L }
 }
-export function Chart({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false }: { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean }) {
+type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; empty?: ReactNode }
+/** A chart with nothing to draw shows a short message instead of empty axes; pass `empty` to say what would fill it. */
+export function Chart(props: ChartProps) {
+  if (noData(props.data)) return <div className={`chart-empty ${props.className || ''}`} style={{ minHeight: Math.min(props.height || 260, 200) }} role="img" aria-label={`${props.title || 'Chart'}: nothing to show yet`}>{props.empty || 'Nothing to chart yet — this fills in as transactions, balances and plans are added.'}</div>
+  return <ChartInner {...props} />
+}
+function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false }: ChartProps) {
   const ref = useRef<HTMLDivElement>(null); const { open } = useModal()
   // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
   // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)

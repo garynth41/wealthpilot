@@ -1,4 +1,5 @@
 // Date helpers. Every date in the app is an ISO 'YYYY-MM-DD' string in local time; months are 'YYYY-MM'.
+import { resolvedLocale } from './display'
 export const DAY = 86400000
 export const pad = (n: number) => String(n).padStart(2, '0')
 export const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -29,14 +30,17 @@ export const clamp = (d: string, from: string, to: string) => (d < from ? from :
 export const maxD = (a: string, b: string) => (a > b ? a : b)
 export const minD = (a: string, b: string) => (a < b ? a : b)
 
-export const fmtD = (s?: string | null) => (s ? parse(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—')
-export const fmtDY = (s?: string | null) => (s ? parse(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
-export const fmtDow = (s: string) => parse(s).toLocaleDateString(undefined, { weekday: 'short' })
-export const mLabel = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) }
-export const mShort = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(undefined, { month: 'short', year: 'numeric' }) }
+export const fmtD = (s?: string | null) => (s ? parse(s).toLocaleDateString(resolvedLocale(), { month: 'short', day: 'numeric' }) : '—')
+export const fmtDY = (s?: string | null) => (s ? parse(s).toLocaleDateString(resolvedLocale(), { month: 'short', day: 'numeric', year: 'numeric' }) : '—')
+export const fmtDow = (s: string) => parse(s).toLocaleDateString(resolvedLocale(), { weekday: 'short' })
+export const mLabel = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(resolvedLocale(), { month: 'long', year: 'numeric' }) }
+export const mShort = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(resolvedLocale(), { month: 'short', year: 'numeric' }) }
 export const ago = (ts: string | number | Date) => { const s = (Date.now() - new Date(ts).getTime()) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago' }
 /** Next date on or after today that falls on `day` of the month. */
 export const nextMonthDay = (day: number, from = today()) => { const t = parse(from); let y = t.getFullYear(), m = t.getMonth(); if (day < t.getDate()) { m++; if (m > 11) { m = 0; y++ } } const last = new Date(y, m + 1, 0).getDate(); return iso(new Date(y, m, Math.min(day, last))) }
 /** Every `day`-of-month date in [from, to]. */
 export const monthDays = (day: number, from: string, to: string) => { const out: string[] = []; if (!day) return out; const a = parse(from); for (let m = 0; m < 40; m++) { const y = a.getFullYear(), mo = a.getMonth() + m; const last = new Date(y, mo + 1, 0).getDate(); const d = iso(new Date(y, mo, Math.min(day, last))); if (d > to) break; if (d >= from) out.push(d) } return out }
 export const isoRange = (from: string, to: string) => { const out: string[] = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out }
+/** A timestamp as date + time in the reader's locale (0.23.0). */
+export const fmtDT = (iso?: string | null) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(+d) ? '—' : d.toLocaleString(resolvedLocale(), { dateStyle: 'medium', timeStyle: 'short' }) }
+export const fmtTime = (iso?: string | null) => { if (!iso) return ''; const d = new Date(iso); return isNaN(+d) ? '' : d.toLocaleTimeString(resolvedLocale(), { hour: 'numeric', minute: '2-digit' }) }

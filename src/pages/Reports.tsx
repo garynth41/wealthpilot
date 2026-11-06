@@ -8,6 +8,7 @@ import { netWorthSeries } from '../lib/forecast'
 import { rangeStat } from '../lib/budget'
 import { fmtMoney, fm2, fmtPct } from '../lib/money'
 import { today, mAdd, curMonth, monthStart, addDays } from '../lib/dates'
+import { resolvedLocale, unmasked } from '../lib/display'
 
 const fmt = (k: Kpi, v: number) => (k.fmt === 'money' ? fmtMoney(v) : k.fmt === 'pct' ? fmtPct(v, 1) : String(v))
 const cell = (h: string, v: string | number) => (typeof v === 'number' ? (/%|share|progress|utilization|rate/i.test(h) ? fmtPct(v, 1) : /holdings|count|deposits|visits|transactions|months|^apr/i.test(h) ? (h.startsWith('APR') ? v.toFixed(2) + '%' : String(v)) : fm2(v)) : v)
@@ -20,7 +21,7 @@ export function ReportsPage() {
   const [on, setOn] = useState<SectionId[]>(PRESETS[1].sections); const [preset, setPreset] = useState('monthly')
   const rep = useMemo(() => buildReport(data, settings, kind, anchor, on, today(), { from, to }), [data, settings, kind, anchor, on, from, to])
   const y = +today().slice(0, 4); const years = [y - 2, y - 1, y]
-  const options = kind === 'month' ? [...Array(24)].map((_, i) => mAdd(curMonth(), -i)).map(k => [k + '-01', new Date(k + '-15T12:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })])
+  const options = kind === 'month' ? [...Array(24)].map((_, i) => mAdd(curMonth(), -i)).map(k => [k + '-01', new Date(k + '-15T12:00').toLocaleDateString(resolvedLocale(), { month: 'long', year: 'numeric' })])
     : kind === 'quarter' ? years.slice().reverse().flatMap(yy => [4, 3, 2, 1].map(q => [`${yy}-${String((q - 1) * 3 + 1).padStart(2, '0')}-01`, `Q${q} ${yy}`])).filter(([d]) => d <= today())
     : years.slice().reverse().map(yy => [`${yy}-01-01`, String(yy)])
   const setK = (k: ReportKind) => { setKind(k); setAnchor(k === 'month' ? mAdd(curMonth(), -1) + '-01' : k === 'quarter' ? `${y}-${String(Math.floor((+today().slice(5, 7) - 1) / 3) * 3 + 1).padStart(2, '0')}-01` : `${y}-01-01`) }
@@ -28,8 +29,10 @@ export function ReportsPage() {
   const toggle = (id: SectionId, checked: boolean) => { setPreset(''); setOn(x => checked ? ALL_SECTIONS.map(s => s[0]).filter(k => x.includes(k) || k === id) : x.filter(k => k !== id)) }
   const quick = (f: string, t: string) => { setKind('custom'); setFrom(f); setTo(t) }
   const file = `wealthpilot-${rep.kind}-${rep.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
-  const csv = () => exportTable(file, [], reportRows(rep), 'csv')
-  const excel = async () => { const XLSX = await import('xlsx'); const wb = XLSX.utils.book_new()
+  // exports are built unmasked so a file has real figures even while privacy mode hides them on screen
+  const repX = () => unmasked(() => buildReport(data, settings, kind, anchor, on, today(), { from, to }))
+  const csv = () => exportTable(file, [], unmasked(() => reportRows(repX())), 'csv')
+  const excel = async () => { const XLSX = await import('xlsx'); const wb = XLSX.utils.book_new(); const rep = repX()
     const sum = XLSX.utils.aoa_to_sheet([[rep.title], [`Period ${rep.from} to ${rep.to}`, `Previous ${rep.prevFrom} to ${rep.prevTo}`], [], ['Section', 'Measure', 'Value', 'Previous', 'Change'], ...rep.sections.flatMap(sec => sec.kpis.map(k => [sec.title, k.label, k.value, k.prev ?? '', k.prev != null ? k.value - k.prev : '']))]); sum['!cols'] = [{ wch: 22 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 12 }]; XLSX.utils.book_append_sheet(wb, sum, 'Summary')
     for (const sec of rep.sections) if (sec.table) { const ws = XLSX.utils.aoa_to_sheet([sec.table.headers, ...sec.table.rows, [], ...sec.notes.map(n => [n])]); ws['!cols'] = sec.table.headers.map(h => ({ wch: Math.max(12, h.length + 4) })); XLSX.utils.book_append_sheet(wb, ws, sec.title.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)) }
     XLSX.writeFile(wb, file + '.xlsx') }

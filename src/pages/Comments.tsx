@@ -5,11 +5,11 @@ import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { Transaction, TransactionComment } from '../app/data/types'
 import { Btn, Note, MHead, MBody, MFoot, useConfirm } from '../components/ui'
-import { fmtD } from '../lib/dates'
+import { fmtD, fmtTime } from '../lib/dates'
 import { fm2 } from '../lib/money'
 
 export const commentsFor = (d: { comments?: TransactionComment[] }, id: string): TransactionComment[] => (d.comments || []).filter(c => c.transaction_id === id).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
-const when = (iso?: string) => { if (!iso) return ''; const d = new Date(iso); return isNaN(+d) ? '' : `${fmtD(iso.slice(0, 10))} ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` }
+const when = (iso?: string) => { if (!iso) return ''; const d = new Date(iso); return isNaN(+d) ? '' : `${fmtD(iso.slice(0, 10))} ${fmtTime(iso)}` }
 
 export function CommentsModal({ txn, onDone }: { txn: Transaction; onDone: () => void }) {
   const { data, insert, update, remove, guarded, mode, isOwner, members } = { ...useData(), members: useStore(s => s.data.members) }

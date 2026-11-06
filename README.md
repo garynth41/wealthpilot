@@ -110,6 +110,14 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.23.0** — Experience.
+  - **Getting-started checklist** on the Dashboard: accounts, balances, income, bills, transactions, a budget and categorizing — each ticked from the household's own data — plus optional goal, alerts and inviting the household (`lib/onboarding.ts`).
+  - **Arrange dashboard**: reorder or hide the Dashboard cards, per device, with a reset (`lib/dashLayout.ts`).
+  - **Privacy mode**: H (or the ◎ button) hides every amount on screen — formatted figures become $•••, charts and number fields blur — while exports keep real figures. Per device.
+  - **Help on every page**: the ⓘ Help button or F1 opens a drawer explaining the page, where its numbers come from and the moves worth knowing, with the keyboard shortcuts (`lib/help.ts`).
+  - **Phones**: pull down at the top of a page to refresh; swipe a ledger card left for one-tap categories (the rule or history suggestion first); home-screen shortcuts for Add a transaction, Budget, Bills and Forecast.
+  - **Number and date format**: choose the locale per device (Settings → General → This device) — 1,234.56 or 1.234,56, dates and chart axes follow, and "12,5" is read as 12.5 where the comma is the decimal mark. Amounts stay in US dollars.
+  - **Empty states**: a household with nothing in it now gets guidance instead of empty axes — charts with nothing to draw say what fills them, runway shows "—" instead of "1.0 mo", the Plan and Forecast say what they need; a browser test opens every page of an empty household.
 - **0.22.0** — Planning depth.
   - **Tax lots and tax-loss harvesting**: each holding can carry its purchase lots (date, quantity, total cost); gains split into short- and long-term, the holding's quantity and cost basis follow its lots, and Investments lists losing positions in taxable accounts with the tax a sale would save at your rates, the wash-sale check (a purchase of the same symbol in the last 30 days, in any account) and the $3,000 ordinary-income limit (`holding_lots`, `lib/lots.ts`).
   - **Estimated tax in the cash calendar**: the federal estimated payments still due — planned estimates plus any safe-harbor shortfall — appear on each deadline in the calendar, the 24-month forecast and paycheck allocation (toggle on the Tax page).

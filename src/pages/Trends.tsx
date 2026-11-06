@@ -7,6 +7,7 @@ import { netWorthSeries } from '../lib/forecast'
 import { treemap, spendingHeatmap } from '../lib/visuals'
 import { fmtMoney, sum } from '../lib/money'
 import { addDays, curMonth, mAdd, mShort, monthEnd, monthStart, today } from '../lib/dates'
+import { resolvedLocale } from '../lib/display'
 
 export function TrendsPage() {
   const { data, settings } = useData(); const [gran, setGran] = useState<'week' | 'month' | 'year'>('month'); const [look, setLook] = useState<3 | 6 | 12>(6)
@@ -18,8 +19,10 @@ export function TrendsPage() {
   const avgSpend = stats.length ? sum(stats.map(s => s.spend + s.debt)) / stats.length : 0, avgInc = stats.length ? sum(stats.map(s => s.income)) / stats.length : 0
   const closed = stats.slice(0, -1); const cur = stats[stats.length - 1]
   const ins: Array<{ c: string; t: string; m: string }> = []
-  if (closed.length && cur) { const a = sum(closed.map(s => s.spend)) / closed.length; ins.push({ c: cur.spend > a * 1.05 ? 'warn' : 'good', t: `This month's spending is ${cur.spend > a ? 'above' : 'at or below'} your ${closed.length}-month average`, m: `${fmtMoney(cur.spend)} so far vs ${fmtMoney(a)} average` }) }
-  if (stats.length) { const i = sum(stats.map(s => s.income)), o = sum(stats.map(s => s.spend + s.debt)); ins.push({ c: i - o >= 0 ? 'good' : 'crit', t: `Last ${look} months: ${i - o >= 0 ? 'kept' : 'overspent by'} ${fmtMoney(Math.abs(i - o))}`, m: `income ${fmtMoney(i)} · spending + debt payments ${fmtMoney(o)}` }) }
+  const anyMoney = stats.some(s => s.spend || s.income || s.debt)
+  if (!anyMoney) ins.push({ c: 'info', t: 'Nothing recorded yet', m: 'trends appear once a few weeks of transactions are in — import a statement, connect the bank feed or log them as you go' })
+  if (anyMoney && closed.length && cur) { const a = sum(closed.map(s => s.spend)) / closed.length; ins.push({ c: cur.spend > a * 1.05 ? 'warn' : 'good', t: `This month's spending is ${cur.spend > a ? 'above' : 'at or below'} your ${closed.length}-month average`, m: `${fmtMoney(cur.spend)} so far vs ${fmtMoney(a)} average` }) }
+  if (anyMoney && stats.length) { const i = sum(stats.map(s => s.income)), o = sum(stats.map(s => s.spend + s.debt)); ins.push({ c: i - o >= 0 ? 'good' : 'crit', t: `Last ${look} months: ${i - o >= 0 ? 'kept' : 'overspent by'} ${fmtMoney(Math.abs(i - o))}`, m: `income ${fmtMoney(i)} · spending + debt payments ${fmtMoney(o)}` }) }
   const topCat = top[0]; if (topCat) ins.push({ c: 'info', t: `${topCat} is your biggest category`, m: `${fmtMoney(tot[topCat])} over ${look} months · ${fmtMoney(tot[topCat] / look)}/mo` })
   const disc = sum(stats.map(s => s.disc)); if (disc) ins.push({ c: disc / Math.max(1, sum(stats.map(s => s.spend))) > 0.3 ? 'warn' : 'good', t: `Discretionary is ${Math.round(disc / Math.max(1, sum(stats.map(s => s.spend))) * 100)}% of spending`, m: `${fmtMoney(disc / look)}/mo — the easiest lever if money gets tight` })
   const nws = netWorthSeries(data); const dow = useMemo(() => { const m = [0, 0, 0, 0, 0, 0, 0]; data.transactions.filter(t => t.kind === 'expense' && t.status !== 'void' && t.date >= addDays(today(), -90)).forEach(t => { m[new Date(t.date + 'T12:00').getDay()] += t.amount }); return m }, [data])
@@ -60,7 +63,7 @@ function Heatmap() {
   const months = h.cells.filter(c => c.dow === 0 && +c.date.slice(8) <= 7)
   return <><svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="Heat map of daily spending">
     {['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map((d, i) => d && <text key={i} x={0} y={top + i * (cs + gap) + cs - 3} fontSize={10} fill="var(--ink-3)">{d}</text>)}
-    {months.map(m => <text key={m.date} x={left + m.week * (cs + gap)} y={11} fontSize={10} fill="var(--ink-3)">{new Date(m.date + 'T12:00').toLocaleDateString('en-US', { month: 'short' })}</text>)}
+    {months.map(m => <text key={m.date} x={left + m.week * (cs + gap)} y={11} fontSize={10} fill="var(--ink-3)">{new Date(m.date + 'T12:00').toLocaleDateString(resolvedLocale(), { month: 'short' })}</text>)}
     {h.cells.map(c => <rect key={c.date} x={left + c.week * (cs + gap)} y={top + c.dow * (cs + gap)} width={cs} height={cs} rx={3} fill={fill[c.level]}><title>{`${c.date}: ${c.amount ? fmtMoney(c.amount) : 'no spending'}`}</title></rect>)}
     <text x={left} y={H - 4} fontSize={10} fill="var(--ink-3)">less</text>{fill.map((f, i) => <rect key={i} x={left + 28 + i * (cs + gap)} y={H - 15} width={cs - 2} height={cs - 2} rx={3} fill={f} />)}<text x={left + 32 + 5 * (cs + gap)} y={H - 4} fontSize={10} fill="var(--ink-3)">more</text>
   </svg><Note>{fmtMoney(h.total)} over 26 weeks · busiest day {fmtMoney(h.max)} · levels split at {h.thresholds.map(t => fmtMoney(t)).join(' / ')}.</Note></>

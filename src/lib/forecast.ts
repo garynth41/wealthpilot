@@ -78,7 +78,8 @@ export function runwayProjection(d: Data, s: Settings, opts?: { months?: number;
     inc.push(income + Math.max(0, ev)); out.push(Math.max(0, spend) + Math.max(0, -ev)); cash = cash + income - Math.max(0, spend) + ev
   }
   const floor = +s.reserveFloor || 0
-  const zeroAt = xs.find((_, i) => ys[i] <= 0.5 && i > 0) || null, floorAt = floor ? xs.find((_, i) => ys[i] <= floor && i > 0) || null : null
+  // starting at zero only counts as running out when money is actually going out faster than it comes in (an empty household has no runway to speak of)
+  const zeroAt = (ys[0] <= 0.5 && !(out[0] > inc[0] + 0.5) ? xs.find((_, i) => i > 1 && ys[i] <= 0.5 && ys[i - 1] > 0.5) : xs.find((_, i) => ys[i] <= 0.5 && i > 0)) || null, floorAt = floor ? xs.find((_, i) => ys[i] <= floor && i > 0) || null : null
   return { xs, ys, inc, out, zeroAt, floorAt, floor, minCash: Math.min(...ys), essentials, spend: b.fixed + b.variable, burn: b }
 }
 /** Net-worth series from snapshots plus today's live figure. */
