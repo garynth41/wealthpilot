@@ -25,7 +25,7 @@ export function AttachmentsModal({ txn, onDone }: { txn: Transaction; onDone: ()
         if (f.size > MAX) { toast(`${f.name} is over 15 MB`, true); continue }
         if (!/^(image\/(jpeg|png|webp|heic)|application\/pdf)$/.test(f.type)) { toast(`${f.name}: only photos (JPEG, PNG, WebP, HEIC) and PDFs`, true); continue }
         const path = `${household.id}/${txn.id}/${Date.now().toString(36)}-${safeName(f.name)}`
-        const { error } = await sb().storage.from('attachments').upload(path, f, { contentType: f.type, upsert: false }); if (error) throw new Error(/bucket/i.test(error.message) ? 'Attachments need migration 0011' : error.message)
+        const { error } = await sb().storage.from('attachments').upload(path, f, { contentType: f.type, upsert: false }); if (error) throw new Error(/bucket/i.test(error.message) ? 'Receipts cannot be saved yet — the receipt storage is not set up for this household' : error.message)
         await insert('attachments', { transaction_id: txn.id, name: f.name, path, mime: f.type, size: f.size })
       } } finally { setBusy(false); if (ref.current) ref.current.value = '' } }, 'Attached') }
   const openFile = (path: string, name: string) => guarded(() => openAttachment(path, name))
@@ -36,6 +36,6 @@ export function AttachmentsModal({ txn, onDone }: { txn: Transaction; onDone: ()
       {files.length === 0 ? <div className="empty">No receipts yet. On a phone, the file picker opens the camera.</div> : <div className="tblwrap"><table className="tbl"><caption className="sr-only">Attachments</caption><thead><tr><th scope="col">File</th><th scope="col" className="num">Size</th><th scope="col">Added</th><th scope="col" /></tr></thead><tbody>
         {files.map(f => <tr key={f.id}><td><button className="btn sm" onClick={() => openFile(f.path, f.name)}>{/^image\//.test(f.mime || '') ? '🖼' : '📄'} {f.name}</button>{f.source === 'email' && <span className="note" style={{ margin: '0 0 0 6px' }}>from email</span>}</td><td className="num">{Math.max(1, Math.round(f.size / 1024))} KB</td><td>{f.created_at ? fmtD(f.created_at.slice(0, 10)) : '—'}</td><td>{canEdit && <button className="del" onClick={() => del(f.id, f.path, f.name)} aria-label={`Remove ${f.name}`}>✕</button>}</td></tr>)}
       </tbody></table></div>}
-      <Note>Photos and PDFs up to 15 MB. Files are private to this household (row-level security on the bucket) and go with the transaction when it is deleted.</Note></>}
+      <Note>Photos and PDFs up to 15 MB. Only members of this household can open them, and they are deleted with the transaction.</Note></>}
   </MBody><MFoot><Btn onClick={onDone}>Close</Btn></MFoot></>
 }

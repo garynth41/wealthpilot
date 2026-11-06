@@ -11,6 +11,8 @@
 //   new_recurring (0.21.0) the same merchant charged a similar amount in each of the last three months and is not in Bills
 //   reconcile     (0.21.0) an account last reconciled 35+ days ago (weekly reminder), or a bank-fed account never reconciled (once)
 //   revalue       (0.24.0) a property or vehicle whose value is a quarter (90 days) old or undated — once per quarter it stays stale
+//   deletion      (0.25.0) the household is scheduled for deletion: once when it is scheduled and once the day before; always sent,
+//                 to every member, and the only alert while a deletion is pending
 // Who receives what: recipientsFor() — per-member channels with the household switches as the fallback.
 // Quiet hours are a delivery concern (the function sends at 07:30 local), not a rule.
 
@@ -21,8 +23,8 @@ export interface NTxn { id: string; date: string; kind: string; amount: number; 
 export interface NPay { id: string; name: string; frequency: string; anchor_date: string; semimonthly_days?: number[] | null; net_amount: number; starts_on?: string | null; ends_on?: string | null; status: string }
 export type NSync = { status: string; last_sync_at: string | null; last_error?: string | null } | null
 export interface NPrefs { bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean; revalue?: boolean }
-export interface NInput { today: string; now?: string; accounts: NAccount[]; recurring: NRecurring[]; occurrences: NOccurrence[]; transactions: NTxn[]; paySchedules: NPay[]; sync: NSync; reserveFloor: number; prefs: NPrefs; includeRetirementInCash?: boolean }
-export interface Alert { kind: 'bill_due' | 'bill_overdue' | 'low_cash' | 'large_charge' | 'paycheck' | 'sync' | 'price_rise' | 'new_recurring' | 'reconcile' | 'revalue'; key: string; title: string; body: string; url: string; severity: 'info' | 'warn' | 'crit'; amount?: number }
+export interface NInput { today: string; now?: string; deletionScheduledFor?: string | null; accounts: NAccount[]; recurring: NRecurring[]; occurrences: NOccurrence[]; transactions: NTxn[]; paySchedules: NPay[]; sync: NSync; reserveFloor: number; prefs: NPrefs; includeRetirementInCash?: boolean }
+export interface Alert { kind: 'bill_due' | 'bill_overdue' | 'low_cash' | 'large_charge' | 'paycheck' | 'sync' | 'price_rise' | 'new_recurring' | 'reconcile' | 'revalue' | 'deletion'; key: string; title: string; body: string; url: string; severity: 'info' | 'warn' | 'crit'; amount?: number }
 
 export const NOTIFY_DEFAULTS: Required<NPrefs> = { bills: true, low_cash: true, large: 500, paycheck: true, sync: true, price_rise: true, new_recurring: true, reconcile: true, revalue: true }
 /** The alerts that also go in the Monday digest's "Worth a look" list. */
@@ -87,6 +89,8 @@ function paidFor(r: NRecurring, due: string, occ: NOccurrence[], tx: NTxn[]) {
 export function computeAlerts(inp: NInput): Alert[] {
   const p = { ...NOTIFY_DEFAULTS, ...Object.fromEntries(Object.entries(inp.prefs || {}).filter(([, v]) => v != null)) } as Required<NPrefs>
   const t = inp.today; const out: Alert[] = []; const live = inp.transactions.filter(x => !x.duplicate_of && x.status !== 'void')
+  if (inp.deletionScheduledFor) { const d = inp.deletionScheduledFor.slice(0, 10); const left = diff(d, t)
+    return [{ kind: 'deletion', key: `deletion:${d}:${left <= 1 ? 'final' : 'scheduled'}`, title: left <= 1 ? 'This household is permanently deleted tomorrow' : `This household will be permanently deleted on ${d}`, body: 'Everything in it — accounts, transactions, files and backups — for every member. Until then it is read-only; an owner can cancel in Settings.', url: '/settings', severity: 'crit' }] }
   const bucket3 = Math.floor(parse(t).getTime() / DAY / 3)
   if (p.bills) for (const r of inp.recurring.filter(r => r.status === 'Active' && r.kind !== 'income')) {
     for (const due of dueDatesN(r, addDaysN(t, -30), addDaysN(t, 1))) {
@@ -161,7 +165,7 @@ export function recipientsFor(prefs: NRouting, members: NMember[], kind: string)
   const mm = prefs.members || {}; const push: string[] = []; const email: Array<{ to: string; user_id: string | null }> = []
   for (const m of members) {
     const p = mm[m.user_id] || {}
-    const wants = kind === 'digest' ? p.digest !== false : !p.kinds || p.kinds.includes(kind)
+    const wants = kind === 'digest' ? p.digest !== false : kind === 'deletion' || !p.kinds || p.kinds.includes(kind)
     if (!wants) continue
     if (p.push ?? (prefs.push !== false)) push.push(m.user_id)
     if (p.email === true) { const to = String(p.email_to || m.email || '').trim().toLowerCase(); if (/@/.test(to)) email.push({ to, user_id: m.user_id }) }

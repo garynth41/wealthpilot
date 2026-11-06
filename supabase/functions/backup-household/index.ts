@@ -1,6 +1,9 @@
 // backup-household — nightly JSON backup of every household into the private `backups` storage bucket (migration 0009).
 //   POST { action: "backup_all" }            header x-cron-secret (pg_cron, Vault secret checked by cron_secret_ok): every household
 //   POST { action: "backup", household_id }  signed-in owner/editor: back up one household now (the "Back up now" button)
+//   POST { action: "purge_due" }             x-cron-secret (0.25.0): permanently delete households whose 7-day deletion grace has ended —
+//                                            their files in both buckets, then the household row (every table cascades from it)
+//   POST { action: "cron_ping" }             x-cron-secret (0.25.0): answers ok when the secret checks out — the rotation self-test
 // A backup is the same shape as Settings → Backup → Export ({ app, exported_at, household, ...tables }) at <household_id>/<YYYY-MM-DD>.json;
 // files older than 30 days are removed. Failures are written to app_errors (source 'backup') so they show in Settings → Security → Errors.
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -42,14 +45,40 @@ async function backupOne(household_id: string): Promise<{ ok: boolean; path?: st
   } catch (e) { const message = (e as Error).message || String(e); await logError(household_id, message); return { ok: false, message } }
 }
 
+/** Every file under <household_id>/ in a bucket (folders come back with id null and are walked, four levels deep). */
+async function listAll(bucket: string, prefix: string, depth = 0): Promise<string[]> {
+  const out: string[] = []; if (depth > 4) return out
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await admin.storage.from(bucket).list(prefix, { limit: 1000, offset }); if (error) throw error
+    for (const f of data || []) { const p = `${prefix}/${f.name}`; if (f.id == null) out.push(...await listAll(bucket, p, depth + 1)); else out.push(p) }
+    if (!data || data.length < 1000) break
+  }
+  return out
+}
+async function purgeOne(h: { id: string; name: string; deletion_requested_by: string | null; deletion_requested_at: string | null }) {
+  let files = 0
+  for (const bucket of ['attachments', 'backups']) { const paths = await listAll(bucket, h.id); for (let i = 0; i < paths.length; i += 100) { const { error } = await admin.storage.from(bucket).remove(paths.slice(i, i + 100)); if (error) throw error } files += paths.length }
+  await admin.from('deleted_households').upsert({ id: h.id, name: h.name, requested_by: h.deletion_requested_by, requested_at: h.deletion_requested_at, files_removed: files })
+  const { error } = await admin.from('households').delete().eq('id', h.id); if (error) throw error
+  return files
+}
+const cronOk = async (req: Request) => { const given = req.headers.get('x-cron-secret') || '', envSecret = Deno.env.get('CRON_SECRET'); return (!!envSecret && given === envSecret) || (given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true) }
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json(405, { error: 'POST only' })
   let b: { action?: string; household_id?: string }; try { b = await req.json() } catch { return json(400, { error: 'JSON body expected' }) }
+  if (b.action === 'cron_ping') return (await cronOk(req)) ? json(200, { ok: true, at: new Date().toISOString() }) : json(401, { error: 'cron secret required' })
+  if (b.action === 'purge_due') {
+    if (!(await cronOk(req))) return json(401, { error: 'cron secret required' })
+    const { data: due, error } = await admin.from('households').select('id, name, deletion_requested_by, deletion_requested_at').not('deletion_scheduled_for', 'is', null).lte('deletion_scheduled_for', new Date().toISOString())
+    if (error) return json(500, { error: error.message })
+    const out: Array<{ household_id: string; ok: boolean; files?: number; message?: string }> = []
+    for (const h of due || []) { try { out.push({ household_id: h.id, ok: true, files: await purgeOne(h) }) } catch (e) { const message = (e as Error).message || String(e); await logError(h.id, 'purge: ' + message); out.push({ household_id: h.id, ok: false, message }) } }
+    return json(200, { ok: out.every(x => x.ok), purged: out.filter(x => x.ok).length, results: out })
+  }
   if (b.action === 'backup_all') {
-    const given = req.headers.get('x-cron-secret') || '', envSecret = Deno.env.get('CRON_SECRET')
-    const ok = (!!envSecret && given === envSecret) || (given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)
-    if (!ok) return json(401, { error: 'cron secret required' })
+    if (!(await cronOk(req))) return json(401, { error: 'cron secret required' })
     const { data: hhs, error } = await admin.from('households').select('id'); if (error) return json(500, { error: error.message })
     const out: Array<{ household_id: string; ok: boolean; path?: string; bytes?: number; message?: string }> = []
     for (const h of hhs || []) out.push({ household_id: h.id, ...(await backupOne(h.id)) })

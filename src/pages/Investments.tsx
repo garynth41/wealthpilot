@@ -83,7 +83,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
       <h3 style={{ margin: '10px 0 4px', fontSize: 14 }}>Guaranteed income</h3>
       <div className="grid3">
         <Field label="Social Security / month" hint="from your SSA statement, today's $"><input className="inp" inputMode="decimal" key={`ss-${ssAnnual(i)}`} defaultValue={String(Math.round(ssAnnual(i) / 12))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssMonthly: n, socialSecurity: n * 12 })) }} /></Field>
-        <Field label="Claim at age" hint="62 – 70"><input className="inp" inputMode="numeric" key={`ssa-${ssStart(i)}`} defaultValue={String(ssStart(i))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssStartAge: Math.min(75, Math.max(55, Math.round(n))) })) }} /></Field>
+        <Field label="Claim at age" hint="62 – 70"><input className="inp" inputMode="numeric" key={`ssa-${ssStart(i)}`} defaultValue={String(ssStart(i))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssStartAge: Math.min(70, Math.max(62, Math.round(n))) })) }} /></Field>
         <Field label="Plan on" hint="benefit-cut scenario"><select className="inp" value={String(i.ssHaircut || 0)} onChange={e => setI(x => ({ ...x, ssHaircut: +e.target.value }))}><option value="0">Full benefit</option><option value="0.25">75% (shortfall)</option><option value="1">None</option></select></Field>
       </div>
       <div className="note" style={{ margin: '2px 0 4px' }}>Pensions and annuities</div>

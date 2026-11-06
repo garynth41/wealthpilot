@@ -56,7 +56,7 @@ export function coverageNotes(d: Data, from: string, to: string, prevFrom: strin
   const dates = d.transactions.filter(t => t.status !== 'void' && !t.duplicate_of).map(t => t.date).sort(); const first = dates[0]
   const out: string[] = []
   if (!first) return ['No transactions on file for this period yet.']
-  if (first > addDays(from, 3) && first <= to) out.push(`Incomplete: transactions on file start ${first}, so ${from} to ${addDays(first, -1)} is missing from these totals. Import bank statements for those dates (Bank Connections → Year-to-date coverage shows which accounts).`)
+  if (first > addDays(from, 3) && first <= to) out.push(`Incomplete: transactions on file start ${first}, so ${from} to ${addDays(first, -1)} is missing from these totals. Import bank statements for those dates (Cash & Account Operations → Year-to-date coverage shows which accounts).`)
   if (first > addDays(prevFrom, 3)) out.push(`The comparison period (${prevFrom} onward) has little or no data on file, so the change figures are not meaningful yet.`)
   return out
 }

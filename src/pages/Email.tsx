@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { EmailItem } from '../app/data/types'
-import { Card, KPI, Btn, Pill, Note, useModal, MHead, MBody, MFoot, Field } from '../components/ui'
+import { Card, KPI, Btn, Pill, Note, useModal, useConfirm, MHead, MBody, MFoot, Field } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { gmRun, olRun, mailLink, sinceDate, fetchPdfs, maskFileName, type FactEv, type MailStats } from '../lib/email/mail'
 import { sb } from '../app/supabase'
@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom'
 const KIND_LABEL: Record<string, string> = { paid: 'Paid', income: 'Money in', bill: 'Bill', scheduled: 'Scheduled', pastdue: 'Past due', declined: 'Declined', alert: 'Bank alert', balance: 'Balance update' }
 const KIND_PILL: Record<string, string> = { paid: 'good', income: 'good', bill: 'info', scheduled: 'wait', pastdue: 'crit', declined: 'crit', alert: 'crit', balance: 'idle' }
 export function EmailPage() {
+  const confirm = useConfirm()
   const store = useData(); const { data, settings, saveSettings, guarded, canEdit, isOwner, repo, acctLabels } = store; const { open, close } = useModal()
   const [busy, setBusy] = useState(''); const [props, setProps] = useState<Proposal[] | null>(null); const [inputs, setInputs] = useState<Record<number, ApplyInput & { checked?: boolean; ignore?: boolean }>>({})
   const seen = useMemo(() => new Set(data.emailLedger.map(x => x.message_id)), [data.emailLedger])
@@ -59,7 +60,7 @@ export function EmailPage() {
     <div className="kpis" style={{ margin: '16px 0' }}><KPI l="Bills received" v={String(bills.length)} cls="info" s={bills.length ? fmtMoney(sum(bills.map(x => +(x.amount || 0)))) + ' this month' : 'none from email this month'} /><KPI l="Paid from email" v={String(paid.length)} cls="good" s={paid.length ? fmtMoney(sum(paid.map(x => +(x.amount || 0)))) + ' this month' : ''} /><KPI l="Deposits" v={String(recv.length)} cls="good" s={recv.length ? fmtMoney(sum(recv.map(x => +(x.amount || 0)))) + ' this month' : ''} /><KPI l="Needs attention" v={String(attention.length)} cls={attention.length ? 'crit' : 'good'} s={attention.length ? 'past due, declined or bank alerts' : 'all clear'} /><KPI l="Remembered payees" v={String(Object.keys(settings.finmail?.rules || {}).length)} cls="info" s="filed the same way next time" /></div>
     <div className="grid g12">
       <Card span={12} title="Recurring bills & income found in email" hint="every payee filed from your mail — typical amount, last payment and what is next">{byPayee.length ? <div className="tblwrap"><table className="tbl"><thead><tr><th>Payee / payer</th><th className="num">Typical</th><th className="num">Total recorded</th><th>Last paid / received</th><th>Next</th><th>Months seen</th><th>Autopay</th></tr></thead><tbody>{byPayee.map(r => <tr key={r.payee || ''}><td>{r.inc ? '💵' : '🧾'} {r.payee}</td><td className="num">{r.typical != null ? fm2(r.typical) : '—'}</td><td className="num">{fm2(r.total)}</td><td>{r.last ? fmtD(r.last) : '—'}</td><td>{r.next ? fmtD(r.next) : '—'}</td><td>{r.months}</td><td>{r.auto ? 'yes' : ''}</td></tr>)}</tbody></table></div> : <div className="empty">Nothing filed from email yet — use Sync above. Each bill, payment and deposit you approve shows up here.</div>}</Card>
-      <Card span={12} title="Everything filed from email" hint="the record of every approved bill, payment, deposit and alert — with the email it came from"><Table rows={items} cols={cols} editable={canEdit} onChange={(x, k, v) => guarded(() => store.update('emailItems', x.id, { [k]: v } as Partial<EmailItem>))} onDelete={x => guarded(() => store.remove('emailItems', x.id), 'Removed')} rowCls={x => { const s = statusOf(x); return s.cls === 'crit' ? 'st-crit' : s.cls === 'warn' || s.cls === 'soon' ? 'st-warn' : s.cls === 'good' ? 'st-good' : '' }} />
+      <Card span={12} title="Everything filed from email" hint="the record of every approved bill, payment, deposit and alert — with the email it came from"><Table rows={items} cols={cols} editable={canEdit} onChange={(x, k, v) => guarded(() => store.update('emailItems', x.id, { [k]: v } as Partial<EmailItem>))} onDelete={async x => { if (await confirm(`Remove this record of ${x.payee || 'the email'}? The transaction or statement it created stays.`)) guarded(() => store.remove('emailItems', x.id), 'Removed') }} rowCls={x => { const s = statusOf(x); return s.cls === 'crit' ? 'st-crit' : s.cls === 'warn' || s.cls === 'soon' ? 'st-warn' : s.cls === 'good' ? 'st-good' : '' }} />
         <Note>Approving an email files it once: card and loan payments become transfers on <Link to="/accounts">Accounts</Link>, bills and purchases become transactions in the <Link to="/budget">Budget</Link>, statements update the card's balance, minimum and due date, and new bills become <Link to="/bills">recurring items</Link>.</Note></Card>
     </div>
   </>

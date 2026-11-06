@@ -4,7 +4,7 @@ import { NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { useStore, outdated } from '../app/store'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
 import { Logo } from './Logo'
-import { fmtDY, today, addDays, ago } from '../lib/dates'
+import { fmtDY, fmtDT, today, addDays, ago } from '../lib/dates'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
 import { Toasts, useModal, MHead, MBody, Btn } from './ui'
@@ -50,7 +50,7 @@ export function useBadges() {
     return { '/bills': { n: up.length, why: `${up.length} bill${up.length === 1 ? '' : 's'} overdue or due within 7 days` }, '/email': { n: em, why: `${em} past-due, declined or bank alert` }, '/hardship': { n: hs, why: `${hs} creditor call${hs === 1 ? '' : 's'} due` } } as Record<string, { n: number; why: string }> }, [data])
 }
 export function Layout({ children }: { children: ReactNode }) {
-  const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules } = useStore()
+  const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules, offlineAt } = useStore()
   const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path)) }, [mode, modules])
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS('rail')) === 'collapsed' } catch { return false } })
   // sections fold; the one holding the current page is always open; the choice is remembered per browser
@@ -118,7 +118,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Search and jump (Ctrl K)" style={{ padding: '6px 10px' }}>⌕ <kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button className="btn" onClick={() => setHelp(true)} title="Help for this page (F1)" aria-label="Help for this page" style={{ padding: '6px 10px' }}>ⓘ Help</button><button className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? '◉ Hidden' : '◎'}</button><button className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
       {outdated() && <div className="banner crit">A newer release (v{useStore.getState().latest}) is available — this tab is still running <b>v{APP_VERSION}</b>. <Btn sm primary onClick={() => { try { navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.update())) } catch { /* */ } location.reload() }}>Reload now</Btn></div>}
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
-      {!online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes will fail until you are back online.'}</div>}
+      {offlineAt && mode === 'db' ? <div className="banner warn" role="status" data-testid="offline-banner">You're offline — showing your data as of <b>{fmtDT(offlineAt)}</b>. Changes are paused until you're back online; the page updates by itself when the connection returns.</div>
+        : !online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes are paused until you are back online.'}</div>}
+      {household?.deletion_scheduled_for && <div className="banner crit" role="alert" data-testid="deletion-banner">This household will be <b>permanently deleted on {fmtDY(household.deletion_scheduled_for.slice(0, 10))}</b> — every account, transaction, file and backup, for every member. Until then it is read-only. {useStore.getState().isOwner() ? <Btn sm primary onClick={() => void useStore.getState().cancelDeletion().then(() => useStore.getState().toast('Deletion cancelled — the household is back to normal'), (e: Error) => useStore.getState().toast(e.message, true))}>Cancel the deletion</Btn> : 'An owner can cancel it in Settings.'}</div>}
       {access && accessLevel(access) !== 'owner' && accessLevel(access) !== 'full' && <div className="banner info">{describeAccess(access)}{accessLevel(access) === 'limited' ? ' — other sections are hidden.' : '.'}</div>}
       {priv && <div className="banner info privacy-note" role="status">Amounts are hidden on this device. <Btn sm onClick={togglePrivacy}>Show amounts</Btn> <span className="note" style={{ display: 'inline', margin: 0 }}>(or press H)</span></div>}
       <div className={useStore.getState().canEdit() ? '' : 'ro'} key={useThemeName() + '·' + dv}><PullToRefresh>{children}</PullToRefresh></div>

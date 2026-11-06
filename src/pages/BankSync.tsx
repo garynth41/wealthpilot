@@ -8,6 +8,7 @@ import { today, fmtDY, fmtDT } from '../lib/dates'
 import type { SyncConnection } from '../app/data/types'
 import { fm2 } from '../lib/money'
 import { acctLabel } from '../lib/accounts'
+import { syncSlot, syncLimitMessage } from '../lib/syncLimit'
 
 const NEW = '__new__'
 /** Automatic bank sync through SimpleFIN Bridge. The sync itself runs in the sync-simplefin edge function; this card connects, maps accounts and shows what happened. */
@@ -27,9 +28,11 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     const c = s.connection; const saved = c?.account_map || {}
     if (c && Object.keys(saved).length === 0 && c.discovered.length > 0) { setMap(suggest(c, {})); setDirty(true) } else { setMap(saved); setDirty(false) } }, [repo, onKpi, suggest])
   useEffect(() => { load() }, [load])
+  // the sync limit (0.25.0): re-check every 30 seconds so "Sync now" comes back by itself when the wait is over
+  const [, tick] = useState(0); useEffect(() => { const t = window.setInterval(() => tick(n => n + 1), 30000); return () => window.clearInterval(t) }, [])
 
   if (!st) return <Card span={12} title="Automatic bank sync"><Note>Checking…</Note></Card>
-  if (!st.available) return <Card span={12} title="Automatic bank sync (SimpleFIN)" hint="balances and transactions pulled in once a day"><Note>{mode === 'demo' ? 'Automatic sync needs a real household — it is not available in the offline demo.' : 'Not available yet: the database upgrade for bank sync (migration 0004) has not been applied, or your access does not include Bank connections.'}</Note></Card>
+  if (!st.available) return <Card span={12} title="Automatic bank sync (SimpleFIN)" hint="balances and transactions pulled in once a day"><Note>{mode === 'demo' ? 'Automatic sync needs a real household — it is not available in the offline demo.' : 'Not available: your access does not include bank connections — ask a household owner.'}</Note></Card>
   const c = st.connection
   const run = async (fn: () => Promise<unknown>, ok?: string) => { setBusy(true); try { await guarded(async () => { await fn() }, ok) } finally { setBusy(false) } }
 
@@ -61,14 +64,16 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
   const syncClick = () => run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncNow(); await refresh(); await load(); useStore.getState().toast(r.message) })
   const ytdFrom = today().slice(0, 4) + '-01-01'
   const backfillClick = async () => { if (!(await confirm(`Load every transaction SimpleFIN still has back to ${fmtDY(ytdFrom)}? SimpleFIN keeps about 90 days, so older months usually need a statement file (CSV / QFX) from your bank — the coverage table below shows which. Duplicates are merged automatically. This uses a few of SimpleFIN's roughly 24 requests a day.`, 'Load history'))) return; run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncBackfill(ytdFrom); await refresh(); await load(); useStore.getState().toast(r.message) }) }
-  const why = mappedCount === 0 ? 'Choose where at least one bank account should go (or create it from the bank) first.' : ''
+  const slot = syncSlot(st.requests || []); const limitMsg = syncLimitMessage(slot)
+  const why = mappedCount === 0 ? 'Choose where at least one bank account should go (or create it from the bank) first.' : limitMsg
   return <Card span={12} title="Automatic bank sync (SimpleFIN)" hint="balances and new transactions once a day, plus on demand" right={<span className="btnrow">
-    {canEdit && <Btn primary sm disabled={busy || mappedCount === 0} title={why} onClick={syncClick}>{busy ? 'Working…' : dirty ? 'Save matching & sync now' : 'Sync now'}</Btn>}
-    {isOwner && <Btn sm disabled={busy || mappedCount === 0} title={why || 'Re-read history back to January 1'} onClick={backfillClick}>Load year-to-date history</Btn>}
+    {canEdit && <Btn primary sm disabled={busy || mappedCount === 0 || !slot.ok} title={why} onClick={syncClick}>{busy ? 'Working…' : dirty ? 'Save matching & sync now' : 'Sync now'}</Btn>}
+    {isOwner && <Btn sm disabled={busy || mappedCount === 0 || !slot.ok} title={why || 'Re-read history back to January 1'} onClick={backfillClick}>Load year-to-date history</Btn>}
     {isOwner && <Btn sm danger onClick={async () => { if (await confirm('Disconnect the bank? The saved key is deleted; imported transactions stay.', 'Disconnect')) run(async () => { await repo!.syncDisconnect(); await load() }, 'Disconnected') }}>Disconnect</Btn>}</span>}>
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
       <Pill cls={c.status === 'connected' ? 'good' : 'crit'}>{c.status === 'connected' ? 'Connected' : 'Needs attention'}</Pill>
       <span className="note" style={{ margin: 0 }}>{c.last_sync_at ? `Last sync ${fmtDT(c.last_sync_at)}` : 'Not synced yet'}</span>
+      {limitMsg ? <span className="note" role="status" data-testid="sync-limit" style={{ margin: 0, color: 'var(--warn-ink)' }}>{limitMsg}</span> : (st.requests?.length ? <span className="note" style={{ margin: 0 }}>{st.requests.length} of {slot.limit} on-demand syncs used in the last 24 hours</span> : null)}
     </div>
     {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.status === 'error' ? <b>Last sync failed: </b> : <b>Note from SimpleFIN (sync still worked): </b>}{c.last_error}{/45 days/i.test(c.last_error) && c.status !== 'error' ? ' — WealthPilot now asks for at most 44 days at a time, so this note clears on the next sync.' : ''}</div>}
     <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>At the bank</th><th className="num">Balance</th><th>Goes into</th></tr></thead><tbody>

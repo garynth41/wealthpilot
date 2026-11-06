@@ -16,7 +16,8 @@ export function ytdCoverage(d: Data, asOf = today()): Coverage {
   const year = asOf.slice(0, 4), from = `${year}-01-01`, to = asOf
   const months = Array.from({ length: +asOf.slice(5, 7) }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)
   const live = d.transactions.filter(t => t.status !== 'void' && !t.duplicate_of)
-  const rows: CoverageRow[] = d.accounts.filter(a => a.status === 'Active').map(a => {
+  // property and vehicles have values, not transactions, so there is nothing to cover (0.25.0)
+  const rows: CoverageRow[] = d.accounts.filter(a => a.status === 'Active' && a.kind !== 'other_asset' && !a.asset_type).map(a => {
     const mine = live.filter(t => t.account_id === a.id || t.to_account_id === a.id).map(t => t.date).sort()
     const inYear = mine.filter(x => x >= from && x <= to)
     const first = mine[0] || null, last = mine[mine.length - 1] || null

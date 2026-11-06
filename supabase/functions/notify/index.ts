@@ -32,7 +32,7 @@ async function logError(household_id: string | null, message: string, context: R
 interface Prefs extends NRouting { bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; digest?: boolean; price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean }
 async function loadHousehold(hh: string) {
   const [h, acc, rec, occ, tx, pay, sync, members] = await Promise.all([
-    admin.from('households').select('id, name, settings').eq('id', hh).single(),
+    admin.from('households').select('*').eq('id', hh).single(),
     admin.from('accounts').select('id, name, kind, status, balance, bank_balance, include_in_cash, balance_as_of, last_reconciled_on, created_at').eq('household_id', hh),
     admin.from('recurring').select('id, name, payee, kind, amount, amount_varies, frequency, day_of_month, next_due, starts_on, ends_on, status, autopay').eq('household_id', hh),
     admin.from('bill_occurrences').select('recurring_id, due_date, status').eq('household_id', hh).gte('due_date', new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10)),
@@ -43,7 +43,7 @@ async function loadHousehold(hh: string) {
   if (h.error) throw h.error
   const settings = (h.data.settings || {}) as Record<string, unknown>; const prefs = (settings.notify || {}) as Prefs
   const num = <T extends Record<string, unknown>>(r: T) => { const o = { ...r } as Record<string, unknown>; for (const k of ['balance', 'bank_balance', 'amount', 'net_amount']) if (k in o && o[k] != null) o[k] = Number(o[k]); return o as T }
-  return { household: h.data, settings, prefs, members: members.data || [], input: { today: todayET(), now: new Date().toISOString(), accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: occ.data || [], transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
+  return { household: h.data, settings, prefs, members: members.data || [], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: occ.data || [], transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
 }
 
 async function sendPush(hh: string, userIds: string[] | null, title: string, body: string, path: string, tag: string): Promise<{ sent: number; failed: number; detail: string }> {
@@ -99,6 +99,7 @@ async function runDaily(hh: string) {
 async function runDigest(hh: string) {
   const { household, prefs, members, input } = await loadHousehold(hh)
   if (prefs.digest === false) return { household_id: hh, digest: 'off' }
+  if (input.deletionScheduledFor) return { household_id: hh, digest: 'scheduled for deletion — no digest' }
   const d = computeDigest({ today: input.today, accounts: input.accounts, recurring: input.recurring, occurrences: input.occurrences, transactions: input.transactions, reserveFloor: input.reserveFloor, includeRetirementInCash: input.includeRetirementInCash })
   const keyD = `digest:${input.today}`
   const { data: done } = await admin.from('notifications').select('id').eq('household_id', hh).like('dedupe_key', `${keyD}%`).eq('status', 'sent').limit(1); if (done?.length) return { household_id: hh, digest: 'already sent' }

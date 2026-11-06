@@ -149,13 +149,13 @@ export interface EmailItem extends Stamped {
 }
 export interface EmailLedgerRow { household_id: UUID; message_id: string; src: string; decision: 'applied' | 'ignored'; subject?: string | null; message_at?: string | null; decided_at?: string }
 
-export interface Household { id: UUID; name: string; currency: string; settings: Settings; created_at?: string }
+export interface Household { id: UUID; name: string; currency: string; settings: Settings; created_at?: string; /** 0.25.0: a pending deletion — the household is read-only until then, and gone after */ deletion_requested_at?: string | null; deletion_requested_by?: string | null; deletion_scheduled_for?: string | null }
 export interface Member { household_id: UUID; user_id: UUID; email: string; display_name?: string | null; role: Role; read_only: boolean; modules?: string[] | null; joined_at?: string; last_seen_at?: string | null; last_version?: string | null }   // modules: null = every module (see lib/access.ts)
 export interface Invite { id: UUID; household_id: UUID; email: string; role: Role; read_only?: boolean; modules?: string[] | null; display_name?: string | null; created_at?: string; accepted_at?: string | null; temp_password_issued_at?: string | null; sent_at?: string | null }
 /** Automatic bank sync (SimpleFIN) — the connection row and its recent runs. The access URL itself never reaches the browser. */
 export interface SyncConnection { household_id: UUID; provider: string; status: 'connected' | 'error'; last_sync_at: string | null; last_error: string | null; account_map: Record<string, string>; discovered: Array<{ id: string; name: string; org: string; last4: string | null; balance: number }> }
 export interface SyncLogRow { id: number; started_at: string; finished_at: string | null; trigger: 'manual' | 'daily' | 'connect' | 'backfill'; ok: boolean; accounts: number; added: number; skipped: number; message: string | null }
-export interface SyncStatus { connection: SyncConnection | null; log: SyncLogRow[]; available: boolean }
+export interface SyncStatus { connection: SyncConnection | null; log: SyncLogRow[]; available: boolean; /** 0.25.0: when this household's manual syncs ran in the last 24 hours (for the sync limit) */ requests?: string[] }
 export interface SyncResult { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string; merged?: number; review?: number; earliest?: Record<string, string> }
 /** What an owner asks for when inviting; the server issues the temporary password and returns it once. */
 export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; subject: string; body: string }

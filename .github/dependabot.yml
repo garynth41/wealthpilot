@@ -1,0 +1,20 @@
+# Library updates (0.25.0). Every Monday Dependabot opens pull requests; CI runs the full check on each (typecheck, unit tests, build,
+# the browser smoke suite and the staging-database tests). Passing minor and patch updates merge and deploy by themselves
+# (the automerge job in ci.yml); major versions always wait for a person.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    open-pull-requests-limit: 6
+    commit-message: { prefix: deps }
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/New_York }
+    commit-message: { prefix: ci }
+    groups:
+      actions:
+        patterns: ["*"]

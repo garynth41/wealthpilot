@@ -84,7 +84,15 @@ export async function applyOne(ctx: Ctx, p: Proposal, inp: ApplyInput = {}): Pro
   return row
 }
 const close2 = (a: number, b: number) => Math.abs(+a - +b) <= Math.max(1, Math.abs(+b) * 0.02)
+/** A payment or deposit needs an amount the email actually gave (or you typed): never file one at $0 (0.25.0). */
+export function missingAmounts(list: Proposal[], inputs: ApplyInput[] = []): string[] {
+  return list.flatMap((p, i) => { const f = p.f as FactG; const inp = inputs[i] || {}; if (!(f.kind === 'paid' || f.kind === 'income') || p.dup) return []
+    const typed = inp.amount != null && (inp.amount as unknown) !== '' ? +inp.amount : null; const amt = typed ?? (f.amount != null ? +f.amount : null)
+    return amt != null && amt > 0 ? [] : [f.payee || 'an item'] })
+}
 export async function applyMany(ctx: Ctx, list: Proposal[], inputs: ApplyInput[] = []) {
+  const missing = missingAmounts(list, inputs)
+  if (missing.length) throw new Error(`Type the amount for ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ` and ${missing.length - 3} more` : ''} — the email did not show one, and nothing was filed`)
   const done: Proposal[] = []
   for (const [i, p] of sortForApply(list)) { await applyOne(ctx, p, inputs[i] || {}); done.push(p) }
   await ctx.ledger(dedupe(list.flatMap(p => ((p.f as FactG).ev || []).map(e => ({ message_id: e.msg_id, src: e.src, decision: 'applied' as const, subject: maskDigits(e.subject).slice(0, 200), message_at: e.date ? new Date(e.date + 'T12:00:00').toISOString() : null })))))

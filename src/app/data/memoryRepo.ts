@@ -3,6 +3,7 @@ import type { Repo } from './repo'
 import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
 import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
+import { syncSlot, syncLimitMessage } from '../../lib/syncLimit'
 import { monthKey, today } from '../../lib/dates'
 import { genTempPassword } from '../../lib/access'
 import { balanceFor, dropKnown } from '../../lib/simplefin'
@@ -67,6 +68,12 @@ export class MemoryRepo implements Repo {
     if (coll === 'categories') { this.data.lines = this.data.lines.filter(l => l.category_id !== id); this.data.transactions.forEach(x => { if (x.category_id === id) x.category_id = null }) }
     this.persist(); this.emit()
   }
+  /** The demo mirrors request_household_deletion / cancel_household_deletion (the nightly purge is not simulated — Reset sample data starts over). */
+  async requestDeletion(confirm: string) {
+    if (this.household.deletion_scheduled_for) return this.household.deletion_scheduled_for
+    if (confirm.trim().toLowerCase() !== this.household.name.trim().toLowerCase()) throw new Error("type the household's name exactly to confirm")
+    const at = new Date(Date.now() + 7 * 86400000).toISOString(); this.household = { ...this.household, deletion_requested_at: new Date().toISOString(), deletion_requested_by: 'demo', deletion_scheduled_for: at }; this.persist(); this.emit(); return at }
+  async cancelDeletion() { this.household = { ...this.household, deletion_requested_at: null, deletion_requested_by: null, deletion_scheduled_for: null }; this.persist(); this.emit() }
   async saveSettings(patch: Partial<Settings>) { this.household = { ...this.household, settings: { ...SETTINGS_DEFAULTS, ...this.household.settings, ...patch } }; this.persist(); this.emit(); return this.household.settings }
   async renameHousehold(name: string) { this.household = { ...this.household, name }; this.persist(); this.emit() }
   async startPeriod(type: string, start: string, end: string, label?: string) {
@@ -83,7 +90,7 @@ export class MemoryRepo implements Repo {
   async ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]) { for (const r of rows) { const i = this.data.emailLedger.findIndex(x => x.message_id === r.message_id); const row = { ...r, household_id: this.household.id, decided_at: new Date().toISOString() }; if (i >= 0) this.data.emailLedger[i] = row; else this.data.emailLedger.push(row) } this.persist() }
   async invite(email: string, role: Role) { this.data.invites.push({ id: demoId(), household_id: this.household.id, email, role }); this.persist(); this.emit() }
   // Bank sync is not available in the demo — except for the test harness, which sets localStorage['wealthpilot.simSync']='1' to exercise the whole screen against a pretend bank.
-  private sim = { connected: false, map: {} as Record<string, string>, last: null as string | null, log: [] as SyncStatus['log'], failNext: null as string | null, lastError: null as string | null }
+  private sim = { connected: false, map: {} as Record<string, string>, last: null as string | null, log: [] as SyncStatus['log'], failNext: null as string | null, lastError: null as string | null, requests: [] as string[] }
   /** test hook: make the next simulated sync fail like a disconnected institution */
   simFailNext(message: string) { this.sim.failNext = message }
   private simOn() { try { return localStorage.getItem(LS('simSync')) === '1' } catch { return false } }
@@ -91,10 +98,14 @@ export class MemoryRepo implements Repo {
   async syncStatus(): Promise<SyncStatus> {
     if (!this.simOn()) return { connection: null, log: [], available: false }
     if (!this.sim.connected) return { connection: null, log: this.sim.log, available: true }
-    return { available: true, log: this.sim.log, connection: { household_id: this.household.id, provider: 'simplefin', status: this.sim.lastError ? 'error' : 'connected', last_sync_at: this.sim.last, last_error: this.sim.lastError, account_map: this.sim.map, discovered: MemoryRepo.SIM_BANK } } }
+    return { available: true, log: this.sim.log, requests: this.sim.requests, connection: { household_id: this.household.id, provider: 'simplefin', status: this.sim.lastError ? 'error' : 'connected', last_sync_at: this.sim.last, last_error: this.sim.lastError, account_map: this.sim.map, discovered: MemoryRepo.SIM_BANK } } }
   async syncConnect(): Promise<void> { if (!this.simOn()) throw new Error('Bank sync needs a real household — it is not available in the offline demo'); this.sim.connected = true }
+  /** The 0.25.0 sync limit, simulated only when wealthpilot.simSyncLimit is set (so the smoke suite can sync freely otherwise). */
+  private simClaim() { let on = false; try { on = localStorage.getItem(LS('simSyncLimit')) === '1' } catch { /* */ } if (!on) return
+    const slot = syncSlot(this.sim.requests); if (!slot.ok) throw new Error(syncLimitMessage(slot)); this.sim.requests = [...this.sim.requests, new Date().toISOString()] }
   async syncNow(): Promise<SyncResult> {
     if (!this.simOn()) throw new Error('Bank sync is not available in the offline demo')
+    this.simClaim()
     if (this.sim.failNext) {   // a disconnected institution: nothing changes, the failure is logged, the status shows it
       const m = this.sim.failNext; this.sim.failNext = null; this.sim.lastError = m; const at = new Date().toISOString()
       this.sim.log = [{ id: this.sim.log.length + 1, started_at: at, finished_at: at, trigger: 'manual' as const, ok: false, accounts: 0, added: 0, skipped: 0, message: m }, ...this.sim.log]
@@ -130,7 +141,7 @@ export class MemoryRepo implements Repo {
     const e: AuditEvent = { id: demoId(), household_id: this.household.id, account_id: accountId ?? null, kind, summary, detail: detail ?? null, user_id: null, user_email: 'demo', created_at: new Date().toISOString() }
     this.data.audit = [e, ...(this.data.audit || [])]; this.persist(); return e
   }
-  async syncDisconnect(): Promise<void> { this.sim = { connected: false, map: {}, last: null, log: [], failNext: null, lastError: null } }
+  async syncDisconnect(): Promise<void> { this.sim = { connected: false, map: {}, last: null, log: [], failNext: null, lastError: null, requests: [] } }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly, modules } : m); this.persist(); this.emit() }
   /** Demo: no real account is created; a temporary password is generated locally so the invitation flow can be tried end to end. */

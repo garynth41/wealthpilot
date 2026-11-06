@@ -4,12 +4,15 @@
 //   disconnect { household_id }               owner: forgets the access URL and the connection
 //   backfill   { household_id, from }         owner: re-read history back to `from` (SimpleFIN keeps about 90 days), then merge duplicates
 //   dedupe     { household_id }               owner/editor: merge clear-cut duplicate transactions now (see dedupe.ts)
+// Limits (0.25.0): sync and backfill at most once every 15 minutes and 12 times in 24 hours per household (claim_sync_slot, 429 with
+// retry_at otherwise); the daily run is not counted. A household scheduled for deletion is not synced and cannot be changed.
 // Daily run: pg_cron (migration 0005) POSTs { action: "sync_all" } with header x-cron-secret = the Vault secret 'wealthpilot_cron_secret' (checked by cron_secret_ok).
 // Maintenance (pg_cron secret): { action: "maintenance_all", backfill_from?: "YYYY-MM-DD", dry_run?: true } — backfill (optional) and de-duplicate every household; dry_run only previews the merge plan.
 // The access URL contains the SimpleFIN credentials: it is only ever in sync_secrets (no browser access), never logged, never returned.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { planDedupe, type DTxn } from './dedupe.ts'
 import { verifiedBalance, type RTxn } from './reconcile.ts'
+import { syncLimitMessage, SYNC_GAP_MINUTES, SYNC_DAILY, type SyncSlot } from './syncLimit.ts'
 import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
@@ -134,8 +137,9 @@ Deno.serve(async (req) => {
     const ok = (!!envSecret && given === envSecret) || (given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)
     if (!ok) return json(401, { error: 'Not allowed' })
     const { data: conns } = await admin.from('sync_connections').select('household_id').eq('provider', 'simplefin')
+    const { data: leaving } = await admin.from('households').select('id').not('deletion_scheduled_for', 'is', null); const skip = new Set((leaving || []).map(h => h.id as string))
     const out: Array<{ household_id: string; ok: boolean; message: string }> = []
-    for (const c of conns || []) { const r = await runSync(c.household_id as string, 'daily'); out.push({ household_id: c.household_id as string, ok: r.ok, message: r.message }) }
+    for (const c of conns || []) { if (skip.has(c.household_id as string)) { out.push({ household_id: c.household_id as string, ok: true, message: 'scheduled for deletion — skipped' }); continue } const r = await runSync(c.household_id as string, 'daily'); out.push({ household_id: c.household_id as string, ok: r.ok, message: r.message }) }
     return json(200, { ok: true, results: out })
   }
   if (b.action === 'maintenance_all') {
@@ -160,7 +164,19 @@ Deno.serve(async (req) => {
   if (!me) return json(403, { error: 'Not a member of this household' })
   const inModule = me.role === 'owner' || me.modules == null || (me.modules as string[]).includes('connections')
   if (!inModule) return json(403, { error: 'You do not have access to Bank connections' })
-  const isOwner = me.role === 'owner', canEdit = isOwner || (me.role === 'editor' && !me.read_only)
+  const isOwner = me.role === 'owner'
+  const { data: hrow } = await admin.from('households').select('deletion_scheduled_for').eq('id', hh).maybeSingle(); const leaving = !!hrow?.deletion_scheduled_for
+  const canEdit = !leaving && (isOwner || (me.role === 'editor' && !me.read_only))
+  if (leaving && b.action !== 'disconnect') return json(403, { error: 'This household is scheduled for deletion and is read-only — cancel the deletion in Settings to sync again' })
+  /** One manual sync or backfill: the database checks the limit and records the request in one locked step. */
+  const claim = async (trigger: 'manual' | 'backfill') => {
+    const { data, error } = await admin.rpc('claim_sync_slot', { p_household: hh, p_user: user.id, p_trigger: trigger, p_gap_minutes: SYNC_GAP_MINUTES, p_daily: SYNC_DAILY })
+    if (error) { if (/claim_sync_slot/.test(error.message)) return null; throw new Error(error.message) }   // migration 0018 not applied: no limit
+    const r = data as { ok: boolean; reason?: 'gap' | 'daily'; retry_at?: string; used: number; limit: number }
+    if (r.ok) return null
+    const slot: SyncSlot = { ok: false, reason: r.reason, retryAt: r.retry_at ? new Date(r.retry_at).toISOString() : undefined, used: r.used, limit: r.limit }
+    return json(429, { ok: false, error: syncLimitMessage(slot), message: syncLimitMessage(slot), retry_at: slot.retryAt, reason: r.reason, used: r.used, limit: r.limit })
+  }
 
   if (b.action === 'connect') {
     if (!isOwner) return json(403, { error: 'Only an owner can connect a bank' })
@@ -183,11 +199,13 @@ Deno.serve(async (req) => {
   }
   if (b.action === 'sync') {
     if (!canEdit) return json(403, { error: 'Your access is read-only' })
+    const limited = await claim('manual'); if (limited) return limited
     const r = await runSync(hh, 'manual'); return json(r.ok ? 200 : 502, r)
   }
   if (b.action === 'backfill') {
     if (!isOwner) return json(403, { error: 'Only an owner can load bank history' })
     const from = String(b.from || ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return json(400, { error: 'from must be a date (YYYY-MM-DD)' })
+    const limited = await claim('backfill'); if (limited) return limited
     const r = await runSync(hh, 'backfill', from); return json(r.ok ? 200 : 502, r)
   }
   if (b.action === 'dedupe') {

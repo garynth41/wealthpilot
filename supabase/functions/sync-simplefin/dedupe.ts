@@ -53,6 +53,7 @@ const acct = (t: DTxn) => t.account_id || t.to_account_id || null
 export function origin(t: DTxn): 'bank' | 'file' | 'typed' {
   const e = t.external_id || ''
   if (e.startsWith('sfin:')) return 'bank'
+  if (e.startsWith('mig:')) return 'typed'   // history moved in from another app (0.24.0) is what you typed there, not a bank record (0.25.0)
   if (e) return 'file'
   return 'typed'
 }

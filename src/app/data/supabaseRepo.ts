@@ -53,6 +53,8 @@ export class SupabaseRepo implements Repo {
     const next = { ...SETTINGS_DEFAULTS, ...(cur?.settings || {}), ...patch }
     const { error } = await sb().from('households').update({ settings: next, updated_at: new Date().toISOString() }).eq('id', this.hh); if (error) throw error; return next
   }
+  async requestDeletion(confirm: string) { const { data, error } = await sb().rpc('request_household_deletion', { p_household: this.hh, p_confirm: confirm }); if (error) throw error; return String(data) }
+  async cancelDeletion() { const { error } = await sb().rpc('cancel_household_deletion', { p_household: this.hh }); if (error) throw error }
   async renameHousehold(name: string) { const { error } = await sb().from('households').update({ name }).eq('id', this.hh); if (error) throw error }
   async startPeriod(type: string, start: string, end: string, label?: string) {
     const { data, error } = await sb().rpc('start_period', { p_household: this.hh, p_type: type, p_start: start, p_end: end, p_label: label ?? null }); if (error) throw error; return data as string
@@ -66,7 +68,8 @@ export class SupabaseRepo implements Repo {
   async syncStatus(): Promise<SyncStatus> {
     const c = sb(); const [cn, lg] = await Promise.all([c.from('sync_connections').select('*').eq('household_id', this.hh).maybeSingle(), c.from('sync_log').select('*').eq('household_id', this.hh).order('started_at', { ascending: false }).limit(15)])
     if (cn.error || lg.error) return { connection: null, log: [], available: false }   // table missing (database not upgraded yet) or no access to Bank connections
-    return { connection: (cn.data as SyncConnection | null) || null, log: (lg.data || []) as SyncLogRow[], available: true } }
+    const rq = await c.from('sync_requests').select('at').eq('household_id', this.hh).gte('at', new Date(Date.now() - 86400000).toISOString())   // 0.25.0 limit; missing table = no limit shown
+    return { connection: (cn.data as SyncConnection | null) || null, log: (lg.data || []) as SyncLogRow[], available: true, requests: rq.error ? [] : (rq.data || []).map(r => r.at as string) } }
   async syncConnect(setupToken: string) { await this.syncCall({ action: 'connect', setup_token: setupToken }) }
   async syncNow() { return await this.syncCall<SyncResult>({ action: 'sync' }) }
   async syncBackfill(from: string) { return await this.syncCall<SyncResult>({ action: 'backfill', from }) }

@@ -1,5 +1,7 @@
-# WealthPilot CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards).
-# A push to main that passes also publishes dist/ to gh-pages (the same thing `npm run deploy` does by hand).
+# WealthPilot CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards),
+# then the same app built against the staging database and driven end to end (0.25.0). A push to main that passes both publishes
+# dist/ to gh-pages (the same thing `npm run deploy` does by hand). Dependabot pull requests with passing minor/patch updates merge
+# and deploy by themselves; majors wait for a person.
 name: ci
 on:
   push: { branches: [main] }
@@ -9,6 +11,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 permissions: { contents: write }
+env:
+  MAIN_PUSH: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -37,14 +41,49 @@ jobs:
           path: e2e/shots
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: env.MAIN_PUSH == 'true'
         with:
           name: dist
           path: dist
           retention-days: 3
-  deploy:
+  # the app against a real database: RLS, triggers and functions as production has them (migrations applied to staging first)
+  staging:
     needs: check
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      STAGING_URL: ${{ secrets.STAGING_URL }}
+      STAGING_KEY: ${{ secrets.STAGING_KEY }}
+      STAGING_E2E_PASSWORD: ${{ secrets.STAGING_E2E_PASSWORD }}
+    steps:
+      - name: Skip when the staging secrets are not set
+        id: gate
+        run: if [ -z "$STAGING_URL" ] || [ -z "$STAGING_E2E_PASSWORD" ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::staging secrets not set — database tests skipped"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.gate.outputs.run == 'true'
+      - name: Build against staging
+        if: steps.gate.outputs.run == 'true'
+        run: VITE_SUPABASE_URL="$STAGING_URL" VITE_SUPABASE_KEY="$STAGING_KEY" VITE_APP_NAME=WealthPilot npx vite build --outDir dist-staging
+      - run: npx playwright install --with-deps chromium
+        if: steps.gate.outputs.run == 'true'
+      - run: npm run e2e:db
+        if: steps.gate.outputs.run == 'true'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: staging-shots
+          path: e2e/shots
+          if-no-files-found: ignore
+  deploy:
+    needs: [check, staging]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -57,3 +96,23 @@ jobs:
         run: |
           git config user.name "wealthpilot-ci"; git config user.email "ci@users.noreply.github.com"
           npx --yes gh-pages@6 -d dist --add --dotfiles --nojekyll -u "wealthpilot-ci <ci@users.noreply.github.com>" -m "ci: deploy ${GITHUB_SHA::7}" -r "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+  # Dependabot: a passing minor or patch update merges itself, then deploys (a merge made with GITHUB_TOKEN does not start a push run,
+  # so this job starts the main run itself). Majors are left for a person to review.
+  automerge:
+    needs: [check, staging]
+    if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions: { contents: write, pull-requests: write, actions: write }
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+      - name: Merge and deploy minor / patch updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", PR: "${{ github.event.pull_request.html_url }}" }
+        run: |
+          gh pr merge "$PR" --squash --delete-branch
+          gh workflow run ci.yml --ref main --repo "${{ github.repository }}"
+      - name: Major update — leave for review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", PR: "${{ github.event.pull_request.html_url }}" }
+        run: gh pr comment "$PR" --body "Major version update — the checks ran; it waits for a person to review and merge."

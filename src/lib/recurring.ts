@@ -49,7 +49,7 @@ export function upcoming(d: Data, from: string, to: string, kinds?: Recurring['k
       else if (days < 0) status = 'overdue'
       else if (days === 0) status = 'due_today'
       else if (r.autopay) status = 'autopay'
-      else if (days <= (r.reminder_days || 3)) status = 'due_soon'
+      else if (days <= (r.reminder_days ?? 3)) status = 'due_soon'
       out.push({ r, date, amount, occ, txn, status, days })
     }
   }

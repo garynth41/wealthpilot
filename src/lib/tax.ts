@@ -103,8 +103,10 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const paidTotal = round2(withheld + estimates + projectedWithholding + extra + p.plannedEstimates)
   const balance = round2(paidTotal - fedTotal)
   // safe harbor (federal): 90% of this year's tax, or 100% (110% if prior AGI > 150k) of last year's tax, whichever is smaller
-  const prior = p.priorYearTax > 0 ? p.priorYearTax * (p.priorYearAgi > T.safeHarborHighAgi ? T.safeHarborHighPct : 1) : Infinity
-  const required = round2(Math.min(fedTotal * T.safeHarborPct, prior)); const basis: TaxEstimate['safeHarbor']['basis'] = prior < fedTotal * T.safeHarborPct ? (p.priorYearAgi > T.safeHarborHighAgi ? '110% of last year' : '100% of last year') : '90% of this year'
+  // 110% of last year's tax once last year's AGI was over $150,000 — $75,000 when married filing separately (IRS rule)
+  const highAgi = st === 'mfs' ? T.safeHarborHighAgi / 2 : T.safeHarborHighAgi
+  const prior = p.priorYearTax > 0 ? p.priorYearTax * (p.priorYearAgi > highAgi ? T.safeHarborHighPct : 1) : Infinity
+  const required = round2(Math.min(fedTotal * T.safeHarborPct, prior)); const basis: TaxEstimate['safeHarbor']['basis'] = prior < fedTotal * T.safeHarborPct ? (p.priorYearAgi > highAgi ? '110% of last year' : '100% of last year') : '90% of this year'
   const shortfall = round2(Math.max(0, required - paidTotal)); const penaltyEstimate = round2(shortfall * T.underpaymentRate * 0.5)   // roughly half a year outstanding on average
   const estimatesLeft = T.calendar.filter(c => c.kind === 'estimate' && c.date >= asOf).length; const quarterlyNeeded = round2(shortfall > 0 ? shortfall / Math.max(1, estimatesLeft) : 0)   // only deadlines still ahead
   const seSetAside = round2(Math.max(0, se) * (p.seSetAsidePct || 0) / 100)

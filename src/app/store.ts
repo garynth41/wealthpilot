@@ -14,6 +14,7 @@ import type { Transaction } from './data/types'
 export const splitDups = (d: Data): Data => { const all = [...d.transactions, ...(d.duplicates || [])]; return { ...d, transactions: all.filter(t => !t.duplicate_of), duplicates: all.filter(t => !!t.duplicate_of) } }
 
 import { setErrorSink } from '../lib/errors'
+import { saveOffline, loadOffline, clearOffline, makeSnapshot, isNetworkError } from '../lib/offlineCache'
 export type Mode = 'db' | 'demo' | null
 export interface Toast { id: number; text: string; err?: boolean; action?: { label: string; run: () => void } }
 /** One reversible step (0.19.0): what it was, and how to put it back. */
@@ -24,6 +25,9 @@ interface State {
   repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean; modules: string[] | null
   households: Array<{ id: string; name: string; role: Role }>
   latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean; recovering: boolean
+  /** 0.25.0: set while showing the read-only offline copy (or once the connection drops): when that copy was saved */
+  offlineAt: string | null
+  requestDeletion: (confirm: string) => Promise<string>; cancelDeletion: () => Promise<void>
   settings: () => Settings
   canEdit: () => boolean; isOwner: () => boolean; canView: (path: string) => boolean; mustChangePassword: () => boolean
   boot: () => Promise<void>
@@ -65,9 +69,10 @@ let deduping = false
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
-  canEdit: () => { const s = get(); return s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly) },
+  // a household scheduled for deletion is read-only for everyone (0.25.0); so is an offline copy
+  canEdit: () => { const s = get(); return (s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly)) && !s.household?.deletion_scheduled_for && !s.offlineAt },
   isOwner: () => get().mode === 'demo' || get().role === 'owner',
   canView: (path) => get().mode === 'demo' || canViewPath(path, get().modules),
   mustChangePassword: () => get().mode === 'db' && !!(get().user?.user_metadata as { must_change_password?: boolean } | undefined)?.must_change_password,
@@ -80,6 +85,8 @@ export const useStore = create<State>((set, get) => ({
       const { data: { session } } = await sb().auth.getSession()
       sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } })
       set({ session, user: session?.user || null })
+      // offline with an expired token: the session cannot be refreshed, but the copy this device kept can still be shown read-only
+      if (!session && typeof navigator !== 'undefined' && navigator.onLine === false) { const u = cachedUser(); if (u && await openOffline(u)) { set({ user: u }); return } }
       if (session && get().recovering) { /* reset link: stay out of the household until the new password is saved */ }
       else if (session) { if (await needsMfa()) set({ mfaPending: true }); else await loadHouseholds(session.user) }
     } catch (e) { set({ loadError: (e as Error).message }) }
@@ -97,7 +104,7 @@ export const useStore = create<State>((set, get) => ({
   async verifyRecoveryCode(code) { const { error } = await sb().auth.mfa.recoveryCodes.verify({ code: code.trim() }); if (error) throw new Error(authMessage(error)); set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signInWithPasskey() { const { data, error } = await sb().auth.signInWithPasskey(); if (error) throw new Error(authMessage(error)); const user = data?.user || (await sb().auth.getUser()).data.user; if (!user) throw new Error('The passkey was accepted but no session came back — try again'); set({ mfaPending: false }); await loadHouseholds(user) },
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
-  async signOut() { setErrorSink(null); await sb().auth.signOut(); unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false }) },
+  async signOut() { setErrorSink(null); await clearOffline(); try { await sb().auth.signOut() } catch { /* offline: the local session is cleared below anyway */ } unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }) },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -112,12 +119,16 @@ export const useStore = create<State>((set, get) => ({
     setErrorSink(async r => { const uid = get().user?.id; if (!uid) return; const { error } = await sb().from('app_errors').insert({ household_id: id, user_id: uid, source: r.source, version: r.version, message: r.message, stack: r.stack || null, url: r.url, user_agent: r.user_agent, context: r.context || {} }); if (error && !/app_errors/.test(error.message)) throw error })
     void get().checkLatest(); startVersionWatch(get)
   },
+  async requestDeletion(confirm) { const at = await need(get).requestDeletion(confirm); await get().refresh(); return at },
+  async cancelDeletion() { await need(get).cancelDeletion(); await get().refresh() },
   async checkLatest() { try { const { data } = await sb().from('app_meta').select('value').eq('key', 'latest_version').maybeSingle(); if (data?.value) set({ latest: data.value }) } catch { /* optional */ } },
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
-    try { const r = await repo.loadAll(); set({ household: r.household, data: splitDups(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now() }); if (get().canEdit()) void get().autoDedupe().catch(() => {}) }
-    catch (e) { set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
+    try { const r = await repo.loadAll(); set({ household: r.household, data: splitDups(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {})
+      const uid = get().user?.id; if (repo.mode === 'db' && uid) void saveOffline(makeSnapshot(uid, r, APP_VERSION)) }
+    catch (e) { if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
+      set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
   async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
   async insertMany(coll, rows) { const repo = need(get); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
@@ -202,13 +213,28 @@ const need = (get: () => State) => { const r = get().repo; if (!r) throw new Err
 function attach(repo: Repo) { unsub?.(); unsub = repo.subscribe(() => { if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(() => useStore.getState().refresh(), repo.mode === 'demo' ? 0 : 700) }) }
 async function loadHouseholds(user: User) {
   try { await sb().rpc('accept_invites') } catch { /* no invites */ }
-  const { data, error } = await sb().from('household_members').select('household_id, role, households(name)').eq('user_id', user.id)
-  if (error) throw error
+  let res; try { res = await sb().from('household_members').select('household_id, role, households(name)').eq('user_id', user.id) } catch (e) { res = { data: null, error: e as Error } }
+  const { data, error } = res
+  if (error) { if (isNetworkError(error) && await openOffline(user)) return; throw error }
   const list = (data || []).map(r => ({ id: r.household_id as string, name: ((r as unknown as { households: { name: string } | null }).households?.name) || 'Household', role: r.role as Role }))
   useStore.setState({ households: list })
   const want = localStorage.getItem(LS('household'))
   const pick = list.find(h => h.id === want) || list[0]
   if (pick) await useStore.getState().openHousehold(pick.id)
+}
+/** The user from the last saved sign-in in this browser (no network needed) — only used to find the offline copy. */
+function cachedUser(): User | null { try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i) || ''; if (/^sb-.*-auth-token$/.test(k)) { const v = JSON.parse(localStorage.getItem(k) || 'null'); if (v?.user?.id) return v.user as User } } } catch { /* */ } return null }
+/** No connection at start-up: open the read-only copy this device kept (0.25.0); reload once the connection is back. */
+async function openOffline(user: User): Promise<boolean> {
+  const snap = await loadOffline(user.id, localStorage.getItem(LS('household'))); if (!snap) return false
+  useStore.setState({ households: [{ id: snap.householdId, name: snap.household.name, role: snap.role }], mode: 'db', repo: new SupabaseRepo(snap.householdId), household: snap.household, data: splitDups(snap.data), role: snap.role, readOnly: snap.readOnly, modules: snap.modules, offlineAt: snap.savedAt, lastRefresh: Date.parse(snap.savedAt), loadError: null })
+  window.addEventListener('online', () => location.reload(), { once: true })
+  return true
+}
+// once loaded, a dropped connection makes the app read-only until it is back, then reloads the data
+if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => { const s = useStore.getState(); if (s.mode === 'db' && s.household && !s.offlineAt) useStore.setState({ offlineAt: new Date(s.lastRefresh || Date.now()).toISOString() }) })
+  window.addEventListener('online', () => { const s = useStore.getState(); if (s.mode === 'db' && s.offlineAt && s.repo) void s.refresh() })
 }
 // A tab left open across a release keeps running the old bundle (hash navigation never reloads), so re-check the registered version every 10 minutes and whenever the tab comes back into view; Layout shows the reload banner.
 let versionTimer: number | null = null

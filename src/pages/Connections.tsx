@@ -61,7 +61,7 @@ export function ConnectionsPage() {
       <KPI l="Verified accounts" v={`${data.accounts.filter(a => a.status === 'Active' && a.bank_balance != null).length} of ${accts.length}`} cls={data.accounts.some(a => a.bank_balance != null) ? 'good' : 'idle'} s="balances confirmed by the bank feed, a statement or a reconciliation" />
       <KPI l="Connected sources" v={`${accts.length} account${accts.length === 1 ? '' : 's'}`} cls="info" s="statement files (CSV / OFX / QFX) · email capture · manual" />
       <KPI l="Last import" v={history[0] ? ago(history[0].at.slice(0, 10)) : '—'} cls={history[0] ? 'good' : 'idle'} s={history[0] ? `${history[0].file} · ${history[0].added} added` : 'nothing imported yet'} />
-      <KPI l="Imported transactions" v={String(data.transactions.filter(t => t.source === 'import').length)} cls="info" s="source = import" />
+      <KPI l="Imported transactions" v={String(data.transactions.filter(t => t.source === 'import').length)} cls="info" s="from statement files" />
       <KPI l="Automatic bank sync" v={sk.v} cls={sk.cls} s={sk.s} />
     </div>
     <div className="grid g12">

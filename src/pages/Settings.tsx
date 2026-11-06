@@ -1,4 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
+import { DeleteHouseholdCard } from './DeleteHousehold'
+import { offlineCopyOn, setOfflineCopy } from '../lib/offlineCache'
+import { passwordProblems } from '../lib/access'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { Category, PeriodType, Role } from '../app/data/types'
@@ -45,6 +48,7 @@ export function SettingsPage() {
       <Card span={12} title="Email capture (Gmail / Outlook)" hint="where the Google and Microsoft client IDs go"><div className="btnrow"><Pill cls={settings.gmail?.clientId ? 'good' : 'idle'}>Gmail {settings.gmail?.clientId ? 'client ID saved' : 'not set up'}</Pill><Pill cls={settings.outlook?.clientId ? 'good' : 'idle'}>Outlook {settings.outlook?.clientId ? 'client ID saved' : 'not set up'}</Pill><Btn primary onClick={() => open(<MailSetup onDone={close} />, { wide: true })} disabled={!canEdit}>Open email capture settings</Btn></div><Note>Paste the Google OAuth client ID and/or Microsoft application ID here, plus how far back to read and whether to file automatically. The same box opens from <b>Email Money Capture → Set up Gmail</b>.</Note></Card>
       <DeviceDisplay />
       <Card span={6} title="Save"><Btn primary onClick={saveGeneral} disabled={!canEdit}>Save settings</Btn><Note>Settings are shared by everyone in the household.</Note></Card>
+      <DeleteHouseholdCard />
     </div>}
     {tab === 'categories' && <Card title="Categories" hint="group · priority (Essential / Important / Discretionary) · fixed or variable · default budget copied into each new period · rollover carries unspent money forward" right={canEdit ? <Btn primary sm onClick={() => guarded(() => insert('categories', { name: 'New category', group: 'Other', kind: 'expense', priority: 'Important', cost_type: 'Variable', default_budget: 0, budget_cadence: 'period', rollover: false, sort_order: data.categories.length + 1, archived: false }), 'Added')}>+ Add category</Btn> : undefined}>
       <Table rows={data.categories.slice().sort((a, b) => a.sort_order - b.sort_order)} cols={catCols} editable={canEdit} onChange={(c, k, v) => guarded(() => update('categories', c.id, { [k]: v } as Partial<Category>))} onDelete={async c => { if (await confirm(`Delete ${c.name}? Transactions in it become uncategorized. Archive instead to keep history.`)) guarded(() => remove('categories', c.id), 'Deleted') }} rowCls={c => c.archived ? 'st-idle ex-off' : c.kind === 'income' ? 'st-good' : ''} />
@@ -122,7 +126,7 @@ function SecurityTab() {
   const remove = (f: Factor) => guarded(async () => { if (!(await confirm('Turn off two-factor authentication? Anyone with your password could then sign in.'))) return; const { error } = await sb().auth.mfa.unenroll({ factorId: f.id }); if (error) throw error; await load() }, 'Two-factor authentication is off')
   const signOutOthers = () => guarded(async () => { const { error } = await sb().auth.signOut({ scope: 'others' }); if (error) throw error }, 'Other devices were signed out')
   const signOutAll = () => guarded(async () => { if (!(await confirm('Sign out everywhere, including here?'))) return; await sb().auth.signOut({ scope: 'global' }); await signOut() })
-  const changePw = () => { if (pw1.length < 8) return toast('Use at least 8 characters', true); if (pw1 !== pw2) return toast('The two passwords differ', true); guarded(async () => { await updatePassword(pw1); setPw1(''); setPw2('') }, 'Password changed') }
+  const changePw = () => { const probs = passwordProblems(pw1, { email: user?.email, confirm: pw2 }); if (probs.length) return toast('The new password needs to be: ' + probs.join(', '), true); guarded(async () => { await updatePassword(pw1); setPw1(''); setPw2('') }, 'Password changed') }
   const verified = factors.filter(f => f.status === 'verified')
   const imports = settings.imports || []; const actions = data.activity.length; const emailApplied = data.emailLedger.filter(e => e.decision === 'applied').length, emailIgnored = data.emailLedger.filter(e => e.decision === 'ignored').length
   const stored: Array<[string, string]> = [['Account', user?.email || '—'], ['Gmail', settings.gmail?.clientId ? `client id ${settings.gmail.clientId.slice(0, 12)}… · account hint ${settings.gmail.account || '—'}` : 'not set up'], ['Outlook', settings.outlook?.clientId ? `application id ${settings.outlook.clientId.slice(0, 8)}… · tenant ${settings.outlook.tenant || 'consumers'}` : 'not set up'], ['Secrets', 'none — only OAuth client IDs (public by design); tokens live in this browser session only'], ['Account numbers', `last 4 digits only (${data.accounts.filter(a => a.last4).length} accounts)`], ['Email bodies', 'never stored — amounts, dates, payees and message ids only'], ['Transport & at rest', 'TLS to Supabase; database encrypted at rest; row-level security scopes every row to your household']]
@@ -279,7 +283,7 @@ function NotificationsTab() {
         <div className="btnrow">{sub === 'on' ? <Btn onClick={disablePush}>Turn off on this device</Btn> : <Btn primary onClick={enablePush} disabled={sub === 'unsupported' || sub === 'denied'}>Enable on this device</Btn>}<Btn onClick={test} disabled={sub !== 'on' && !prefs.email}>Send a test</Btn></div>
         {sub === 'denied' && <div className="msg warn" style={{ marginTop: 8 }}>Notifications are blocked for this site in the browser settings — allow them there, then try again.</div>}
         {sub === 'unsupported' && <div className="msg warn" style={{ marginTop: 8 }}>On iPhone, install the app first (Share → Add to Home Screen) and open it from the home screen; push works from the installed app on iOS 16.4 and later.</div>}
-        <Note>Alerts are checked every morning at 07:30 Eastern. Each device opts in separately; turn one off here or in the browser.</Note></>}
+        <Note>Alerts are checked every morning at 7:30 am Eastern (8:30 am during daylight saving time). Each device opts in separately; turn one off here or in the browser.</Note></>}
     </Card>
     <Card span={6} title="Email" hint="the same alerts and the Monday digest by email">
       <Toggle k="email" label="Email me" hint={prefs.email_to || user?.email ? `to ${prefs.email_to || user?.email}` : 'set an address below'} />
@@ -312,11 +316,12 @@ function NotificationsTab() {
 /** This device (0.23.0): the number and date format and privacy mode — stored in this browser, like the theme. */
 function DeviceDisplay() {
   const { settings, saveSettings, guarded, canEdit } = useData()
-  const [loc, setLoc] = useState(localePreference()); const [priv, setPriv] = useState(privacyOn())
+  const [loc, setLoc] = useState(localePreference()); const [priv, setPriv] = useState(privacyOn()); const [offline, setOffline] = useState(offlineCopyOn())
   const sample = `${fm2(1234567.89)} · ${fmtNum(1234.5, 1)} · ${fmtDY(today())}`
   return <Card span={6} title="This device" hint="saved in this browser only">
     <Field label="Numbers and dates" hint={`now: ${sample}`}><select className="inp" value={loc} onChange={e => { setLoc(e.target.value); setLocale(e.target.value) }} aria-label="Number and date format">{LOCALES.map(([v, l]) => <option key={v} value={v}>{l}{v === 'auto' ? ` (${resolvedLocale()})` : ''}</option>)}</select></Field>
     <label className="gm-ign" style={{ fontSize: 13, display: 'block', marginTop: 8 }}><input type="checkbox" checked={priv} onChange={e => { setPriv(e.target.checked); setPrivacy(e.target.checked) }} /> Privacy mode — hide amounts on screen (keyboard <kbd>H</kbd>); exports keep real figures</label>
+    <label className="gm-ign" style={{ fontSize: 13, display: 'block', marginTop: 8 }}><input type="checkbox" checked={offline} onChange={e => { setOffline(e.target.checked); setOfflineCopy(e.target.checked) }} /> Keep a read-only copy for offline use — the app opens with your data when there is no connection. Turn off on a shared computer; signing out always clears it.</label>
     {settings.setupDismissed && canEdit && <div style={{ marginTop: 8 }}><Btn sm onClick={() => guarded(() => saveSettings({ setupDismissed: false }), 'The checklist is back on the Dashboard')}>Show the getting-started checklist again</Btn></div>}
     <Note>Amounts stay in US dollars; the format changes how they are written (1,234.56 or 1.234,56) and how dates read. Typing "12,5" counts as 12.5 where the comma is the decimal mark.</Note></Card>
 }

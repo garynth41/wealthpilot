@@ -30,6 +30,9 @@ export interface Repo {
   /** append to the immutable audit trail */
   logAudit(kind: AuditKind, summary: string, detail?: Record<string, unknown>, accountId?: string | null): Promise<AuditEvent>
   exportJson(): Promise<Record<string, unknown>>
+  /** 0.25.0: schedule the household's permanent deletion in 7 days (owner; `confirm` must be its name) — returns the date — or cancel it. */
+  requestDeletion(confirm: string): Promise<string>
+  cancelDeletion(): Promise<void>
   importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<number>
   /** Called with a change notification (realtime); returns an unsubscribe. */
   subscribe(onChange: () => void): () => void
