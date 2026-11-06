@@ -169,3 +169,22 @@ describe('device labels', () => {
     expect(describeDevice(null).label).toBe('Unknown device')
   })
 })
+
+import { isChunkError, reloadForNewVersion, RELOAD_KEY } from './chunks'
+describe('stale-tab recovery', () => {
+  it('recognises the messages browsers use for a missing page file', () => {
+    expect(isChunkError(new TypeError('Failed to fetch dynamically imported module: https://garynth41.github.io/wealthpilot/assets/Insights-CilgOzys.js'))).toBe(true)   // Chrome
+    expect(isChunkError(new TypeError('Importing a module script failed.'))).toBe(true)                    // Safari
+    expect(isChunkError(new TypeError('error loading dynamically imported module'))).toBe(true)            // Firefox
+    expect(isChunkError(new Error('Unable to preload CSS for /assets/Plan-x.css'))).toBe(true)
+    expect(isChunkError(new Error('Cannot read properties of undefined'))).toBe(false); expect(isChunkError(null)).toBe(false)
+  })
+  it('reloads once, then not again within 30 seconds (no loop when the site is really down)', () => {
+    const m = new Map<string, string>(); const store = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) } }
+    let n = 0; const reload = () => { n++ }
+    expect(reloadForNewVersion(1_000_000, store, reload)).toBe(true); expect(n).toBe(1); expect(m.get(RELOAD_KEY)).toBe('1000000')
+    expect(reloadForNewVersion(1_010_000, store, reload)).toBe(false); expect(n).toBe(1)
+    expect(reloadForNewVersion(1_031_000, store, reload)).toBe(true); expect(n).toBe(2)
+    expect(reloadForNewVersion(2_000_000, null, reload)).toBe(true)   // storage blocked: still recovers once
+  })
+})

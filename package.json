@@ -1,7 +1,7 @@
 {
   "name": "wealthpilot",
   "private": true,
-  "version": "0.20.0",
+  "version": "0.20.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
     "e2e": "node e2e/smoke.mjs",
     "e2e:db": "node e2e/db.mjs",
     "check": "npm run engines:sync -- --check && npm run typecheck && npm run test && npm run build && npm run e2e",
-    "deploy": "npm run build && gh-pages -d dist --dotfiles --nojekyll",
+    "deploy": "npm run build && gh-pages -d dist --add --dotfiles --nojekyll",
     "lint": "oxlint",
     "engines:sync": "node scripts/sync-engines.mjs"
   },

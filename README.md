@@ -110,6 +110,7 @@ e2e/                   Playwright smoke + DB tests
 
 ## Changelog
 
+- **0.20.1** — Fix: a tab left open across a release showed "Failed to fetch dynamically imported module" the first time it opened a page it had not loaded yet (each page is its own hashed file since 0.19.0, and a deploy replaced the files). Now (1) deploys keep earlier files (`gh-pages --add`; the files of the previous 14 deploys were put back), (2) a missing page file reloads the tab once to the new version — at most once per 30 seconds, so an outage cannot loop — and (3) the error page explains "WealthPilot was updated" instead of "Something went wrong". Covered by a browser test that 404s a page file once.
 - **0.20.0** — Phase 4: planning depth and sign-in security.
   - **Plan** (new page): cash, debt, goals and retirement on one timeline; extra money allocated once by a rule you pick; "Up to $X/mo fits" affordability check against the reserve floor; Apply writes goal contributions, the retirement contribution and the Debts page's extra payment (a re-apply replaces, never adds).
   - **Saved scenarios** on Forecast, Debts, Retirement, each goal's What-if and the Plan: save the sliders under a name, pin, reload, and compare several side by side with the best value in each row marked (`scenarios` table, `lib/scenarios.ts`).

@@ -1,3 +1,4 @@
+import { isChunkError, reloadForNewVersion } from './chunks'
 // Error monitoring (0.19.0): every uncaught browser error, unhandled promise rejection and React error-boundary catch is written to
 // app_errors (migration 0009) with the app version and page, so a stack trace maps to a build. Settings → Security → Errors lists them.
 // Rules: never more than 20 reports per session, the same message at most once a minute, nothing from the offline demo (console only),
@@ -31,7 +32,7 @@ function queue(row: ErrorReport & { url: string; user_agent: string; version: st
 /** Hook the global handlers once. Errors from browser extensions and cross-origin scripts ("Script error.") are ignored. */
 export function installErrorCapture() {
   window.addEventListener('error', ev => { if (!ev.message || ev.message === 'Script error.' || /extension:\/\//.test(ev.filename || '')) return; captureError(ev.error || ev.message, { kind: 'error', file: ev.filename, line: ev.lineno }) })
-  window.addEventListener('unhandledrejection', ev => { const r = ev.reason; if (r && typeof r === 'object' && 'name' in r && (r as { name: string }).name === 'AbortError') return; captureError(r, { kind: 'unhandledrejection' }) })
+  window.addEventListener('unhandledrejection', ev => { const r = ev.reason; if (r && typeof r === 'object' && 'name' in r && (r as { name: string }).name === 'AbortError') return; if (isChunkError(r)) { reloadForNewVersion(); return } captureError(r, { kind: 'unhandledrejection' }) })
 }
 /** Testable throttle state (unit tests). */
 export const _errorState = { reset() { sent = 0; recent.clear() }, get sent() { return sent } }

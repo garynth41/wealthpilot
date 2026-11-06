@@ -248,4 +248,10 @@ for (const W of [1400, 390]) {
 // 0.11.1: a password-reset link must open the "choose a new password" screen, never sign straight in (an unusable token shows the expired-link message)
 { const rp = await b.newPage(); await rp.goto('http://localhost:4173/#access_token=not-a-real-token&refresh_token=x&expires_in=3600&token_type=bearer&type=recovery'); await rp.waitForSelector('text=/reset link has expired|Choose a new password/', { timeout: 8000 }).catch(() => {})
   const rt = await rp.locator('body').textContent(); ok(/reset link has expired|Choose a new password/.test(rt) && !/Dashboard/.test(rt), 'a password-reset link opens the reset screen instead of signing in'); await rp.close() }
+// 0.20.1: a page file missing after a deploy (a tab opened before the release) reloads the tab once to the new version instead of showing "Something went wrong"
+{ const sp = await b.newPage(); await sp.goto('http://localhost:4173/'); await sp.waitForTimeout(800); await sp.click('text=Open the offline demo'); await sp.waitForTimeout(1200)
+  let hits = 0; await sp.route(/\/assets\/Insights-[^/]+\.js$/, r => { hits++; return hits === 1 ? r.fulfill({ status: 404, contentType: 'text/html', body: 'gone' }) : r.continue() })
+  await sp.goto('http://localhost:4173/#/insights'); await sp.waitForTimeout(3500)
+  const h = await sp.locator('h1').first().textContent().catch(() => ''); const body = await sp.locator('body').textContent()
+  ok(hits >= 2 && h === 'Spending Intelligence' && !/Something went wrong/.test(body), `a missing page file after a deploy reloads once and the page opens (requests ${hits}, heading "${h}")`); await sp.close() }
 console.log('smoke fails', F); await b.close(); srv.close()
