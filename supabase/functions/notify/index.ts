@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
     const out: unknown[] = []
     for (const h of hhs || []) { try { out.push(b.action === 'digest' ? await runDigest(h.id) : await runDaily(h.id)) } catch (e) { await logError(h.id, (e as Error).message, { action: b.action }); out.push({ household_id: h.id, error: (e as Error).message }) } }
     // config: which delivery secrets the function can see — names only, never values — so a mis-typed secret name shows up in the cron log
-    const seen = Object.keys(Deno.env.toObject()).filter(k => /RESEND|VAPID|EMAIL/i.test(k)).sort()
+    const seen = Object.keys(Deno.env.toObject()).filter(k => !/^(SUPABASE_|SB_|DENO_|HOME$|PATH$|PWD$|HOSTNAME$|LANG|TZ$|SHLVL|_$)/.test(k)).sort()
     return json(200, { ok: true, results: out, config: { push: await vapid(), email: !!resendKey(), secrets_seen: seen } })
   }
   // signed-in actions
