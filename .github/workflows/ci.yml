@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -34,13 +34,13 @@ jobs:
         run: grep -rl "dshswfcpovdpxcidolqb.supabase.co" dist/assets/*.js > /dev/null
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: smoke-shots
           path: e2e/shots
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: env.MAIN_PUSH == 'true'
         with:
           name: dist
@@ -59,9 +59,9 @@ jobs:
       - name: Skip when the staging secrets are not set
         id: gate
         run: if [ -z "$STAGING_URL" ] || [ -z "$STAGING_E2E_PASSWORD" ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::staging secrets not set — database tests skipped"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.gate.outputs.run == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.gate.outputs.run == 'true'
         with:
           node-version: 22
@@ -75,7 +75,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
       - run: npm run e2e:db
         if: steps.gate.outputs.run == 'true'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: staging-shots
@@ -87,8 +87,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
@@ -105,7 +105,7 @@ jobs:
     permissions: { contents: write, pull-requests: write, actions: write }
     steps:
       - id: meta
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
       - name: Merge and deploy minor / patch updates
         if: steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.update-type == 'version-update:semver-patch'
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}", PR: "${{ github.event.pull_request.html_url }}" }
