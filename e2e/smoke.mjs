@@ -269,7 +269,7 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(500)
     // 0.23.0: help drawer, privacy mode, number format, arrangeable dashboard, home-screen shortcuts
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(900)
-    await p.click('.topbar button[aria-label="Help for this page"]'); await p.waitForTimeout(300); const hd = await p.locator('.helpdrawer').textContent()
+    await p.click('.topbar button[title="Help for this page (F1)"]'); await p.waitForTimeout(300); const hd = await p.locator('.helpdrawer').textContent()
     ok(/Help · Dashboard/.test(hd) && /Safe to spend/.test(hd) && /Each card on this page/.test(hd) && /Keyboard/.test(hd), 'the help drawer explains the page it was opened on')
     await p.keyboard.press('Escape'); await p.waitForTimeout(200); ok((await p.locator('.helpdrawer').count()) === 0, 'Esc closes the help drawer')
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(700); await p.keyboard.press('F1'); await p.waitForTimeout(300); ok(/Zero-based/.test(await p.locator('.helpdrawer').textContent()), 'F1 opens the Budget help with the budgeting methods'); await p.keyboard.press('Escape')
@@ -410,3 +410,4 @@ for (const W of [1400, 390]) {
   ok(!badPages.length && !errs.length, `every page renders for an empty household${badPages.length ? ' — bad: ' + badPages.join(', ') : ''}${errs.length ? ' — errors: ' + errs.slice(0, 2).join(' | ') : ''}`)
   await ep.close() }
 console.log('smoke fails', F); await b.close(); srv.close()
+process.exit(F ? 1 : 0)   // a failed check fails CI (before 0.25.0's follow-up it only printed the count)
