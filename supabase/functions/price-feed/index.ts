@@ -2,10 +2,10 @@
 // by scripts/sync-engines.mjs).
 //   POST { action: "run" }                          x-cron-secret: every household (pg_cron 22:30 UTC, Mon–Fri)
 //   POST { action: "household", household_id }      signed-in editor: just this household ("Update prices now" on Investments)
-// Quotes: Yahoo's chart endpoint first, Stooq's CSV second. Every quote is stored in `prices` (history), then holdings are updated through
+// Quotes: Yahoo's chart endpoint, its second host when the first fails. Every quote is stored in `prices` (history), then holdings are updated through
 // apply_price_updates() so the audit log gets one summary line per household instead of one row per holding.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { planPriceUpdates, symbolsToFetch, parseYahooChart, parseStooqCsv, yahooUrl, stooqUrl, type Quote, type PHolding } from './prices.ts'
+import { planPriceUpdates, symbolsToFetch, parseYahooChart, yahooUrl, type Quote, type PHolding } from './prices.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -16,9 +16,9 @@ const MAX_SYMBOLS = 250
 async function logError(household_id: string | null, message: string, context: Record<string, unknown> = {}) { try { await admin.from('app_errors').insert({ household_id, source: 'price-feed', message: message.slice(0, 2000), context }) } catch { /* */ } }
 
 async function fetchQuote(sym: string): Promise<Quote | null> {
-  try { const r = await fetch(yahooUrl(sym), { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) }); if (r.ok) { const q = parseYahooChart(sym, await r.json()); if (q) return q } } catch { /* fall through */ }
-  if (/-USD$|\^|=/.test(sym)) return null   // crypto pairs and indices: Stooq's US quote does not cover them
-  try { const r = await fetch(stooqUrl(sym), { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) }); if (r.ok) return parseStooqCsv(sym, await r.text()) } catch { /* */ }
+  for (const host of [1, 2] as const) {
+    try { const r = await fetch(yahooUrl(sym, host), { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) }); if (r.ok) { const q = parseYahooChart(sym, await r.json()); if (q) return q } else if (r.status === 404) return null } catch { /* try the other host */ }
+  }
   return null
 }
 async function quotesFor(symbols: string[]) {

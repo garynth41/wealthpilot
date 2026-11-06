@@ -1,12 +1,13 @@
 // Market prices for holdings (0.20.0). NO imports: this file is copied byte-for-byte into supabase/functions/price-feed/prices.ts
 // by scripts/sync-engines.mjs, so the browser (tests, staleness badges) and the daily price-feed function share one set of rules.
 //
-// A holding is auto-priced when it has a symbol and price_source is not 'manual'. The feed asks Yahoo's chart endpoint first (stocks,
-// ETFs, mutual funds, crypto pairs) and falls back to Stooq's CSV quote (US-listed stocks and ETFs). A price only ever moves forward
-// in time: an older quote never overwrites a newer typed price.
+// A holding is auto-priced when it has a symbol and price_source is not 'manual'. The feed asks Yahoo's chart endpoint (stocks, ETFs,
+// mutual funds, crypto pairs), on its second host when the first fails. (Stooq was the original fallback; in Nov 2026 its quote URL
+// returned 404 and its history URL a JavaScript bot check, so it cannot be used from a server.) A price only ever moves forward in time:
+// an older quote never overwrites a newer typed price.
 
 export interface PHolding { id: string; household_id?: string; symbol?: string | null; asset_class?: string | null; price: number; price_as_of?: string | null; price_source?: 'auto' | 'manual' | null }
-export interface Quote { symbol: string; price: number; date: string; currency?: string; source: 'yahoo' | 'stooq' }
+export interface Quote { symbol: string; price: number; date: string; currency?: string; source: 'yahoo' }
 export interface PricePatch { id: string; household_id?: string; symbol: string; price: number; price_as_of: string; from: number }
 
 /** Trimmed, upper-case symbol as typed ('vti ' → 'VTI'); null when there is nothing usable. */
@@ -22,8 +23,8 @@ export function quoteSymbol(symbol: string | null | undefined, assetClass?: stri
 }
 export const isAutoPriced = (h: PHolding) => (h.price_source ?? 'auto') !== 'manual' && !!quoteSymbol(h.symbol, h.asset_class)
 
-export const yahooUrl = (sym: string) => `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`
-export const stooqUrl = (sym: string) => `https://stooq.com/q/l/?s=${encodeURIComponent(sym.toLowerCase().replace(/-/g, '.'))}.us&f=sd2t2c&h&e=csv`
+/** Yahoo's chart endpoint; host 1 first, host 2 as the fallback (they fail independently). */
+export const yahooUrl = (sym: string, host: 1 | 2 = 1) => `https://query${host}.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`
 
 /** Calendar date of a unix timestamp in New York (US market dates). */
 export function nyDate(unixSeconds: number): string {
@@ -42,15 +43,6 @@ export function parseYahooChart(sym: string, j: unknown): Quote | null {
   for (let k = Math.min(ts.length, closes.length) - 1; k >= 0; k--) { const c = closes[k]; if (typeof c === 'number' && c > 0) return { symbol: sym, price: Math.round(c * 10000) / 10000, date: nyDate(ts[k]), currency: m.currency || 'USD', source: 'yahoo' } }
   return null
 }
-/** Stooq CSV ("Symbol,Date,Time,Close\nVTI.US,2026-11-05,22:00:09,301.2") → quote; 'N/D' rows (unknown symbol) → null. */
-export function parseStooqCsv(sym: string, text: string): Quote | null {
-  const lines = String(text || '').trim().split(/\r?\n/); if (lines.length < 2) return null
-  const head = lines[0].toLowerCase().split(','), row = lines[1].split(',')
-  const date = row[head.indexOf('date')], close = +row[head.indexOf('close')]
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !(close > 0)) return null
-  return { symbol: sym, price: Math.round(close * 10000) / 10000, date, currency: 'USD', source: 'stooq' }
-}
-
 /** Which holdings a set of quotes should update. Never moves a price backwards in time; skips no-op updates. */
 export function planPriceUpdates(holdings: PHolding[], quotes: Record<string, Quote>): PricePatch[] {
   const out: PricePatch[] = []

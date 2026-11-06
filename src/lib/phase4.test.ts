@@ -5,7 +5,7 @@ import { aprAt, hasPromo, promoMonthsLeft, payoffProjection, simulate, promoAler
 import { guaranteedIncome, ssAnnual, ssStart, steadyGuaranteed, drawdown, projectRetirement, monteCarlo, RETIREMENT_DEFAULTS } from './retirement'
 import { buildPlan, normalizePlan, applyPlanPatches, affordableExtra, PLAN_DEFAULTS } from './plan'
 import { normalize, metrics, compare, scenariosOf, sameAssumptions } from './scenarios'
-import { normSymbol, quoteSymbol, isAutoPriced, parseYahooChart, parseStooqCsv, planPriceUpdates, symbolsToFetch, priceFreshness, nyDate } from './prices'
+import { normSymbol, quoteSymbol, isAutoPriced, parseYahooChart, planPriceUpdates, symbolsToFetch, priceFreshness, nyDate, yahooUrl } from './prices'
 import { demoSeed } from '../app/data/demoSeed'
 import type { Account, RetirementInputs, Scenario } from '../app/data/types'
 import pricesSource from './prices.ts?raw'
@@ -140,13 +140,12 @@ describe('market prices', () => {
     expect(quoteSymbol('btc', 'crypto')).toBe('BTC-USD'); expect(quoteSymbol('BRK.B', 'stock')).toBe('BRK-B'); expect(quoteSymbol('ETH-USD', 'crypto')).toBe('ETH-USD')
     expect(isAutoPriced({ id: 'a', symbol: 'VTI', price: 1 })).toBe(true); expect(isAutoPriced({ id: 'a', symbol: 'VTI', price: 1, price_source: 'manual' })).toBe(false); expect(isAutoPriced({ id: 'a', symbol: null, price: 1 })).toBe(false)
   })
-  it('parses a Yahoo chart payload and a Stooq CSV', () => {
+  it('parses a Yahoo chart payload; two hosts', () => {
     const y = parseYahooChart('VTI', { chart: { result: [{ meta: { regularMarketPrice: 301.234567, regularMarketTime: 1793912400, currency: 'USD' } }] } })
     expect(y).toMatchObject({ price: 301.2346, source: 'yahoo' }); expect(y!.date).toBe(nyDate(1793912400))
     expect(parseYahooChart('X', { chart: { result: null, error: { code: 'Not Found' } } })).toBeNull()
     expect(parseYahooChart('Y', { chart: { result: [{ meta: {}, timestamp: [1793826000, 1793912400], indicators: { quote: [{ close: [100, null] }] } }] } })).toMatchObject({ price: 100 })
-    expect(parseStooqCsv('VTI', 'Symbol,Date,Time,Close\nVTI.US,2026-11-04,22:00:09,301.2\n')).toMatchObject({ price: 301.2, date: '2026-11-04', source: 'stooq' })
-    expect(parseStooqCsv('ZZZ', 'Symbol,Date,Time,Close\nZZZ.US,N/D,N/D,N/D')).toBeNull()
+    expect(yahooUrl('BRK-B')).toMatch(/^https:\/\/query1\.finance\.yahoo\.com\/v8\/finance\/chart\/BRK-B\?/); expect(yahooUrl('VTI', 2)).toMatch(/^https:\/\/query2\./)
   })
   it('plans updates forward in time only, and only for auto-priced holdings', () => {
     const hs = [{ id: '1', symbol: 'VTI', price: 290, price_as_of: '2026-11-01' }, { id: '2', symbol: 'VTI', price: 300, price_as_of: '2026-11-06' }, { id: '3', symbol: 'AAPL', price: 200, price_source: 'manual' as const }, { id: '4', symbol: 'btc', asset_class: 'crypto', price: 60000, price_as_of: '2026-11-04' }]
