@@ -134,7 +134,7 @@ describe('new alert rules', () => {
 })
 
 describe('who gets what', () => {
-  const members = [{ user_id: 'u1', email: 'gary@x.com', role: 'owner' }, { user_id: 'u2', email: 'sam@x.com', role: 'editor' }]
+  const members = [{ user_id: 'u1', email: 'gary@x.com', role: 'owner', modules: null }, { user_id: 'u2', email: 'sam@x.com', role: 'editor', modules: null }]
   it('no member settings: everyone gets push, the household address gets email', () => {
     expect(recipientsFor({ push: true, email: true }, members, 'bill_due')).toEqual({ push: ['u1', 'u2'], email: [{ to: 'gary@x.com', user_id: null }] })
     expect(recipientsFor({ push: true, email: true, email_to: 'Home@X.com' }, members, 'bill_due').email).toEqual([{ to: 'home@x.com', user_id: null }])
