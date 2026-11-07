@@ -1,7 +1,9 @@
 # WealthPilot CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards),
 # then the same app built against the staging database and driven end to end (0.25.0). A push to main that passes both publishes
-# dist/ to gh-pages (the same thing `npm run deploy` does by hand). Dependabot pull requests with passing minor/patch updates merge
-# and deploy by themselves; majors wait for a person.
+# dist/ to gh-pages (the same thing `npm run deploy` does by hand). The Android and iOS apps are built from the same web build on every
+# run too (0.25.1), so a change that breaks either phone app is caught here; they do not hold up the website. Store builds are made
+# by release-apps.yml. Dependabot pull requests with passing minor/patch updates merge and deploy by themselves (only once the phone
+# apps build as well); majors wait for a person.
 name: ci
 on:
   push: { branches: [main] }
@@ -81,6 +83,52 @@ jobs:
           name: staging-shots
           path: e2e/shots
           if-no-files-found: ignore
+  # the phone apps (0.25.1): a debug Android build and an iOS simulator build, unsigned — proves the native projects, the plugins and the
+  # web build still fit together. Signed store builds come from release-apps.yml.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci
+      - run: cp .env.example .env
+      - run: npm run native:sync -- android
+      - name: Build the Android app (debug)
+        working-directory: android
+        run: ./gradlew --no-daemon --stacktrace assembleDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: cp .env.example .env
+      - run: npm run native:sync -- ios
+      - name: Use the newest Xcode 26
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)" && xcodebuild -version
+      - name: Build the iOS app (simulator, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -40
   deploy:
     needs: [check, staging]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -99,7 +147,7 @@ jobs:
   # Dependabot: a passing minor or patch update merges itself, then deploys (a merge made with GITHUB_TOKEN does not start a push run,
   # so this job starts the main run itself). Majors are left for a person to review.
   automerge:
-    needs: [check, staging]
+    needs: [check, staging, android, ios]
     if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions: { contents: write, pull-requests: write, actions: write }

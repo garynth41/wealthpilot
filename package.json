@@ -15,7 +15,11 @@
     "check": "npm run engines:sync -- --check && npm run typecheck && npm run test && npm run build && npm run e2e",
     "deploy": "npm run build && gh-pages -d dist --add --dotfiles --nojekyll",
     "lint": "oxlint",
-    "engines:sync": "node scripts/sync-engines.mjs"
+    "engines:sync": "node scripts/sync-engines.mjs",
+    "native:sync": "npm run build && cap sync",
+    "native:assets": "node scripts/native-assets.mjs",
+    "store:shots": "node scripts/store-shots.mjs",
+    "fonts": "node scripts/fonts.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
