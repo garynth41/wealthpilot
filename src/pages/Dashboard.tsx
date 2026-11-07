@@ -37,7 +37,7 @@ export function Dashboard() {
   const acctDue = useMemo(() => accountPaymentsDue(data, addDays(t, -30), addDays(t, 14)), [data, t]); const acctAhead = acctDue.filter(x => x.date >= t), acctOver = acctDue.filter(x => x.overdue)
   const coming = [...up.map(u => ({ date: u.date, u, x: undefined })), ...acctDue.map(x => ({ date: x.date, u: undefined, x }))].sort((a, b) => a.date.localeCompare(b.date))
   const acctPill = (x: typeof acctDue[number]) => { const dd = diffDays(x.date, t); return x.overdue ? STATUS_PILL.overdue : dd === 0 ? STATUS_PILL.due_today : x.a.autopay ? STATUS_PILL.autopay : dd <= 3 ? STATUS_PILL.due_soon : STATUS_PILL.due }
-  const dt = debtTotals(data); const nws = netWorthSeries(data); const prev = nws.length > 1 ? nws[nws.length - 2] : null
+  const dt = debtTotals(data); const nws = netWorthSeries(data); const prev = [...nws].reverse().find(p => p.date < today()) || null   // the latest point before today (a snapshot taken today would only show +$0)
   const nextPay = nextPaycheck(data, t, 60)   // a payday whose deposit is already on file is not "next" (0.25.1)
   const goals = data.goals.filter(g => g.status === 'Active').map(g => ({ g, p: goalProgress(data, g) })).sort((a, b) => a.g.priority - b.g.priority).slice(0, 4)
   const attention: Array<{ c: string; t: string; m: string; d?: string; id?: string }> = []
@@ -83,7 +83,7 @@ export function Dashboard() {
       <KPI l="Next paycheck" v={nextPay ? fmtD(nextPay.d) : '—'} cls="info" s={nextPay ? `${fmtMoney(nextPay.p.net_amount)} · in ${diffDays(nextPay.d, t)} days` : 'add a pay schedule'} />
       <KPI l="Runway" v={!hasData ? '—' : !isFinite(pm) ? '24+ mo' : pm.toFixed(1) + ' mo'} cls={!hasData ? 'idle' : cls} s={!hasData ? 'add accounts and income' : b.net > 0 ? `burning ${fmtMoney(b.net)}/mo` : `saving ${fmtMoney(-b.net)}/mo`} />
       <KPI l="Debt" v={fmtMoney(dt.balance)} cls={dt.balance ? 'warn' : 'good'} s={dt.balance ? `${fmtMoney(dt.planned)}/mo planned · ${dt.limit ? Math.round(dt.util * 100) + '% utilization' : 'set limits'}` : 'debt-free'} />
-      <KPI l="Net worth" v={fmtMoney(nw.net)} cls={nw.net >= 0 ? 'good' : 'crit'} s={prev ? `${nw.net - prev.net >= 0 ? '+' : ''}${fmtMoney(nw.net - prev.net)} since ${fmtD(prev.date)}` : 'record a snapshot on Accounts'} />
+      <KPI l="Net worth" v={fmtMoney(nw.net)} cls={nw.net >= 0 ? 'good' : 'crit'} s={prev ? `${nw.net - prev.net >= 0 ? '+' : ''}${fmtMoney(nw.net - prev.net)} since ${fmtD(prev.date)}` : nws.length > 1 ? 'first snapshot today — the change shows from tomorrow' : 'record a snapshot on Accounts'} />
       <KPI l="Savings rate" v={ps?.rate != null ? Math.round(ps.rate * 100) + '%' : last30.rate != null ? Math.round(last30.rate * 100) + '%' : '—'} cls={(ps?.rate ?? last30.rate ?? 0) >= settings.savingsTargetPct / 100 ? 'good' : 'warn'} s={ps?.rate != null ? 'this period' : 'last 30 days'} /></div>
     {canEdit && <div className="btnrow" style={{ marginBottom: 14 }}><Btn primary onClick={() => open(<AddTxn onDone={close} />, { wide: true })}>+ Log a transaction</Btn><Link className="btn" to="/bills">Pay a bill</Link><Link className="btn" to="/email">Check email</Link><Link className="btn" to="/accounts">Update balances</Link></div>}
     <div className="grid g12">

@@ -1,5 +1,5 @@
 // Offline demo data — a believable household, dated relative to today. Also used by the test suites.
-import { addDays, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
+import { addDays, addMonthsClamp, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
 import { plannedForPeriod } from '../../lib/sinking'
 import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType, type Holding } from './types'
 
@@ -77,6 +77,13 @@ export function demoSeed(): { household: Household; data: Data } {
   // paychecks
   for (let x = lastFri; x >= from; x = addDays(x, -14)) tx(x, 'income', 2305, { payee: 'Meridian Aviation Group', category_id: cat('Income', 'Paycheck').id, pay_schedule_id: ps.id, memo: 'Direct deposit', source: 'recurring' })
   months.forEach(m => { const dd = m + '-15'; if (dd <= t) tx(dd, 'income', 400, { payee: 'Freelance client', category_id: cat('Income', 'Side income').id }) })
+  // card and loan payments on their own due days (0.25.1): these three bills fall due on a day counted from today (t+4, t+13, t+19), so
+  // their history is paid on each earlier due date — never on fixed days that line up only some days of the month and leave the sample
+  // household looking late the rest of the time
+  for (const [ri, to, payee, line] of [[9, auto, 'Huntington auto loan', 'Loan payments'], [10, amex, 'American Express', 'Credit card payments'], [11, chase, 'Chase', 'Credit card payments']] as const) {
+    const r = d.recurring[ri]
+    for (let k = 1; k <= 4; k++) { const due = addMonthsClamp(r.next_due!, -k, r.day_of_month || undefined); if (due < t && due >= from) tx(due, 'transfer', r.amount, { payee, to_account_id: to.id, category_id: cat('Debt', line).id, recurring_id: r.id }) }
+  }
   // bills each month
   months.forEach(m => {
     const on = (day: number) => `${m}-${String(day).padStart(2, '0')}`
@@ -91,7 +98,6 @@ export function demoSeed(): { household: Household; data: Data } {
     paidIf(21, () => tx(on(21), 'expense', 11.99, { payee: 'Spotify', category_id: cat('Bills', 'Subscriptions & streaming').id, account_id: chase.id, recurring_id: d.recurring[7].id }))
     paidIf(17, () => tx(on(17), 'expense', 24.99, { payee: 'Planet Fitness', category_id: cat('Health', 'Gym & fitness').id, recurring_id: d.recurring[8].id }))
     paidIf(2, () => tx(on(2), 'transfer', 300, { payee: 'Ally', to_account_id: sav.id, category_id: cat('Savings', 'Emergency fund').id, recurring_id: d.recurring[12].id, goal_id: undefined }))
-    if (m < cm) { tx(on(6), 'transfer', 312, { payee: 'Huntington auto loan', to_account_id: auto.id, category_id: cat('Debt', 'Loan payments').id, recurring_id: d.recurring[9].id }); tx(on(14), 'transfer', 300, { payee: 'American Express', to_account_id: amex.id, category_id: cat('Debt', 'Credit card payments').id, recurring_id: d.recurring[10].id }); tx(on(20), 'transfer', 250, { payee: 'Chase', to_account_id: chase.id, category_id: cat('Debt', 'Credit card payments').id, recurring_id: d.recurring[11].id }) }
     // variable spend: groceries weekly, fuel, dining, shopping
     const groceries = [142.18, 96.4, 131.07, 118.5, 88.2]; let gi = 0
     for (let w = weekStart(on(1)); w <= monthEnd(m); w = addDays(w, 7)) { const dd = addDays(w, 5); if (dd >= on(1) && dd <= t && dd.slice(0, 7) === m) tx(dd, 'expense', groceries[gi++ % groceries.length], { payee: ['Kroger', 'Aldi', 'Costco'][gi % 3], category_id: cat('Food', 'Groceries').id, account_id: amex.id }) }

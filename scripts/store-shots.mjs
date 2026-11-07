@@ -52,6 +52,10 @@ const b = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: proc
 for (const d of DEVICES) {
   const dir = `store/screenshots/${d.id}`; mkdirSync(`${dir}/raw`, { recursive: true })
   const ctx = await b.newContext({ viewport: { width: d.w, height: d.h }, deviceScaleFactor: d.scale, isMobile: true, hasTouch: true, colorScheme: 'light', timezoneId: 'America/New_York', locale: 'en-US' })
+  // the sample household seen late in a month (the 24th, or SHOT_DATE), so the month's numbers are settled — early in a month the rent is
+  // paid and the second paycheck has not come yet, which makes "this period" look worse than the household really is
+  const at = process.env.SHOT_DATE ? new Date(process.env.SHOT_DATE) : (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 24, 10) })()
+  await ctx.clock.setFixedTime(at)
   const p = await ctx.newPage(); const errors = []; p.on('pageerror', e => errors.push(e.message))
   await p.goto(`http://localhost:${PORT}/`); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForTimeout(500)
   await p.click('text=Open the offline demo'); await p.waitForTimeout(1200)
