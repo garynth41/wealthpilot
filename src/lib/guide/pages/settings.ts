@@ -238,7 +238,7 @@ export const settings: GuidePage = {
         { term: 'Large charges at or above', text: 'Any expense at or above the amount in the box that arrived in the last day. Ticking it starts at $500; type another amount and click away to change it. Untick to stop.' },
         { term: 'A paycheck that did not arrive on its pay date', text: 'Sent the day after a pay date when no matching income was recorded.' },
         { term: 'Bank sync failed, or no sync for 3 days', text: 'When the bank feed reports an error or has not updated for three days.' },
-        { term: 'A bill or subscription charged more than usual', text: 'A charge more than $1 and 5% over the amount on the Bills page. Bills marked amount varies are skipped.' },
+        { term: 'A bill or subscription charged more than usual', text: 'A charge more than $1 and 5% over the amount on the Bills page. Bills marked amount varies are skipped. The charge is found the same way as the bill\'s payments: recorded for it, or from its Payee (or, with no Payee, the company in its name).' },
         { term: 'A new repeating charge', text: 'The same merchant three months running at a similar amount, not yet on the Bills page.' },
         { term: 'An account is due for reconciling', text: 'Five weeks since the last reconciliation, repeated weekly; or once for a bank-fed account that has never been reconciled. Checking, savings, cards and lines of credit only.' },
         { term: 'A property or vehicle value is a quarter old', text: 'Once each quarter until you type a new value on Account Balances.' },

@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { addDays, parse, setToday } from './dates'
 import { emptyData, SETTINGS_DEFAULTS, type Account, type BillOccurrence, type Data, type PaySchedule, type Recurring, type RecurringFreq, type Settings, type Transaction } from '../app/data/types'
-import { computeAlerts, computeDigest, dueDatesN, paidDatesN, recipientsFor, isLimitedMember, type NInput, type NMember } from './notify'
+import { computeAlerts, computeDigest, dueDatesN, paidDatesN, recipientsFor, isLimitedMember, billWordN, amountDueN, unpaidDuesN, type NInput, type NMember } from './notify'
 import { dueDates, upcoming } from './recurring'
 import { cashCalendar, overdueOwed, safeToSpend } from './forecast'
 import { billReminders } from './reminders'
@@ -245,6 +245,95 @@ describe('5 — members with Limited access get only the deletion notice', () =>
     }
     expect(recipientsFor(prefs, [owner, full, lim], 'deletion')).toEqual({ push: ['u-own', 'u-full', 'u-lim'], email: [{ to: 'lim@home.test', user_id: 'u-lim' }, { to: 'own@x.test', user_id: null }] })
     expect(recipientsFor({ email: true }, [lim, full], 'bill_due').email).toEqual([{ to: 'full@x.test', user_id: null }])   // with no owner listed the household address never falls back to theirs
+  })
+})
+
+// ======================================================================================================
+// Follow-up A — a bill with no Payee: the Bills page never matched it, the alerts matched it on its name — even "Gas" to a gas station
+// ======================================================================================================
+describe('A — one rule finds a bill\'s payment, with or without a Payee', () => {
+  it('the word a payment must carry: the Payee\'s first word, else the first word of the name that names a company', () => {
+    expect(billWordN({ payee: 'Landlord LLC', name: 'Rent' })).toBe('landlord')
+    expect(billWordN({ payee: null, name: 'AEP Ohio' })).toBe('aep'); expect(billWordN({ name: 'Columbia Gas' })).toBe('columbia'); expect(billWordN({ payee: '  ', name: 'Netflix' })).toBe('netflix')
+    expect(billWordN({ name: 'City of Columbus water' })).toBe('columbus'); expect(billWordN({ name: 'Disney+' })).toBe('disney'); expect(billWordN({ name: 'AT&T' })).toBe('at&t')
+    for (const name of ['Gas', 'Rent', 'Water bill', 'Car insurance', 'Auto loan payment', 'Emergency fund transfer', 'Daycare', 'TV']) expect(billWordN({ name }), name).toBe('')
+  })
+  // Nov 10: "AEP Ohio" (due Nov 6) was paid at AEP on Nov 7; "Gas" (due Nov 4, amount varies) was not — the Shell purchase is petrol
+  const T = '2026-11-10'
+  const aep = rec({ id: 'aep', name: 'AEP Ohio', payee: null, amount: 150, day_of_month: 6, next_due: '2026-11-06' })
+  const gas = rec({ id: 'gas', name: 'Gas', payee: null, amount: 58, amount_varies: true, day_of_month: 4, next_due: '2026-11-04' })
+  const d = data({ accounts: [acct({ id: 'chkA', balance: 3000 })], recurring: [aep, gas], transactions: [txn({ id: 'aep-pay', date: '2026-11-07', amount: 148, payee: 'AEP OHIO ELECTRIC', source: 'import' }), txn({ id: 'shell', date: '2026-11-05', amount: 52.4, payee: 'SHELL OIL 5741 GAS', source: 'import' })] })
+  it('a bill with no Payee: the Bills page, Safe to spend, the alerts, the Monday digest and the phone reminders agree', () => {
+    setToday(T)
+    try {
+      expect(upcoming(d, '2026-10-20', '2026-11-10').map(u => [u.r.name, u.date, u.status, u.txn?.id ?? null])).toEqual([['Gas', '2026-11-04', 'overdue', null], ['AEP Ohio', '2026-11-06', 'paid', 'aep-pay']])
+      expect(safeToSpend(d, settings()).overdue).toBe(58)
+    } finally { setToday(null) }
+    expect(billAlerts(d, T)).toEqual(['Gas is 6 days overdue'])
+    expect(computeDigest({ today: T, accounts: d.accounts, recurring: d.recurring, occurrences: [], transactions: d.transactions, reserveFloor: 0 }).overdue.map(o => o.name)).toEqual(['Gas'])
+    // before the due dates: AEP paid early at AEP gets no reminder; Gas, with only the Shell purchase, still does
+    const early = { ...d, transactions: [txn({ date: '2026-11-02', amount: 148, payee: 'AEP OHIO ELECTRIC' }), txn({ date: '2026-11-01', amount: 52.4, payee: 'SHELL OIL 5741 GAS' })] }
+    expect(billReminders({ today: '2026-11-02', recurring: early.recurring, occurrences: [], transactions: early.transactions, horizonDays: 7 }).map(x => x.key)).toEqual(['rem:gas:2026-11-04:day'])
+  })
+  it('a bill named for its kind never "goes up" at an unrelated merchant; one named for its company still does', () => {
+    const fixed = rec({ id: 'gasf', name: 'Gas', payee: null, amount: 58, day_of_month: 4, next_due: '2026-11-04' }), nf = rec({ id: 'nf', name: 'Netflix', payee: null, kind: 'subscription', amount: 15.49, day_of_month: 3, next_due: '2026-11-03' })
+    const a = computeAlerts(nin(data({ recurring: [fixed, nf], transactions: [txn({ id: 's', date: '2026-11-06', amount: 70, payee: 'SHELL OIL GAS' }), txn({ id: 'n', date: '2026-11-03', amount: 17.99, payee: 'NETFLIX.COM' })] }), T)).filter(x => x.kind === 'price_rise')
+    expect(a.map(x => x.title)).toEqual(['Netflix went up'])
+  })
+  it('the Bills page and the alerts agree on paid dates and amounts for bills with and without a Payee (randomized households)', () => {
+    let seed = 7101; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648; const pick = <X,>(xs: X[]) => xs[Math.floor(rnd() * xs.length)]
+    const bills: Array<[string, string | null]> = [['AEP Ohio', null], ['Gas', null], ['Water bill', null], ['Acme Utility', null], ['Car insurance', null], ['Electric', 'AEP Ohio'], ['Phone', 'Verizon']]
+    const freqs: RecurringFreq[] = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'quarterly']
+    const bad: string[] = []
+    try {
+      for (let k = 0; k < 300; k++) {
+        const today = addDays('2026-09-01', Math.floor(rnd() * 120)); setToday(today)
+        const [name, payee] = pick(bills)
+        const r = rec({ id: 'b' + k, name, payee, amount: 100, amount_varies: rnd() < 0.3, frequency: freqs[k % freqs.length], next_due: addDays(today, Math.floor(rnd() * 40) - 20), day_of_month: null })
+        const tx = Array.from({ length: Math.floor(rnd() * 7) }, () => txn({ date: addDays(today, Math.floor(rnd() * 80) - 60), amount: pick([100, 96, 120, 160, 40]), payee: pick(['AEP OHIO ELECTRIC', 'SHELL OIL GAS', 'ACME UTILITY CO', 'CITY WATER', 'VERIZON WRLS', 'GEICO', 'Other store']), recurring_id: pick([null, null, null, r.id, 'other']), status: rnd() < 0.1 ? 'void' : 'cleared' }))
+        const occs: BillOccurrence[] = []
+        for (const due of dueDates(r, addDays(today, -60), addDays(today, 20))) if (rnd() < 0.25) occs.push(occ({ recurring_id: r.id, due_date: due, status: pick<BillOccurrence['status']>(['paid', 'skipped', 'due', 'scheduled']), amount: pick([0, 87.5, 100, 131.25]), transaction_id: rnd() < 0.3 && tx.length ? pick(tx).id : null }))
+        const dd = data({ recurring: [r], transactions: tx, occurrences: occs }), from = addDays(today, -45), to = addDays(today, 14)
+        const ups = upcoming(dd, from, to), paid = paidDatesN(r, from, to, occs, tx, today)
+        const appPaid = ups.filter(u => u.status === 'paid' || u.status === 'skipped').map(u => u.date), alertsPaid = dueDates(r, from, to).filter(x => paid.has(x))
+        const appOwed = ups.filter(u => u.status !== 'paid' && u.status !== 'skipped').map(u => `${u.date} ${u.amount}`), alertsOwed = unpaidDuesN({ today, recurring: [r], occurrences: occs, transactions: tx }, from, to).map(x => `${x.due} ${x.amount}`)
+        if ((appPaid.join() !== alertsPaid.join() || appOwed.join() !== alertsOwed.join()) && bad.length < 5) bad.push(`#${k} ${name}/${payee} ${r.frequency} today ${today}: paid ${appPaid.join(' ')} vs ${alertsPaid.join(' ')} · owed ${appOwed.join(', ')} vs ${alertsOwed.join(', ')}`)
+      }
+    } finally { setToday(null) }
+    expect(bad).toEqual([])
+  })
+})
+
+// ======================================================================================================
+// Follow-up B — the alerts used the listed amount; the app uses the amount filed for the due date
+// ======================================================================================================
+describe('B — one rule for what a due date asks for', () => {
+  it('the amount filed on the date\'s occurrence, else what was paid when the amount varies, else the listed amount', () => {
+    const varies = rec({ amount: 140, amount_varies: true }), fixed = rec({ amount: 140 })
+    expect(amountDueN(varies, { amount: 152.4 })).toBe(152.4); expect(amountDueN(fixed, { amount: 152.4 }, { amount: 99 })).toBe(152.4)
+    expect(amountDueN(varies, null, { amount: 131.8 })).toBe(131.8); expect(amountDueN(fixed, null, { amount: 131.8 })).toBe(140)
+    expect(amountDueN(varies, null)).toBe(140); expect(amountDueN(fixed, { amount: null })).toBe(140)
+  })
+  // an email filed AEP's Nov 15 bill at $152.40 (listed at $140, amount varies); on Nov 20 it is still unpaid
+  const T = '2026-11-20'
+  const aepB = rec({ id: 'aepB', name: 'AEP Ohio', payee: 'AEP', amount: 140, amount_varies: true, day_of_month: 15, next_due: '2026-11-15', starts_on: '2026-11-01' })
+  const d = data({ accounts: [acct({ id: 'chkB', balance: 100 })], recurring: [aepB], occurrences: [occ({ recurring_id: 'aepB', due_date: '2026-11-15', status: 'due', amount: 152.4 }), occ({ recurring_id: 'aepB', due_date: '2026-12-15', status: 'due', amount: 160.1 })] })
+  it('the Bills page, Safe to spend, the overdue alert, the low-cash alert and the Monday digest all owe $152.40', () => {
+    setToday(T)
+    try {
+      expect(upcoming(d, '2026-11-15', '2026-11-15').map(u => [u.status, u.amount])).toEqual([['overdue', 152.4]])
+      expect(safeToSpend(d, settings()).overdue).toBe(152.4)
+    } finally { setToday(null) }
+    const a = computeAlerts(nin(d, T))
+    expect(a.find(x => x.kind === 'bill_overdue')).toMatchObject({ title: 'AEP Ohio is 5 days overdue', body: '$152 was due 2026-11-15', amount: 152.4 })
+    expect(a.find(x => x.kind === 'low_cash')).toMatchObject({ body: '$152 overdue and $0 due in 7 days, $100 available', amount: 52.4 })
+    const dg = computeDigest({ today: T, accounts: d.accounts, recurring: d.recurring, occurrences: d.occurrences, transactions: [], reserveFloor: 0 })
+    expect(dg.overdue).toEqual([{ name: 'AEP Ohio', amount: 152.4, due: '2026-11-15', autopay: false }]); expect(dg.overdueTotal).toBe(152.4)
+  })
+  it('the phone reminder names the filed amount instead of "amount varies"', () => {
+    const r = billReminders({ today: '2026-12-10', recurring: d.recurring, occurrences: d.occurrences, transactions: [], horizonDays: 10 })
+    expect(r.map(x => x.body)).toEqual(['$160.10 on 2026-12-15', '$160.10 — mark it paid in WealthPilot once it is done'])
+    expect(billReminders({ today: '2026-12-10', recurring: d.recurring, occurrences: [], transactions: [], horizonDays: 10 })[0].body).toBe('amount varies on 2026-12-15')
   })
 })
 

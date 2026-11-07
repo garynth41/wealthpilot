@@ -37,7 +37,7 @@ async function loadHousehold(hh: string) {
     admin.from('households').select('*').eq('id', hh).single(),
     admin.from('accounts').select('id, name, kind, status, balance, bank_balance, include_in_cash, balance_as_of, last_reconciled_on, created_at').eq('household_id', hh),
     admin.from('recurring').select('id, name, payee, kind, amount, amount_varies, frequency, day_of_month, next_due, starts_on, ends_on, status, autopay').eq('household_id', hh),
-    admin.from('bill_occurrences').select('recurring_id, due_date, status, transaction_id').eq('household_id', hh).gte('due_date', new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10)),
+    admin.from('bill_occurrences').select('recurring_id, due_date, status, transaction_id, amount').eq('household_id', hh).gte('due_date', new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10)),
     admin.from('transactions').select('id, date, kind, amount, payee, recurring_id, pay_schedule_id, created_at, status, duplicate_of, category_id').eq('household_id', hh).gte('date', new Date(Date.now() - 105 * 86400000).toISOString().slice(0, 10)),
     admin.from('pay_schedules').select('id, name, frequency, anchor_date, semimonthly_days, net_amount, starts_on, ends_on, status').eq('household_id', hh),
     admin.from('sync_connections').select('status, last_sync_at, last_error').eq('household_id', hh).maybeSingle(),
@@ -45,7 +45,7 @@ async function loadHousehold(hh: string) {
   if (h.error) throw h.error
   const settings = (h.data.settings || {}) as Record<string, unknown>; const prefs = (settings.notify || {}) as Prefs
   const num = <T extends Record<string, unknown>>(r: T) => { const o = { ...r } as Record<string, unknown>; for (const k of ['balance', 'bank_balance', 'amount', 'net_amount']) if (k in o && o[k] != null) o[k] = Number(o[k]); return o as T }
-  return { household: h.data, settings, prefs, members: (members.data || []) as NMember[], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: occ.data || [], transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
+  return { household: h.data, settings, prefs, members: (members.data || []) as NMember[], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: (occ.data || []).map(num), transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
 }
 
 async function sendPush(hh: string, userIds: string[] | null, title: string, body: string, path: string, tag: string): Promise<{ sent: number; failed: number; detail: string }> {

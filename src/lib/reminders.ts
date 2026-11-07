@@ -18,9 +18,9 @@ export function billReminders(inp: ReminderInput): Reminder[] {
   const hour = inp.hour ?? 9, horizon = inp.horizonDays ?? 35, max = inp.max ?? REMINDER_MAX, t = inp.today
   const at = (d: string) => `${d}T${String(hour).padStart(2, '0')}:00`
   const out: Reminder[] = []
-  for (const { r, due } of unpaidDuesN(inp, t, addDaysN(t, horizon))) {
+  for (const { r, due, amount: owed, filed } of unpaidDuesN(inp, t, addDaysN(t, horizon))) {
     const lead = Math.max(0, Math.min(30, Math.round(Number(r.reminder_days ?? 3))))
-    const amount = r.amount_varies ? 'amount varies' : money(+r.amount || 0)
+    const amount = r.amount_varies && !filed ? 'amount varies' : money(owed)   // the amount filed for the date (an email bill) when there is one, as on Bills
     const early = addDaysN(due, -lead)
     if (lead > 0 && early >= t) out.push({ id: reminderId(`rem:${r.id}:${due}:early`), key: `rem:${r.id}:${due}:early`, at: at(early), title: `${r.name} is due in ${lead} day${lead === 1 ? '' : 's'}`, body: `${amount} on ${due}${r.autopay ? ' · autopay — make sure the account covers it' : ''}`, url: '/bills' })
     out.push({ id: reminderId(`rem:${r.id}:${due}:day`), key: `rem:${r.id}:${due}:day`, at: at(due), title: r.autopay ? `${r.name} is charged today` : `${r.name} is due today`, body: r.autopay ? `${amount} by autopay` : `${amount} — mark it paid in WealthPilot once it is done`, url: '/bills' })

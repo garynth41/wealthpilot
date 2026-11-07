@@ -20,8 +20,9 @@
 
 export interface NAccount { id: string; name: string; kind: string; asset_type?: string | null; status: string; balance: number; bank_balance?: number | null; include_in_cash: boolean; balance_as_of?: string | null; last_reconciled_on?: string | null; created_at?: string | null }
 export interface NRecurring { id: string; name: string; payee?: string | null; kind: string; amount: number; amount_varies?: boolean; frequency: string; day_of_month?: number | null; next_due?: string | null; starts_on?: string | null; ends_on?: string | null; status: string; autopay: boolean }
-/** `transaction_id`: the payment recorded for this due date (Mark paid, email capture); it belongs to this date and covers no other. */
-export interface NOccurrence { recurring_id: string; due_date: string; status: string; transaction_id?: string | null }
+/** `transaction_id`: the payment recorded for this due date (Mark paid, email capture); it belongs to this date and covers no other.
+ *  `amount`: the amount filed for this due date (an email bill, Mark paid), which is what the date asks for (amountDueN). */
+export interface NOccurrence { recurring_id: string; due_date: string; status: string; transaction_id?: string | null; amount?: number | null }
 export interface NTxn { id: string; date: string; kind: string; amount: number; payee?: string | null; recurring_id?: string | null; pay_schedule_id?: string | null; created_at?: string | null; status?: string | null; duplicate_of?: string | null }
 export interface NPay { id: string; name: string; frequency: string; anchor_date: string; semimonthly_days?: number[] | null; net_amount: number; starts_on?: string | null; ends_on?: string | null; status: string }
 export type NSync = { status: string; last_sync_at: string | null; last_error?: string | null } | null
@@ -105,26 +106,64 @@ export function matchPaymentsN(dues: string[], open: (due: string) => boolean, p
   for (const x of pairs) if (!out.has(x.due) && !used.has(x.id)) { out.set(x.due, x.id); used.add(x.id) }
   return out
 }
-/** The due dates of `r` inside [from, to] that are taken care of (0.25.1): marked paid or skipped, linked to the payment recorded for them, or
- *  covered by a payment under matchPaymentsN. A payment counts when it carries this item's recurring_id, or — when it is not tied to another
- *  item or to another due date — when it is from the item's payee (or name) at a close amount. Void and merged-duplicate rows never count. */
+/** Words that say what kind of bill something is rather than who it is paid to ("Gas", "Rent", "Car insurance", "City water"). A bill with no
+ *  Payee is never matched on one of these — a gas-station purchase must not pay a bill called "Gas". */
+const BILL_WORDS = new Set(['the', 'our', 'and', 'for', 'new', 'monthly', 'weekly', 'yearly', 'annual', 'bill', 'bills', 'payment', 'payments', 'pay', 'pmt', 'autopay',
+  'rent', 'mortgage', 'hoa', 'home', 'house', 'apartment', 'electric', 'electricity', 'power', 'energy', 'gas', 'water', 'sewer', 'trash', 'garbage', 'recycling',
+  'utility', 'utilities', 'internet', 'wifi', 'broadband', 'cable', 'phone', 'cell', 'mobile', 'wireless', 'insurance', 'life', 'health', 'dental', 'vision',
+  'medical', 'auto', 'car', 'vehicle', 'parking', 'toll', 'tolls', 'loan', 'loans', 'student', 'card', 'credit', 'debt', 'transfer', 'savings', 'saving', 'fund',
+  'emergency', 'tax', 'taxes', 'fee', 'fees', 'daycare', 'childcare', 'child', 'kids', 'school', 'tuition', 'allowance', 'support', 'pet', 'gym', 'membership',
+  'subscription', 'streaming', 'music', 'storage', 'lawn', 'cleaning', 'city', 'county', 'town', 'village', 'state', 'department', 'dept', 'service', 'services', 'company'])
+/** The word a payment's payee must contain to count for a bill (0.25.1) — the one rule the Bills page, the alerts, the Monday digest and the
+ *  phone reminders use: the first word of its Payee; with no Payee, the first word of its name that names a company rather than a kind of
+ *  bill ("AEP Ohio" → aep, "Columbia Gas" → columbia; "Gas" or "Car insurance" → none). With no word, only payments recorded for the bill
+ *  (its recurring_id) count. Surrounding punctuation is dropped ("Disney+" → disney). */
+export function billWordN(r: { payee?: string | null; name?: string | null }): string {
+  const words = (s: string | null | undefined) => String(s || '').toLowerCase().split(/\s+/).map(w => w.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')).filter(Boolean)
+  const payee = words(r.payee); if (payee.length) return payee[0]
+  return words(r.name).find(w => { const bare = w.replace(/[^a-z0-9]/g, ''); return bare.length >= 3 && !BILL_WORDS.has(bare) }) || ''
+}
+/** A transaction from this bill's merchant: recorded for it (its recurring_id), or not tied to another bill and with `word` in its payee. */
+const fromBillN = (r: NRecurring, t: NTxn, word: string) => t.recurring_id === r.id || (!t.recurring_id && !!word && !!t.payee && t.payee.toLowerCase().includes(word))
+/** One recurring item's due dates and its payments (0.25.1) — the one function the Bills page (lib/recurring.ts paymentsFor) and the alerts
+ *  (paidDatesN) both call. `dues` is the item's schedule in date order, a month either side of the dates asked about. `settled`: dates marked
+ *  paid or skipped, or linked to the payment recorded for them. `paid`: each other date's payment, matched one to one (matchPaymentsN). A
+ *  payment counts when it is recorded for this item, or — when not tied to another bill or to another due date — when its payee holds the
+ *  bill's word (billWordN) at a close amount (within 25%, at least $1; any amount when the bill's amount varies). Void and merged-duplicate
+ *  rows never count. */
+export function billPaymentsN<T extends NTxn>(r: NRecurring, dues: string[], occ: NOccurrence[], tx: T[]): { settled: Set<string>; paid: Map<string, T> } {
+  const linked = new Set(occ.map(o => o.transaction_id).filter((x): x is string => !!x)), onFile = (id: string) => tx.some(t => t.id === id)
+  const settled = new Set(occ.filter(o => o.recurring_id === r.id && (o.status === 'paid' || o.status === 'skipped' || (!!o.transaction_id && onFile(o.transaction_id)))).map(o => o.due_date.slice(0, 10)))
+  const word = billWordN(r), listed = Number(r.amount) || 0
+  const pays = tx.filter(t => !t.duplicate_of && t.status !== 'void' && !linked.has(t.id) && fromBillN(r, t, word) && (t.recurring_id === r.id || r.amount_varies || Math.abs((Number(t.amount) || 0) - listed) <= Math.max(1, Math.abs(listed) * 0.25)))
+  const byId = new Map(pays.map(t => [t.id, t] as const)), paid = new Map<string, T>()
+  for (const [due, id] of matchPaymentsN(dues, x => !settled.has(x), pays)) paid.set(due, byId.get(id)!)
+  return { settled, paid }
+}
+/** What one due date asks for (0.25.1) — the one rule the Bills page and the alerts both call: the amount filed on that date's occurrence (an
+ *  email bill, Mark paid) when there is one; else, for a bill whose amount varies, what was paid; else the bill's listed amount. */
+export function amountDueN(r: NRecurring, occ?: { amount?: number | null } | null, paidWith?: { amount: number } | null): number {
+  if (occ && occ.amount != null) return Number(occ.amount) || 0
+  return paidWith && r.amount_varies ? Number(paidWith.amount) || 0 : Number(r.amount) || 0
+}
+/** The due dates of `r` inside [from, to] that are taken care of (0.25.1): settled, or covered by a payment (billPaymentsN). */
 export function paidDatesN(r: NRecurring, from: string, to: string, occ: NOccurrence[], tx: NTxn[], today: string = from): Set<string> {
   const dues = dueDatesN(r, addDaysN(from, -31), addDaysN(to, 31), today), out = new Set<string>()
   if (!dues.length) return out
-  const linked = new Set(occ.map(o => o.transaction_id).filter((x): x is string => !!x)), onFile = (id: string) => tx.some(t => t.id === id)
-  const settled = new Set(occ.filter(o => o.recurring_id === r.id && (o.status === 'paid' || o.status === 'skipped' || (!!o.transaction_id && onFile(o.transaction_id)))).map(o => o.due_date.slice(0, 10)))
-  const first = (r.payee || r.name || '').toLowerCase().split(' ')[0]
-  const pays = tx.filter(t => !t.duplicate_of && t.status !== 'void' && !linked.has(t.id) && (t.recurring_id === r.id || (!t.recurring_id && !!first && !!t.payee && t.payee.toLowerCase().includes(first) && (r.amount_varies || Math.abs(t.amount - r.amount) <= Math.max(1, r.amount * 0.25)))))
-  for (const d of settled) if (d >= from && d <= to) out.add(d)
-  for (const d of matchPaymentsN(dues, x => !settled.has(x), pays).keys()) if (d >= from && d <= to) out.add(d)
+  const { settled, paid } = billPaymentsN(r, dues, occ, tx)
+  for (const d of [...settled, ...paid.keys()]) if (d >= from && d <= to) out.add(d)
   return out
 }
-/** Every unpaid due date inside [from, to] of the household's active bills, subscriptions, debt payments and transfers (0.25.1). The bill
- *  alerts, the low-cash check, the Monday digest and the phone reminders all count from this one list. */
-export function unpaidDuesN<R extends NRecurring>(inp: { today: string; recurring: R[]; occurrences: NOccurrence[]; transactions: NTxn[] }, from: string, to: string): Array<{ r: R; due: string }> {
+/** Every unpaid due date inside [from, to] of the household's active bills, subscriptions, debt payments and transfers (0.25.1), with what it
+ *  asks for (amountDueN; `filed` when that came from the date's occurrence). The bill alerts, the low-cash check, the Monday digest and the
+ *  phone reminders all count from this one list. */
+export function unpaidDuesN<R extends NRecurring>(inp: { today: string; recurring: R[]; occurrences: NOccurrence[]; transactions: NTxn[] }, from: string, to: string): Array<{ r: R; due: string; amount: number; filed: boolean }> {
   return inp.recurring.filter(r => r.status === 'Active' && r.kind !== 'income').flatMap(r => {
     const paid = paidDatesN(r, from, to, inp.occurrences, inp.transactions, inp.today)
-    return dueDatesN(r, from, to, inp.today).filter(d => !paid.has(d)).map(due => ({ r, due }))
+    return dueDatesN(r, from, to, inp.today).filter(d => !paid.has(d)).map(due => {
+      const o = inp.occurrences.find(x => x.recurring_id === r.id && x.due_date.slice(0, 10) === due)
+      return { r, due, amount: amountDueN(r, o), filed: !!o && o.amount != null }
+    })
   })
 }
 export function computeAlerts(inp: NInput): Alert[] {
@@ -133,10 +172,10 @@ export function computeAlerts(inp: NInput): Alert[] {
   if (inp.deletionScheduledFor) { const d = inp.deletionScheduledFor.slice(0, 10); const left = diff(d, t)
     return [{ kind: 'deletion', key: `deletion:${d}:${left <= 1 ? 'final' : 'scheduled'}`, title: left <= 1 ? 'This household is permanently deleted tomorrow' : `This household will be permanently deleted on ${d}`, body: 'Everything in it — accounts, transactions, files and backups — for every member. Until then it is read-only; an owner can cancel in Settings.', url: '/settings', severity: 'crit' }] }
   const bucket3 = Math.floor(parse(t).getTime() / DAY / 3)
-  if (p.bills) for (const { r, due } of unpaidDuesN(inp, addDaysN(t, -30), addDaysN(t, 1))) {
+  if (p.bills) for (const { r, due, amount } of unpaidDuesN(inp, addDaysN(t, -30), addDaysN(t, 1))) {
     const d = diff(due, t)
-    if (d >= 0) out.push({ kind: 'bill_due', key: `bill_due:${r.id}:${due}`, title: `${r.name} ${d === 0 ? 'is due today' : 'is due tomorrow'}`, body: `${money(r.amount)}${r.autopay ? ' · autopay — check the balance covers it' : ''}`, url: '/bills', severity: r.autopay ? 'info' : 'warn', amount: r.amount })
-    else if (!r.autopay) out.push({ kind: 'bill_overdue', key: `bill_overdue:${r.id}:${due}:${bucket3}`, title: `${r.name} is ${-d} day${d === -1 ? '' : 's'} overdue`, body: `${money(r.amount)} was due ${due}`, url: '/bills', severity: 'crit', amount: r.amount })
+    if (d >= 0) out.push({ kind: 'bill_due', key: `bill_due:${r.id}:${due}`, title: `${r.name} ${d === 0 ? 'is due today' : 'is due tomorrow'}`, body: `${money(amount)}${r.autopay ? ' · autopay — check the balance covers it' : ''}`, url: '/bills', severity: r.autopay ? 'info' : 'warn', amount })
+    else if (!r.autopay) out.push({ kind: 'bill_overdue', key: `bill_overdue:${r.id}:${due}:${bucket3}`, title: `${r.name} is ${-d} day${d === -1 ? '' : 's'} overdue`, body: `${money(amount)} was due ${due}`, url: '/bills', severity: 'crit', amount })
   }
   if (p.low_cash) {
     const cash = inp.accounts.filter(a => a.status === 'Active' && !LIAB.includes(a.kind) && (a.include_in_cash || (inp.includeRetirementInCash && a.kind === 'retirement'))).reduce((n, a) => n + (a.bank_balance ?? a.balance ?? 0), 0)
@@ -163,8 +202,8 @@ export function computeAlerts(inp: NInput): Alert[] {
     else if (inp.sync.last_sync_at && diff(t, inp.sync.last_sync_at.slice(0, 10)) >= 3) out.push({ kind: 'sync', key: `sync:stale:${bucket3}`, title: 'Bank feed has not updated for 3 days', body: `Last sync ${inp.sync.last_sync_at.slice(0, 10)}`, url: '/connections', severity: 'warn' })
   }
   if (p.price_rise) for (const r of inp.recurring.filter(r => r.status === 'Active' && (r.kind === 'subscription' || r.kind === 'bill') && !r.amount_varies && +r.amount > 0)) {
-    const first = (r.payee || r.name || '').toLowerCase().split(' ')[0]
-    const last = live.filter(x => x.kind === 'expense' && diff(t, x.date) >= 0 && diff(t, x.date) <= 35 && (x.recurring_id === r.id || (first.length > 2 && (x.payee || '').toLowerCase().includes(first)))).sort((a, b) => b.date.localeCompare(a.date))[0]
+    const word = billWordN(r)   // 0.25.1: the bill's merchant found the same way as its payments, so "Gas" never "goes up" at a gas station
+    const last = live.filter(x => x.kind === 'expense' && diff(t, x.date) >= 0 && diff(t, x.date) <= 35 && fromBillN(r, x, word.length > 2 ? word : '')).sort((a, b) => b.date.localeCompare(a.date))[0]
     if (last && last.amount > +r.amount + Math.max(1, +r.amount * 0.05) && last.amount < +r.amount * 3)
       out.push({ kind: 'price_rise', key: `price_rise:${r.id}:${last.id}`, title: `${r.name} went up`, body: `${money2(+r.amount)} → ${money2(last.amount)} on ${last.date} — update the bill if this is the new price`, url: '/bills', severity: 'warn', amount: round(last.amount - +r.amount) })
   }
@@ -194,7 +233,7 @@ export function computeAlerts(inp: NInput): Alert[] {
   const rank = { crit: 0, warn: 1, info: 2 }; return out.sort((a, b) => rank[a.severity] - rank[b.severity])
 }
 const round = (n: number) => Math.round(n * 100) / 100
-const owedN = (list: Array<{ r: NRecurring }>) => list.reduce((n, x) => n + (+x.r.amount || 0), 0)
+const owedN = (list: Array<{ amount: number }>) => list.reduce((n, x) => n + x.amount, 0)
 
 /** Who receives an alert of this kind (0.21.0). Each member's own choices win; anything they did not set falls back to the household
  *  switches: push goes to every member's devices unless push is off; email goes to the household address (or the owner) unless a
@@ -229,7 +268,7 @@ export interface DigestInput { today: string; accounts: NAccount[]; recurring: N
 export function computeDigest(inp: DigestInput) {
   const t = inp.today; const live = inp.transactions.filter(x => !x.duplicate_of && x.status !== 'void')
   const cash = inp.accounts.filter(a => a.status === 'Active' && !LIAB.includes(a.kind) && (a.include_in_cash || (inp.includeRetirementInCash && a.kind === 'retirement'))).reduce((n, a) => n + (a.bank_balance ?? a.balance ?? 0), 0)
-  const row = ({ r, due }: { r: NRecurring; due: string }) => ({ name: r.name, amount: +r.amount || 0, due, autopay: r.autopay })
+  const row = ({ r, due, amount }: { r: NRecurring; due: string; amount: number }) => ({ name: r.name, amount, due, autopay: r.autopay })
   const week = unpaidDuesN(inp, t, addDaysN(t, 6)).map(row).sort((a, b) => a.due.localeCompare(b.due))
   // 0.25.1: everything due in the last 30 days and still unpaid is still owed — autopay included (an autopay that never went through), as in
   // the app's Safe to spend — so it is listed and taken off what is safe to spend (the low-cash alert counts the same list)
