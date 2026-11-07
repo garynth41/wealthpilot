@@ -29,7 +29,7 @@ export const bills: GuidePage = {
       fields: [
         { term: 'Date', text: 'The due date, and how far away it is: today, in N days, or N days ago.' },
         { term: 'Item', text: 'The item\'s name, "· autopay" when Autopay is ticked, and its kind underneath ("· amount varies" when Varies is ticked).' },
-        { term: 'Amount', text: 'The amount due: the amount from an email bill filed for that date when there is one, otherwise the item\'s listed amount.' },
+        { term: 'Amount', text: 'The amount due: the amount from an email bill filed for that date when there is one, otherwise the item\'s listed amount. Alerts, the Monday digest and phone reminders use the same amount.' },
         { term: 'From', text: 'The account the payment comes out of (the item\'s From account).' },
         { term: 'Status', text: 'Overdue (past the due date, nothing paid), Due today, Due soon (within the item\'s Remind days), Autopay (autopay is ticked and it is not due yet), Scheduled (an email said the payment is scheduled) or Due.' },
         { term: 'Mark paid / Received', text: 'Opens a window with Date, Amount and From (Into for income). Save records the payment and marks this due date paid. The date starts at today, or at the due date when that has already passed.' },
@@ -37,7 +37,7 @@ export const bills: GuidePage = {
       ],
       tips: [
         'Mark paid records an expense from the From account against the Budget line. When Pays is set to a card or loan, it records a transfer that lowers what you owe instead, and when the amount covers the minimum and is paid no later than three days after the card\'s due date, that statement shows as Paid. When Pays is a savings account, the money moves into it. Recurring income records a deposit into the Into account.',
-        'You often do not need Mark paid: a due date counts as paid by itself when a transaction from the item\'s Payee lands between 12 days before and 10 days after it, at a similar amount (within about 25%, or any amount when Varies is ticked). For items that come more often — weekly, every 2 weeks, twice a month — that window stops halfway to the due date before and after (3 days either side for a weekly bill).',
+        'You often do not need Mark paid: a due date counts as paid by itself when a transaction from the item\'s Payee (or, with no Payee, the company in its Name) lands between 12 days before and 10 days after it, at a similar amount (within about 25%, or any amount when Varies is ticked). For items that come more often — weekly, every 2 weeks, twice a month — that window stops halfway to the due date before and after (3 days either side for a weekly bill).',
         'One payment pays one due date: the nearest one still unpaid whose window it falls in. A weekly bill paid once is paid for that week only, and a payment you recorded with Mark paid stays with the date you recorded it for. A payment linked to another bill never counts for this one.',
         'Paid and skipped dates do not come back on this list.',
       ],
@@ -62,7 +62,7 @@ export const bills: GuidePage = {
         'Use ✕ at the end of a row to delete an item; its past transactions are kept. To stop an item without losing it, set Status to Paused or Cancelled.',
       ],
       fields: [
-        { term: 'Name / Payee', text: 'What you call it, and the merchant name as it shows on your bank statement. Automatic matching looks for the first word of the Payee in incoming transactions.' },
+        { term: 'Name / Payee', text: 'What you call it, and the merchant name as it shows on your bank statement. Automatic matching looks for the first word of the Payee in incoming transactions. With no Payee it uses the first word of the Name that names a company ("AEP Ohio" matches AEP); a Name that only says what kind of bill it is ("Gas", "Rent", "Car insurance") matches nothing on its own, so fill in the Payee or use Mark paid for those.' },
         { term: 'Kind', text: 'Bill, Subscription, Card / loan payment, Income, Transfer or Savings. It decides which total the item counts in and how Mark paid records it.' },
         { term: 'Amount / Varies', text: 'The usual amount. Tick Varies for bills that change each time, such as utilities: a payment of any size then counts as paid, and the price-rise alert never fires for it.' },
         { term: 'Every', text: 'How often it comes: Weekly, Every 2 weeks, Twice a month, Monthly, Every 2 months, Quarterly, Every 6 months, Yearly or Irregular.' },
