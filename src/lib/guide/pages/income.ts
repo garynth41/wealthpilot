@@ -51,12 +51,13 @@ export const income: GuidePage = {
       fields: [
         { term: 'Date', text: 'The payday, and how many days away it is.' },
         { term: 'Source / Take-home / Into', text: 'Which income source pays, its take-home amount and the account it is deposited to.' },
-        { term: 'Received', text: 'Opens Add transaction already filled in as income: the amount, date, account, category and payer, linked to this source. Change anything that differs and click Save; the account balance goes up.' },
+        { term: 'Received', text: 'Opens Add transaction already filled in as income: the amount, date, account, category and payer, linked to this source. Change anything that differs and click Save; the account balance goes up. A paycheck is only ever logged once: if that payday\'s deposit is already on file when you click Save, nothing is added and a message says when it was recorded.' },
+        { term: 'Recorded', text: 'Shown instead of Received once that payday\'s deposit is on file: an income transaction within 2 days of the payday that is linked to this source, or that is within 2% (or $5) of its take-home. It may have been logged here, brought in by the bank feed or email, or typed on Transactions. Hover it for the amount and date.' },
         { term: 'Total in the next 90 days', text: 'The sum of every take-home in the list.' },
       ],
       tips: [
         'The bank feed and email capture can record deposits for you, so Received is only needed for deposits nothing else brings in.',
-        'The list is worked out from the schedules, so a payday stays listed after you log it.',
+        'The list is worked out from the schedules, so a payday stays listed after you log it, marked Recorded.',
       ],
     },
     {
@@ -101,7 +102,7 @@ export const income: GuidePage = {
   ],
   tasks: [
     { q: 'How do I add my paycheck?', steps: ['Click + Add income source.', 'Type a Name and the Payer / employer, pick how often you are Paid, type a recent payday in A known pay date and your Take-home.', 'Pick Deposited to and the Income category. Every payday now appears under Paychecks ahead.'] },
-    { q: 'How do I log a paycheck when it lands?', steps: ['Under Paychecks ahead, click Received beside the payday.', 'Check the amount and the date in Add transaction, then click Save.'] },
+    { q: 'How do I log a paycheck when it lands?', steps: ['Under Paychecks ahead, click Received beside the payday.', 'Check the amount and the date in Add transaction, then click Save.', 'If the row already says Recorded, the deposit is on file (from the bank feed, email or an earlier entry) and there is nothing to do.'] },
     { q: 'How do I decide where a paycheck should go?', steps: ['Under Recent paychecks, click Allocate… beside it.', 'Review what is due before the next payday and the amount left over or short.', 'Adjust the goal amounts and click Log $X to goals, or Close.'] },
     { q: 'How do I record that a job or benefit ended?', steps: ['Type the last payday in Ends, or set Status to Ended.', 'The totals, the budget and the forecast stop counting it; the row stays for the record.'] },
     { q: 'Why does a month show more income than expected?', steps: ['If you are paid every 2 weeks, two months a year have three paydays.', 'Income received by month shows those months above the expected line.'] },

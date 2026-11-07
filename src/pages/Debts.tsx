@@ -3,7 +3,7 @@ import { useData } from '../app/hooks'
 import { Card, KPI, Btn, Pill, Note, Seg, useModal } from '../components/ui'
 import { Chart, C } from '../components/Chart'
 import { liabilities, debtBal, debtPlanned, utilization, acctLabel, debtDueState } from '../lib/accounts'
-import { simulate, payoffProjection, assumedPay, debtTotals, aprAt, hasPromo, promoAlerts, type Strategy } from '../lib/debts'
+import { simulate, payoffProjection, assumedPay, debtTotals, aprAt, hasPromo, promoAlerts, payoffOrder, type Strategy } from '../lib/debts'
 import { ScenarioBar } from '../components/Scenarios'
 import { normalize } from '../lib/scenarios'
 import { fmtMoney, fm2 } from '../lib/money'
@@ -25,7 +25,7 @@ export function DebtsPage() {
   const nextDue = act.filter(a => a.due_date && debtDueState(a).label !== 'Paid').map(a => a.due_date!).sort()[0]; const overdue = act.filter(a => debtDueState(a).cls === 'crit')
   const c = C(); const xs = (n: number) => [...Array(n)].map((_, m) => { const d = parse(t); d.setMonth(d.getMonth() + m); return iso(d) })
   const n = Math.min(72, Math.max(planSim.series.length, extraSim.series.length, 6))
-  const order = act.slice().sort((x, y) => strategy === 'avalanche' ? (+y.apr || 0) - (+x.apr || 0) : debtBal(x) - debtBal(y))
+  const order = payoffOrder(act, strategy)   // the rate in force now, as the projection ranks it (0.25.1)
   const br = act.slice().sort((x, y) => debtBal(x) - debtBal(y)); const bl = br.map(a => acctLabel(a, data.accounts))
   return <>
     <div className="kpis" style={{ marginBottom: 16 }}>

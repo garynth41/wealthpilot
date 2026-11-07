@@ -6,11 +6,14 @@ import { curMonth, monthEnd, monthStart, today, parse, iso } from './dates'
 import { monthlyIncome } from './paySchedule'
 
 export const assumedPay = (a: Account, pay: number) => (pay > 0 ? pay : debtBal(a) >= 1 ? Math.max(25, debtBal(a) * 0.03) : 0)   // no minimum entered → typical issuer floor
-/** Promotional APRs (0.20.0): the rate that applies in month `m` from `from` (0 = this month). `promo_apr` runs through `promo_until`, then `apr`. */
+/** Promotional APRs (0.20.0): the rate that applies in month `m` from `from` (0 = this month). `promo_apr` runs through `promo_until`, then `apr`.
+ *  A month takes the rate in force on its first day — for this month that is today (0.25.1: a promotion that ended earlier this month no
+ *  longer applies), for later months the 1st. So aprAt(a, 0) is the rate in force now, the same one hasPromo() shows. */
 export function aprAt(a: Pick<Account, 'apr' | 'promo_apr' | 'promo_until'>, m: number, from = today()): number {
   if (a.promo_apr == null || !a.promo_until) return +a.apr || 0
   const d = parse(from); d.setDate(1); d.setMonth(d.getMonth() + m)
-  return iso(d) <= a.promo_until.slice(0, 10) ? +a.promo_apr : +a.apr || 0
+  const on = m <= 0 ? from.slice(0, 10) : iso(d)
+  return on <= a.promo_until.slice(0, 10) ? +a.promo_apr : +a.apr || 0
 }
 export const hasPromo = (a: Pick<Account, 'promo_apr' | 'promo_until'>, from = today()) => a.promo_apr != null && !!a.promo_until && a.promo_until.slice(0, 10) >= from
 /** Months (counting this one) the promotional rate still runs; 0 when it has ended or there is none. */
@@ -38,6 +41,11 @@ export function promoAlerts(accts: Account[], horizonMonths = 12, from = today()
   }).filter(x => x.monthsLeft <= horizonMonths).sort((x, y) => x.endsOn.localeCompare(y.endsOn))
 }
 export type Strategy = 'avalanche' | 'snowball'
+/** The payoff order as of this month (0.25.1) — the order `simulate` sends extra in during its first month: avalanche by the rate in force
+ *  now (a card on a 0% promotion waits until it ends), snowball by the smallest balance. */
+export function payoffOrder(accts: Account[], strategy: Strategy = 'avalanche', from = today()): Account[] {
+  return accts.slice().sort((x, y) => strategy === 'avalanche' ? aprAt(y, 0, from) - aprAt(x, 0, from) : debtBal(x) - debtBal(y))
+}
 /** Whole-portfolio simulation: every account gets its planned payment, `extra` goes to the focus account, freed payments roll over. */
 export function simulate(accts: Account[], extra: number, strategy: Strategy = 'avalanche', minOnly = false) {
   const from = today(); let bal = accts.filter(a => debtBal(a) >= 1).map(a => ({ id: a.id, name: a.name, apr: aprAt(a, 0, from) / 100 / 12, rate: (m: number) => aprAt(a, m, from) / 100 / 12, b: debtBal(a), pay: assumedPay(a, minOnly ? +a.minimum_payment || 0 : debtPlanned(a)), paidOffMonth: null as number | null }))
@@ -58,7 +66,8 @@ export function debtTotals(d: Data) {
   const a = liabilities(d), m = curMonth()
   const balance = sum(a.map(x => debtBal(x, d))), minimum = sum(a.map(x => +x.minimum_payment || 0)), planned = sum(a.map(debtPlanned)), paidMonth = sum(a.map(x => debtPaidInRange(d, x, monthStart(m), monthEnd(m))))
   const rev = a.filter(x => isRevolving(x) && +(x.credit_limit || 0) > 0); const limit = sum(rev.map(x => +x.credit_limit!)), cardBal = sum(rev.map(x => debtBal(x, d)))
-  const wApr = balance ? sum(a.map(x => debtBal(x) * (+x.apr || 0))) / balance : 0, interestMonth = sum(a.map(x => debtBal(x) * (+x.apr || 0) / 100 / 12))
+  // the rate in force this month (0.25.1): a card on a promotional rate costs its promotional rate until the promotion ends
+  const wApr = balance ? sum(a.map(x => debtBal(x) * aprAt(x, 0))) / balance : 0, interestMonth = sum(a.map(x => debtBal(x) * aprAt(x, 0) / 100 / 12))
   const income = monthlyIncome(d.paySchedules)
   return { count: a.length, balance, minimum, planned, paidMonth, limit, cardBal, util: limit ? cardBal / limit : 0, wApr, interestMonth, dti: income ? planned / income : null }
 }

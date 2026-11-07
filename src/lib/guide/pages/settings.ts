@@ -241,7 +241,7 @@ export const settings: GuidePage = {
         { term: 'A new repeating charge', text: 'The same merchant three months running at a similar amount, not yet on the Bills page.' },
         { term: 'An account is due for reconciling', text: 'Five weeks since the last reconciliation, repeated weekly; or once for a bank-fed account that has never been reconciled. Checking, savings, cards and lines of credit only.' },
         { term: 'A property or vehicle value is a quarter old', text: 'Once each quarter until you type a new value on Account Balances.' },
-        { term: 'Monday digest: the week ahead, last week\'s spending, what is overdue', text: 'A weekly email, plus a short push.' },
+        { term: 'Monday digest: the week ahead, last week\'s spending, what is overdue', text: 'A weekly email, plus a short push. Its Safe to spend this week is cash on hand minus the bills due in the next 7 days, minus anything from the last 30 days that is still unpaid (an autopay that never went through included), minus your reserve floor.' },
         { term: 'Preview today\'s alerts', text: 'Lists what would be sent if the check ran now, or says "Nothing would be sent right now." The bank sync check is not part of the preview.' },
       ],
       tips: ['Who receives each alert is set under Who gets what.', 'Only a household owner can change these switches.'],

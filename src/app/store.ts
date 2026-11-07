@@ -9,6 +9,8 @@ import { hasSupabase, sb } from './supabase'
 import { LS, APP_VERSION, cmpVer } from './config'
 import { canViewPath } from '../lib/access'
 import { planDedupe, type DTxn } from '../lib/dedupe'
+import { paycheckOnFile } from '../lib/paySchedule'
+import { post } from '../lib/ledger'
 import type { Transaction } from './data/types'
 
 /** Merged duplicates live in data.duplicates, everything else in data.transactions — so every page and engine sees each transaction once. */
@@ -46,6 +48,10 @@ interface State {
   refresh: () => Promise<void>
   insert: <C extends Collection>(coll: C, row: Partial<RowOf<C>>) => Promise<RowOf<C>>
   insertMany: <C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]) => Promise<RowOf<C>[]>
+  /** 0.25.1: log one paycheck (an income row with pay_schedule_id) and move the account balance — once. When that payday's deposit is
+   *  already on file (see paycheckOnFile: logged before, from the bank feed or email, or typed by hand) nothing is written and the existing
+   *  transaction comes back with existing = true; saves for the same schedule run one at a time, so a double click cannot slip through. */
+  logPaycheck: (row: Partial<Transaction>) => Promise<{ txn: Transaction; existing: boolean }>
   update: <C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) => Promise<RowOf<C>>
   remove: (coll: Collection, id: string) => Promise<void>
   saveSettings: (patch: Partial<Settings>) => Promise<void>
@@ -69,6 +75,8 @@ interface State {
 /** Captured before the Supabase client reads and clears the URL: a password-reset link lands with #access_token=…&type=recovery. */
 const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search)
 let deduping = false
+/** paycheck saves still running, per pay schedule (logPaycheck) */
+const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
@@ -140,6 +148,19 @@ export const useStore = create<State>((set, get) => ({
   },
   async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
   async insertMany(coll, rows) { const repo = need(get); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async logPaycheck(row) {
+    const ps = get().data.paySchedules.find(p => p.id === row.pay_schedule_id); const date = (row.date || '').slice(0, 10)
+    if (!ps || !date) throw new Error('Pick the income source and the date of this paycheck')
+    const prev = paycheckSaves.get(ps.id) || Promise.resolve()
+    const run = prev.catch(() => undefined).then(async () => {
+      const found = paycheckOnFile(get().data, ps, date, +(row.amount || 0)); if (found) return { txn: found, existing: true }
+      const txn = await get().insert('transactions', { ...row, kind: 'income', date })
+      await post(get().data, (id, p) => get().update('accounts', id, p), txn, 1, txn.date)
+      return { txn, existing: false }
+    })
+    paycheckSaves.set(ps.id, run)
+    try { return await run } finally { if (paycheckSaves.get(ps.id) === run) paycheckSaves.delete(ps.id) }
+  },
   async mergeDuplicates(keeper, dups, patch) {
     const repo = need(get)
     if (patch && Object.keys(patch).length) { const k = await repo.update('transactions', keeper, patch); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) }

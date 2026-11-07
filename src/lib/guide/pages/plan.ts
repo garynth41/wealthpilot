@@ -17,7 +17,7 @@ export const plan: GuidePage = {
     { term: 'Retirement in N mo', text: 'Your retirement and investment balances at the end of the horizon, in today\'s dollars: grown at the retirement planner\'s real return, plus your yearly contribution and any extra the plan sends.' },
     { term: 'Net worth change', text: 'Over the horizon: the change in unallocated cash, plus debt paid down, plus retirement growth, plus goal savings added.' },
     { term: 'Applied plan banner', text: '"This plan is applied" (green) when the sliders match the plan you applied, and since when. "A different plan is applied" with its amounts when they do not. Remove applied plan undoes it: goal and retirement contributions go back to what they were and the Debts page drops the extra.' },
-    { term: 'Room banner', text: 'Green "Up to $X/mo extra fits": the most extra per month, in $25 steps, that keeps unallocated cash at or above your reserve floor (or zero with no floor) for the whole horizon. Amber when the slider is above that, with Use $X to bring it down. Red "No room for extra money yet." when not even $25 more fits — or when unallocated cash already drops below the floor with nothing extra. "The plan needs something to plan with." when there are no accounts, income or bills yet.' },
+    { term: 'Room banner', text: 'Green "Up to $X/mo extra fits": the most extra per month, in $25 steps, that keeps unallocated cash at or above your reserve floor (or zero with no floor) for the whole horizon. Amber when the slider is above that, with Use $X to bring it down. Red "No room for extra money yet." when not even $25 more fits — or when unallocated cash already drops below the floor with nothing extra. Blue "Nothing needs extra money right now." when there is no debt left, every goal is full and retirement is fully funded, so extra would only stay as cash. The amount never goes above what debt, goals and retirement can take this month. "The plan needs something to plan with." when there are no accounts, income or bills yet.' },
   ],
   cards: [
     {
@@ -33,9 +33,9 @@ export const plan: GuidePage = {
       fields: [
         { term: 'Scenarios', text: 'Saved sets of these sliders. Click one to load it; ★ pins it to the front and ✕ deletes it. Save as scenario… saves the sliders under a name; Update "name" replaces the one you loaded. Compare… shows the debt-free date, interest, goals reached, lowest unallocated cash, retirement and net worth change side by side, with the best value in each row highlighted. Loading a scenario only moves the sliders.' },
         { term: 'Extra per month', text: 'The extra amount, in $25 steps, to send somewhere each month.' },
-        { term: 'Debt first / Goals first', text: 'The order the extra fills things up. Debt first pays down debt, then fills goals, then sends the rest to retirement. Goals first fills goals, then debt, then retirement.' },
-        { term: 'Retirement first', text: 'Sends all the extra to retirement saving.' },
-        { term: 'Split', text: 'Divides the extra by the Debt, Goals and Retirement shares (they are scaled to add up to 100%). A share that cannot be used — no debt left, or every goal full — passes on: debt to goals, goals to retirement.' },
+        { term: 'Debt first / Goals first', text: 'The order the extra fills things up. Debt first pays down debt, then fills goals, then sends the rest to retirement. Goals first fills goals, then debt, then retirement. Each one only takes what it can use: debt what is still owed, each goal what it still needs, retirement what it still needs to be fully funded. Anything left stays as cash.' },
+        { term: 'Retirement first', text: 'Sends the extra to retirement saving first, up to what it still needs to be fully funded: the yearly contribution the retirement planner on Investments says would fully fund your retirement, less what you already contribute, per month. Anything above that pays down debt, then fills goals; anything left after that stays as cash. When retirement is already fully funded, the extra goes straight to debt.' },
+        { term: 'Split', text: 'Divides the extra by the Debt, Goals and Retirement shares (they are scaled to add up to 100%). A share that cannot be used — no debt left, every goal full, or retirement fully funded — passes on: debt to goals, goals to retirement; what retirement cannot use goes back to debt, then goals. Anything left after that stays as cash.' },
         { term: 'Debt order', text: 'Avalanche (highest interest rate first, using the rate in effect that month) or Snowball (smallest balance first). Extra to debt goes to the first one in that order.' },
         { term: 'Horizon', text: 'How far ahead the plan runs: 24, 36, 60 or 120 months.' },
         { term: 'when the last debt is paid, keep its payments working', text: 'Once every debt is paid off, the payments you were making join the extra each month.' },
@@ -48,7 +48,7 @@ export const plan: GuidePage = {
       tips: [
         'The plan only decides where the extra goes. It starts from today\'s balances, pay schedules, bills, planned one-off items and every card and loan\'s planned payment.',
         'Base retirement contributions come out of pay and do not touch cash; only extra sent to retirement leaves cash.',
-        'Applying again replaces what a previous apply added — it never adds to it.',
+        'Applying again replaces what a previous apply added — it never adds to it. After you apply, the plan still starts from your contributions without the applied extra, so nothing is counted twice and the retirement extra keeps coming out of cash.',
         'Moving the sliders changes nothing elsewhere until you apply.',
       ],
     },
@@ -59,8 +59,8 @@ export const plan: GuidePage = {
         { term: 'Heading', text: 'The extra amount and the rule chosen, or a prompt to move the slider.' },
         { term: 'Debt', text: 'Extra to debt this month, and the debt it goes to first.' },
         { term: 'Goals', text: 'Extra to goals this month, goal by goal. Goals are filled in priority order (1 first), each only up to what it still needs.' },
-        { term: 'Retirement', text: 'Extra to retirement this month, and what that adds up to in a year.' },
-        { term: 'Stays as cash', text: 'Extra that none of the others could take. Retirement takes any amount, so this is normally $0.' },
+        { term: 'Retirement', text: 'Extra to retirement this month, and what that adds up to in a year. "fully funded" means the retirement planner says nothing more is needed, so retirement takes no extra.' },
+        { term: 'Stays as cash', text: 'Extra that none of the others could take this month — no debt left to pay down, every goal full and retirement fully funded (or their shares already used up). It stays in your unallocated cash; nothing is moved.' },
         { term: 'Milestones', text: 'Your debt-free date and today\'s total debt; each goal\'s date reached ("already" if it is reached), its target date and target amount; and, in red, the date unallocated cash first drops below your reserve floor. A green "N mo sooner" pill compares with today\'s plan; "not within N months" means it is past the horizon.' },
       ],
     },
@@ -107,7 +107,8 @@ export const plan: GuidePage = {
   glossary: [
     { term: 'Unallocated cash', def: 'Cash on hand minus what your goals already hold in cash accounts — the money not yet promised to anything.' },
     { term: 'Extra per month', def: 'Money on top of every planned payment and contribution that the plan sends to debt, goals or retirement.' },
-    { term: 'Today\'s plan', def: 'Your current payments and contributions with no extra and no rolling of paid-off payments — the baseline the plan is compared with.' },
+    { term: 'Today\'s plan', def: 'Your current payments and contributions with no extra and no rolling of paid-off payments — the baseline the plan is compared with. Extra that an applied plan added to goal and retirement contributions is left out of it.' },
+    { term: 'Fully funded (retirement)', def: 'The retirement planner on Investments expects your savings and contributions to cover the income you want in retirement, so the plan sends retirement no extra.' },
     { term: 'Applied plan', def: 'A plan you have written to the other pages: the Debts page\'s extra payment, each goal\'s monthly contribution and the retirement contribution.' },
     { term: 'Plan horizon', def: 'How many months ahead the plan runs: 24, 36, 60 or 120.' },
     { term: 'Freed payment', def: 'The monthly payment of a debt you have paid off. It rolls to the next debt; once every debt is gone it can join the extra instead of being spent.' },

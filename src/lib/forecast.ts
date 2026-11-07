@@ -6,7 +6,7 @@ import { cashOnHand, liabilities, debtPlanned, debtBal, debtDueState, acctLabel,
 import { payDates, monthlyIncome } from './paySchedule'
 import { upcoming, recMonthly, recActive, isOutflow } from './recurring'
 import { rangeStat, monthlyDebt } from './budget'
-import { payoffProjection, assumedPay } from './debts'
+import { payoffProjection, assumedPay, aprAt } from './debts'
 import { estimatedTaxDue } from './tax'
 
 export interface CalItem { date: string; label: string; amt: number; kind: 'in' | 'out'; src: 'pay' | 'bill' | 'sub' | 'debt' | 'planned' | 'goal' | 'flex' | 'relief' | 'tax'; bal?: number; id?: string }
@@ -31,16 +31,32 @@ export function cashCalendar(d: Data, s: Settings, days = 60) {
   for (let dd = t; dd <= to; dd = addDays(dd, 1)) { items.filter(x => x.date === dd).forEach(x => { bal += x.amt; x.bal = bal }); daily.push({ d: dd, bal }); if (bal < low.bal) low = { bal, date: dd }; if (floor && bal < floor && !firstFloor) firstFloor = dd; if (bal < 0 && !firstZero) firstZero = dd }
   return { start, items, daily, low, firstFloor, firstZero, floor, inTot: sum(items.filter(x => x.amt > 0).map(x => x.amt)), outTot: -sum(items.filter(x => x.amt < 0).map(x => x.amt)), end: bal }
 }
+/** Bills and payments already past their due date and still unpaid (0.25.1) — the same ones the Dashboard lists as overdue: every bill,
+ *  subscription, debt payment or savings transfer from the last 30 days with no payment matched or recorded and not skipped (autopay
+ *  included: an autopay that never went through is still owed), plus any card or loan without a recurring payment whose due date has
+ *  passed unpaid. The money is still owed, so Safe to spend takes it off. Dated on the day each one was due (before today). */
+export function overdueOwed(d: Data): CalItem[] {
+  const t = today(), out: CalItem[] = []
+  for (const u of upcoming(d, addDays(t, -30), addDays(t, -1))) {
+    if (u.status === 'paid' || u.status === 'skipped' || !isOutflow(u.r) || !(u.amount > 0)) continue
+    out.push({ date: u.date, label: `${u.r.name} (overdue)`, amt: -u.amount, kind: 'out', src: u.r.kind === 'subscription' ? 'sub' : u.r.kind === 'debt_payment' ? 'debt' : 'bill', id: u.r.id })
+  }
+  liabilities(d).forEach(a => { if (recActive(d).some(r => r.liability_account_id === a.id)) return; const pay = debtPlanned(a); if (!(pay > 0) || !a.due_date || debtDueState(a).cls !== 'crit') return
+    out.push({ date: a.due_date.slice(0, 10), label: `${acctLabel(a, d.accounts)} payment (overdue)`, amt: -pay, kind: 'out', src: 'debt', id: a.id }) })
+  return out.sort((a, b) => a.date.localeCompare(b.date))
+}
 /** Safe to spend (0.19.0): cash on hand minus everything committed before the next paycheck (bills, debt and planned items — not everyday
- *  spending, which is what this number is for) minus the reserve floor; also per day until payday. No paycheck ahead → the next 30 days. */
+ *  spending, which is what this number is for) minus anything already overdue (0.25.1) minus the reserve floor; also per day until payday.
+ *  No paycheck ahead → the next 30 days. */
 export function safeToSpend(d: Data, s: Settings) {
   const cal = cashCalendar(d, s, 45); const t = today()
   const nextPay = cal.items.find(x => x.src === 'pay' && x.amt > 0 && x.date > t)?.date || null
   const until = nextPay || addDays(t, 30); const days = Math.max(1, diffDays(until, t))
-  const committedItems = cal.items.filter(x => x.amt < 0 && x.src !== 'flex' && x.date <= until && (x.date > t || x.date === t))
+  const late = overdueOwed(d); const overdue = -sum(late.map(x => x.amt))
+  const committedItems = [...late, ...cal.items.filter(x => x.amt < 0 && x.src !== 'flex' && x.date <= until && (x.date > t || x.date === t))]
   const committed = -sum(committedItems.map(x => x.amt)); const floor = +s.reserveFloor || 0
   const safe = Math.max(0, cal.start - committed - floor)
-  return { safe, perDay: safe / days, days, until, payday: nextPay, committed, cash: cal.start, floor, items: committedItems, short: cal.start - committed - floor < 0 ? -(cal.start - committed - floor) : 0 }
+  return { safe, perDay: safe / days, days, until, payday: nextPay, committed, overdue, cash: cal.start, floor, items: committedItems, short: cal.start - committed - floor < 0 ? -(cal.start - committed - floor) : 0 }
 }
 /** Monthly burn = committed bills + recent variable spend + debt payments − income. */
 export function burn(d: Data, s: Settings) {
@@ -66,7 +82,8 @@ export function runwayProjection(d: Data, s: Settings, opts?: { months?: number;
   const essFixed = sum(recActive(d).filter(r => isOutflow(r) && r.kind !== 'debt_payment' && r.kind !== 'savings' && r.kind !== 'transfer' && d.categories.find(c => c.id === r.category_id)?.priority !== 'Discretionary').map(recMonthly))
   const essentials = essFixed + essVar
   const baseSpend = (o.leanOnly ? essentials : b.fixed + b.variable) * (1 - o.cutPct / 100)
-  const debts = liabilities(d).map(a => ({ a, p: payoffProjection(debtBal(a), a.apr, assumedPay(a, debtPlanned(a)), o.months + 1), pay: assumedPay(a, debtPlanned(a)) }))
+  // each month at the rate in force that month: a promotional rate until it ends, then the regular APR (0.25.1)
+  const debts = liabilities(d).map(a => ({ a, p: payoffProjection(debtBal(a), m => aprAt(a, m), assumedPay(a, debtPlanned(a)), o.months + 1), pay: assumedPay(a, debtPlanned(a)) }))
   const events = [...d.planned.filter(p => p.status === 'Planned').map(p => ({ date: p.date.slice(0, 10), amount: +p.amount || 0 })), ...estimatedTaxDue(d, s, t, addDays(t, (o.months + 1) * 31)).map(x => ({ date: x.date, amount: -x.amount })), ...o.extraEvents]
   const xs: string[] = [], ys: number[] = [], inc: number[] = [], out: number[] = []; let cash = b.cash
   for (let m = 0; m <= o.months; m++) {

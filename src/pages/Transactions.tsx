@@ -112,17 +112,24 @@ export function TransactionsPage() {
   </>
 }
 export function AddTxn({ onDone, preset }: { onDone: () => void; preset?: Partial<Transaction> }) {
-  const { data, settings, insert, update, guarded, catOpts, catLabels, accts, acctLabels, saveSettings } = useData()
+  const { data, settings, insert, update, guarded, catOpts, catLabels, accts, acctLabels, saveSettings, logPaycheck, toast } = useData()
   const [f, setF] = useState<Partial<Transaction>>({ date: today(), kind: 'expense', amount: 0, account_id: accts.find(a => a.kind === 'checking')?.id || accts[0]?.id || null, to_account_id: null, category_id: null, payee: '', memo: '', status: accts.find(a => a.kind === 'checking')?.bank_balance != null ? 'pending' : 'cleared', ...preset })
   const [amt, setAmt] = useState(preset?.amount ? String(preset.amount) : '')
+  const [saving, setSaving] = useState(false)
   const set = (k: keyof Transaction, v: unknown) => setF(x => ({ ...x, [k]: v }))
   const [hint, setHint] = useState('')
   const onPayeeBlur = () => { if (f.kind === 'transfer' || !f.payee) return; const sg = suggest(data, settings, { payee: f.payee, kind: f.kind as 'expense' | 'income' }); const patch = applySuggestion(f, sg); if (patch) { setF(x => ({ ...x, ...patch })); setHint(sg.how === 'rule' ? `category set by your rule "${sg.rule?.pattern}"` : sg.how === 'remembered' ? 'category from a remembered email payee' : 'category from how you filed this payee before') } }
   const kinds: Array<[TxnKind, string]> = [['expense', 'Expense'], ['income', 'Income'], ['transfer', 'Transfer / payment']]
-  const submit = (e: FormEvent) => { e.preventDefault(); const a = parseNum(amt); if (!a || a <= 0) return
-    guarded(async () => { const row = await insert('transactions', { ...f, amount: Math.round(a * 100) / 100, tags: f.tags || [], source: 'manual', exclude_from_budget: !!f.exclude_from_budget }); await post(data, (id, p) => update('accounts', id, p), row, 1, row.date); await logGoalLinks([row.id])
+  const submit = (e: FormEvent) => { e.preventDefault(); const a = parseNum(amt); if (!a || a <= 0 || saving) return
+    setSaving(true)
+    void guarded(async () => { const body = { ...f, amount: Math.round(a * 100) / 100, tags: f.tags || [], source: 'manual' as const, exclude_from_budget: !!f.exclude_from_budget }
+      let row: Transaction
+      // 0.25.1: a paycheck (Income → Paychecks ahead → Received) is logged once — if that payday's deposit is already on file, nothing is added
+      if (body.kind === 'income' && body.pay_schedule_id) { const r = await logPaycheck(body); if (r.existing) { toast(`Already recorded: ${fm2(r.txn.amount)} on ${fmtD(r.txn.date)}${r.txn.payee ? ` from ${r.txn.payee}` : ''} — nothing was added`); onDone(); return } row = r.txn }
+      else { row = await insert('transactions', body); await post(data, (id, p) => update('accounts', id, p), row, 1, row.date) }
+      await logGoalLinks([row.id])
       if (!hint && row.category_id && row.payee && row.kind !== 'transfer' && settings.learnRules !== false) { const r = learnRule(row.payee, { category_id: row.category_id }, row.kind as 'expense' | 'income'); if (r) await saveSettings({ rules: upsertRule(settings.rules || [], r) }) }
-      onDone() }, `${fm2(a)} logged`) }
+      toast(`${fm2(a)} logged`); onDone() }).finally(() => setSaving(false)) }
   const liabilityTo = f.kind === 'transfer' && f.to_account_id && isLiability(data.accounts.find(a => a.id === f.to_account_id)!)
   return <form onSubmit={submit}><MHead title="Add transaction" /><MBody>
     <div style={{ marginBottom: 12 }}><Seg value={f.kind as TxnKind} options={kinds} onChange={v => { set('kind', v); if (v !== 'transfer') set('to_account_id', null) }} /></div>
@@ -133,7 +140,7 @@ export function AddTxn({ onDone, preset }: { onDone: () => void; preset?: Partia
         : <Field label="Category"><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— uncategorized —</option>{catOpts(f.kind === 'income' ? 'income' : 'expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}</div>
     {f.kind === 'transfer' && <Field label="Budget line (optional)" hint={liabilityTo ? 'e.g. Credit card payments, so the payment shows in the budget' : 'e.g. Emergency fund, so the transfer counts toward that line'}><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— none —</option>{catOpts('expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}
     <div className="grid2"><Field label="Payee" hint={hint || undefined}><input className="inp" value={f.payee || ''} onChange={e => set('payee', e.target.value)} onBlur={onPayeeBlur} placeholder="Kroger, Landlord, Employer…" /></Field><Field label="Memo"><input className="inp" value={f.memo || ''} onChange={e => set('memo', e.target.value)} /></Field></div>
-  </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn type="submit" primary>Save</Btn></MFoot></form>
+  </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn type="submit" primary disabled={saving}>{saving ? 'Saving…' : 'Save'}</Btn></MFoot></form>
 }
 
 /** Split one transaction across categories. Slices must add up to the transaction; the parent's category becomes a display default. */

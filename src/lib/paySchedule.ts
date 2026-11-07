@@ -1,5 +1,5 @@
-import type { PaySchedule, PayFrequency } from '../app/data/types'
-import { addDays, addMonthsClamp, iso, parse, today, daysInMonth, monthKey } from './dates'
+import type { Data, PaySchedule, PayFrequency, Transaction } from '../app/data/types'
+import { addDays, addMonthsClamp, diffDays, iso, parse, today, daysInMonth, monthKey } from './dates'
 
 export const PER_YEAR: Record<PayFrequency, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, quarterly: 4, yearly: 1, irregular: 12 }
 export const monthlyEquivalent = (amount: number, f: PayFrequency) => (amount * PER_YEAR[f]) / 12
@@ -42,3 +42,13 @@ export function payPeriodFor(ps: PaySchedule, date: string): { start: string; en
 }
 export const payMonthLabel = (d: string) => monthKey(d)
 export const isoOf = iso
+/** The income already on file for one payday of a schedule (0.25.1), so a paycheck is never logged twice. Mirrors the notify `paycheck`
+ *  rule: an income transaction within 2 days of the payday that is linked to this schedule, or — when it is not linked to another
+ *  schedule — within 2% (at least $5) of the take-home, or of `amount` when one was typed. Void and merged-duplicate rows do not count.
+ *  The closest one by date wins. */
+export function paycheckOnFile(d: Pick<Data, 'transactions'>, ps: PaySchedule, date: string, amount?: number | null): Transaction | null {
+  const near = (want: number, got: number) => want > 0 && Math.abs(got - want) <= Math.max(5, want * 0.02)
+  const hits = d.transactions.filter(t => t.kind === 'income' && t.status !== 'void' && !t.duplicate_of && Math.abs(diffDays(t.date, date)) <= 2
+    && (t.pay_schedule_id === ps.id || (!t.pay_schedule_id && (near(+ps.net_amount || 0, +t.amount) || near(+(amount || 0), +t.amount)))))
+  return hits.sort((a, b) => Math.abs(diffDays(a.date, date)) - Math.abs(diffDays(b.date, date)))[0] || null
+}

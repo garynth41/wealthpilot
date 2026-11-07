@@ -34,7 +34,7 @@ export const GENERAL: { intro: string; start: StartStep[]; tasks: GuideTask[]; f
   ],
   tasks: [
     { q: 'How do I add a transaction?', steps: ['Open Transactions and press N (or use + Add).', 'Pick the type (expense, income or transfer), the account, the amount, the payee and the category.', 'Save — the account balance moves with it.'] },
-    { q: 'How do I see what I can safely spend?', steps: ['Open the Dashboard.', 'Safe to spend is your cash minus everything due before your next paycheck and minus your reserve floor.'] },
+    { q: 'How do I see what I can safely spend?', steps: ['Open the Dashboard.', 'Safe to spend is your cash minus everything due before your next paycheck, minus anything overdue and still unpaid, and minus your reserve floor.'] },
     { q: 'How do I invite my partner or a family member?', steps: ['Open Settings → Members.', 'Under Invite someone, type their email and choose their access: Full, Read-only, or Limited (for Limited, tick the sections they may see).', 'Click Create sign-in & draft email: it creates a sign-in with a one-time temporary password and drafts the email for you to send. Someone who already has an account is simply added.', 'They sign in with that password and choose their own. To make someone an owner, use Change on their row later.'] },
     { q: 'How do I hide amounts on my screen?', steps: ['Press H, or click the eye button in the top bar.', 'Every amount shows as ••• on this device until you press H again.'] },
     { q: 'How do I get a report for my accountant?', steps: ['Open Reports.', 'Choose the period and the sections (tax is one of them).', 'Download it as PDF, Excel or CSV.'] },
@@ -55,7 +55,7 @@ export const GENERAL: { intro: string; start: StartStep[]; tasks: GuideTask[]; f
   glossary: [
     { term: 'Household', def: 'Everyone who shares this set of accounts, bills and budgets. You can belong to more than one household.' },
     { term: 'Access levels', def: 'What a member can do: Owner (everything, including members and household settings), Full access (change any data), Read-only (look but not change) or Limited (only the sections an owner picked). Owners cannot be limited.' },
-    { term: 'Safe to spend', def: 'Cash on hand minus every bill, debt payment and planned item due before your next paycheck, minus your reserve floor.' },
+    { term: 'Safe to spend', def: 'Cash on hand minus every bill, debt payment and planned item due before your next paycheck, minus anything overdue and still unpaid, minus your reserve floor.' },
     { term: 'Reserve floor', def: 'The cash balance you never want to drop below. Set it in Settings; safe-to-spend, the forecast and the alerts keep it untouched.' },
     { term: 'Runway', def: 'How many months your cash would last at your current pace of spending.' },
     { term: 'Cash on hand', def: 'The total of the accounts marked "Counts as cash" — usually checking, savings and cash.' },
