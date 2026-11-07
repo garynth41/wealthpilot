@@ -9,6 +9,7 @@ import type { SyncConnection } from '../app/data/types'
 import { fm2 } from '../lib/money'
 import { acctLabel } from '../lib/accounts'
 import { syncSlot, syncLimitMessage } from '../lib/syncLimit'
+import { isNative } from '../app/native'
 
 const NEW = '__new__'
 /** Automatic bank sync through SimpleFIN Bridge. The sync itself runs in the sync-simplefin edge function; this card connects, maps accounts and shows what happened. */
@@ -36,9 +37,11 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
   const c = st.connection
   const run = async (fn: () => Promise<unknown>, ok?: string) => { setBusy(true); try { await guarded(async () => { await fn() }, ok) } finally { setBusy(false) } }
 
-  if (!c) return <Card span={12} title="Automatic bank sync (SimpleFIN)" hint="balances and transactions pulled in once a day — about $15 a year, paid to SimpleFIN">
+  // the phone apps describe SimpleFIN Bridge without its price or a sign-up link: the store rules are wary of apps that send people to
+  // buy something elsewhere, even a service the app does not sell (0.25.1)
+  if (!c) return <Card span={12} title="Automatic bank sync (SimpleFIN)" hint={isNative() ? 'balances and transactions pulled in once a day through SimpleFIN Bridge' : 'balances and transactions pulled in once a day — about $15 a year, paid to SimpleFIN'}>
     <ol className="note" style={{ margin: '0 0 10px', paddingLeft: 18 }}>
-      <li>Subscribe at <a href="https://bridge.simplefin.org" target="_blank" rel="noreferrer">bridge.simplefin.org</a> and link your banks there.</li>
+      {isNative() ? <li>Set up <b>SimpleFIN Bridge</b>, a separate bank-connection service, and link your banks there.</li> : <li>Subscribe at <a href="https://bridge.simplefin.org" target="_blank" rel="noreferrer">bridge.simplefin.org</a> and link your banks there.</li>}
       <li>In SimpleFIN choose <b>New Connection</b> (an app connection) and copy the <b>setup token</b>.</li>
       <li>Paste it below. The token is single-use; WealthPilot exchanges it for an access key kept on the server, never in your browser.</li>
     </ol>
@@ -91,4 +94,4 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
       <div className="tblwrap"><table className="tbl"><thead><tr><th>When</th><th>How</th><th>Result</th></tr></thead><tbody>{st.log.map(l => <tr key={l.id}><td>{fmtDT(l.started_at)}</td><td>{l.trigger === 'daily' ? 'Daily' : l.trigger === 'connect' ? 'Connect' : 'Manual'}</td><td><Pill cls={l.ok ? 'good' : 'crit'}>{l.ok ? 'OK' : 'Failed'}</Pill> {l.message}</td></tr>)}</tbody></table></div></details>}
   </Card>
 }
-export const syncKpi = (s: SyncStatus | null): { v: string; cls: string; s: string } => !s || !s.available ? { v: 'Not available', cls: 'idle', s: 'needs a real household with the bank-sync upgrade' } : !s.connection ? { v: 'Not connected', cls: 'idle', s: 'SimpleFIN — about $15/year' } : s.connection.status === 'error' ? { v: 'Needs attention', cls: 'crit', s: s.connection.last_error || 'last sync failed' } : { v: 'Connected', cls: 'good', s: s.connection.last_sync_at ? `last sync ${new Date(s.connection.last_sync_at).toLocaleDateString()}` : 'not synced yet' }
+export const syncKpi = (s: SyncStatus | null): { v: string; cls: string; s: string } => !s || !s.available ? { v: 'Not available', cls: 'idle', s: 'needs a real household with the bank-sync upgrade' } : !s.connection ? { v: 'Not connected', cls: 'idle', s: isNative() ? 'SimpleFIN Bridge' : 'SimpleFIN — about $15/year' } : s.connection.status === 'error' ? { v: 'Needs attention', cls: 'crit', s: s.connection.last_error || 'last sync failed' } : { v: 'Connected', cls: 'good', s: s.connection.last_sync_at ? `last sync ${new Date(s.connection.last_sync_at).toLocaleDateString()}` : 'not synced yet' }
