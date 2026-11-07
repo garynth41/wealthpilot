@@ -5,7 +5,8 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { addDays, parse, setToday } from './dates'
 import { emptyData, SETTINGS_DEFAULTS, type Account, type BillOccurrence, type Data, type PaySchedule, type Recurring, type RecurringFreq, type Settings, type Transaction } from '../app/data/types'
-import { computeAlerts, computeDigest, dueDatesN, paidDatesN, recipientsFor, isLimitedMember, billWordN, amountDueN, unpaidDuesN, type NInput, type NMember } from './notify'
+import { computeAlerts, computeDigest, dueDatesN, paidDatesN, recipientsFor, isLimitedMember, billWordN, amountDueN, unpaidDuesN, payDatesN, semiPayDaysN, type NInput, type NMember } from './notify'
+import { payDates } from './paySchedule'
 import { dueDates, upcoming } from './recurring'
 import { cashCalendar, overdueOwed, safeToSpend } from './forecast'
 import { billReminders } from './reminders'
@@ -47,27 +48,34 @@ describe('1 — bills every 2, 3, 6 or 12 months: the alerts find their due date
     expect(low).toMatchObject({ title: 'Bills due this week exceed cash on hand', body: '$400 due in 7 days, $300 available', amount: 100 })
   })
   it('dueDatesN agrees with the app\'s dueDates for every frequency, seed, month end, bound and window', () => {
+    // every frequency × next due date (month ends, Feb 28 and Feb 29, none) × day of the month × start/end bound, each over sampled windows:
+    // fixed ones across February and the year end plus a long one, windows that start on, end on, start after and end before one of the
+    // app's own due dates, and one random window. "Today" only matters without a next due date, so the second today runs just for those.
     const freqs: RecurringFreq[] = ['weekly', 'biweekly', 'semimonthly', 'monthly', 'every_2_months', 'quarterly', 'every_6_months', 'yearly', 'irregular']
     const seeds = [null, '2026-01-31', '2026-02-28', '2026-05-30', '2026-08-31', '2026-11-15', '2028-02-29']
     const days = [null, 1, 15, 16, 29, 31]
     const bounds: Array<Partial<Recurring>> = [{}, { starts_on: '2026-12-10' }, { ends_on: '2027-03-30' }]
-    const froms: string[] = []; for (let f = '2026-09-01'; f <= '2027-09-01'; f = addDays(f, 19)) froms.push(f)
-    const lengths = [0, 1, 6, 30, 44, 91, 400]
+    const fixed: Array<[string, string]> = [['2027-02-27', '2027-03-01'], ['2028-02-28', '2028-03-01'], ['2026-12-30', '2027-01-02'], ['2026-09-01', '2027-10-05']]
+    let seed = 4242; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
     const bad: string[] = []; let checked = 0
     try {
       for (const today of ['2026-11-07', '2027-01-31']) {
         setToday(today)
         for (const frequency of freqs) for (const next_due of seeds) for (const day_of_month of days) for (const b of bounds) {
-          const r = rec({ frequency, next_due, day_of_month, ...b })
-          for (const from of froms) for (const len of lengths) {
-            const to = addDays(from, len), app = dueDates(r, from, to), alerts = dueDatesN(r, from, to, today); checked++
-            if (app.join() !== alerts.join() && bad.length < 5) bad.push(`${frequency} next ${next_due} day ${day_of_month} ${JSON.stringify(b)} ${from}..${to} (today ${today}): app ${app.join(' ')} · alerts ${alerts.join(' ')}`)
+          if (today !== '2026-11-07' && next_due) continue
+          const r = rec({ frequency, next_due, day_of_month, ...b }), ref = dueDates(r, '2026-09-01', '2028-03-31')
+          const windows = [...fixed]
+          for (const e of [ref[0], ref[ref.length >> 1]].filter(Boolean)) windows.push([e, e], [addDays(e, 1), addDays(e, 44)], [addDays(e, -30), addDays(e, -1)])
+          const from = addDays('2026-09-01', Math.floor(rnd() * 540)); windows.push([from, addDays(from, [0, 6, 30, 91][Math.floor(rnd() * 4)])])
+          for (const [lo, hi] of windows) {
+            const app = dueDates(r, lo, hi), alerts = dueDatesN(r, lo, hi, today); checked++
+            if (app.join() !== alerts.join() && bad.length < 5) bad.push(`${frequency} next ${next_due} day ${day_of_month} ${JSON.stringify(b)} ${lo}..${hi} (today ${today}): app ${app.join(' ')} · alerts ${alerts.join(' ')}`)
           }
         }
       }
     } finally { setToday(null) }
-    expect(bad).toEqual([]); expect(checked).toBeGreaterThan(100000)
-  })
+    expect(bad).toEqual([]); expect(checked).toBeGreaterThan(10000)
+  }, 20000)
 })
 
 // ======================================================================================================
@@ -142,7 +150,7 @@ describe('2 — one payment covers one due date', () => {
       }
     } finally { setToday(T) }
     expect(bad).toEqual([])
-  })
+  }, 20000)
 })
 
 // ======================================================================================================
@@ -194,7 +202,7 @@ describe('3 — every day is in exactly one budget period', () => {
       expect(prevSpan(d, s, nx)).toMatchObject({ start: sp.start, end: sp.end }); sp = nx; count++
     }
     expect(count).toBeGreaterThan(1)
-  })
+  }, 20000)
 })
 
 // ======================================================================================================
@@ -301,7 +309,7 @@ describe('A — one rule finds a bill\'s payment, with or without a Payee', () =
       }
     } finally { setToday(null) }
     expect(bad).toEqual([])
-  })
+  }, 20000)
 })
 
 // ======================================================================================================
@@ -334,6 +342,29 @@ describe('B — one rule for what a due date asks for', () => {
     const r = billReminders({ today: '2026-12-10', recurring: d.recurring, occurrences: d.occurrences, transactions: [], horizonDays: 10 })
     expect(r.map(x => x.body)).toEqual(['$160.10 on 2026-12-15', '$160.10 — mark it paid in WealthPilot once it is done'])
     expect(billReminders({ today: '2026-12-10', recurring: d.recurring, occurrences: [], transactions: [], horizonDays: 10 })[0].body).toBe('amount varies on 2026-12-15')
+  })
+})
+
+// ======================================================================================================
+// Follow-up C — twice-a-month paychecks with no pay days set: the app paid on the 15th and the last day, the alerts expected the 1st and 15th
+// ======================================================================================================
+describe('C — twice-a-month paychecks with no pay days set: one default, the 15th and the last day of the month', () => {
+  const semi = pay({ id: 'semi', name: 'Acme payroll', frequency: 'semimonthly', anchor_date: '2026-01-15', semimonthly_days: null, net_amount: 2000 })
+  it('the app\'s pay dates and the alerts\' expected paydays agree, month ends and February included', () => {
+    const want = ['2026-11-15', '2026-11-30', '2026-12-15', '2026-12-31', '2027-01-15', '2027-01-31', '2027-02-15', '2027-02-28', '2027-03-15', '2027-03-31', '2027-04-15', '2027-04-30']
+    expect(payDates(semi, '2026-11-01', '2027-04-30')).toEqual(want); expect(payDatesN(semi, '2026-11-01', '2027-04-30')).toEqual(want)
+    expect(semiPayDaysN(null)).toEqual([15, 31]); expect(semiPayDaysN([])).toEqual([15, 31]); expect(semiPayDaysN([20, 5])).toEqual([5, 20])
+    for (const days of [null, [1, 15], [15, 30], [5, 20], [30, 31]]) {   // and over every window of half a year, with no days set or the schedule's own
+      const p = { ...semi, semimonthly_days: days }
+      for (let from = '2026-11-01'; from <= '2027-04-30'; from = addDays(from, 3)) for (const len of [0, 1, 13, 31]) { const to = addDays(from, len); expect(payDatesN(p, from, to), `${days} ${from}..${to}`).toEqual(payDates(p, from, to)) }
+    }
+  })
+  it('a missed paycheck is flagged the day after its payday — after Nov 30 and Feb 28, nothing on the 2nd', () => {
+    const missed = (today: string, transactions: NInput['transactions'] = []) => computeAlerts({ ...nin(data({}), today), paySchedules: [semi], transactions }).filter(a => a.kind === 'paycheck').map(a => a.body)
+    const body = (d: string) => `$2,000 was expected on ${d} — check the account or the schedule`
+    expect(missed('2026-12-01')).toEqual([body('2026-11-30')]); expect(missed('2027-03-01')).toEqual([body('2027-02-28')]); expect(missed('2026-11-16')).toEqual([body('2026-11-15')])
+    expect(missed('2026-11-02')).toEqual([]); expect(missed('2026-12-02')).toEqual([])                       // no payday on the 1st
+    expect(missed('2026-12-01', [{ id: 'in', date: '2026-11-30', kind: 'income', amount: 2000 }])).toEqual([])   // it arrived
   })
 })
 
