@@ -1,12 +1,12 @@
 // Tax engine (0.7.0): income aggregation, federal / state / local / self-employment estimate, underpayment monitor, provisioning and filing projection.
 // Pure functions; every rate and threshold comes from taxTables.ts. This is a planning estimate, not a return.
 import type { Data, PaySchedule, Settings } from '../app/data/types'
-import { FEDERAL, STATES, LATEST_TAX_YEAR, TAX_YEARS, ohioYear, type FilingStatus, type FederalYear } from './taxTables'
+import { FEDERAL, STATES, LATEST_TAX_YEAR, TAX_YEARS, ohioYear, underpaymentRateOn, type FilingStatus, type FederalYear } from './taxTables'
 import { round2, sum } from './money'
 import { REC_PER_YEAR } from './recurring'
 import { holdingValue } from './portfolio'
 import { payDates } from './paySchedule'
-import { today, addDays } from './dates'
+import { today, addDays, diffDays } from './dates'
 
 export type TaxItemKind = 'w2' | '1099' | 'dividends' | 'interest' | 'capital_gains' | 'business' | 'rental' | 'retirement_income' | 'social_security' | 'other' | 'pretax_deduction' | 'itemized' | 'adjustment' | 'withholding' | 'estimated_payment' | 'credit'
 export const TAX_ITEM_LABEL: Record<TaxItemKind, string> = { w2: 'W-2 wages', '1099': '1099-NEC / contract income', dividends: 'Dividends', interest: 'Interest', capital_gains: 'Capital gains (long-term)', business: 'Business income (Schedule C)', rental: 'Rental income (net)', retirement_income: 'Retirement withdrawals / pension', social_security: 'Social Security benefits', other: 'Other income', pretax_deduction: 'Pre-tax deductions (401k, HSA, health premiums)', itemized: 'Itemized deductions', adjustment: 'Adjustments (IRA, student loan interest)', withholding: 'Tax withheld (federal)', estimated_payment: 'Estimated payment made (federal)', credit: 'Tax credit (federal)' }
@@ -82,7 +82,9 @@ export interface TaxEstimate {
   totalTax: number; effectiveAll: number | null
   paid: { withheld: number; estimates: number; projectedWithholding: number; extraWithholding: number; plannedEstimates: number; total: number }
   balance: number; refund: number; due: number
-  safeHarbor: { required: number; basis: '90% of this year' | '100% of last year' | '110% of last year'; met: boolean; shortfall: number; penaltyEstimate: number; quarterlyNeeded: number; estimatesLeft: number }
+  /** `met` = no underpayment penalty expected, and `metBy` why: the safe harbor is reached, or this year's tax minus withholding (`owedAfterWithholding`)
+   *  is under $1,000. `penaltyEstimate` is underpaymentPenalty() on the shortfall; `penaltyRates` the quarterly rates it used. */
+  safeHarbor: { required: number; basis: '90% of this year' | '100% of last year' | '110% of last year'; met: boolean; metBy: 'safe harbor' | 'under $1,000' | null; owedAfterWithholding: number; shortfall: number; penaltyEstimate: number; penaltyRates: number[]; quarterlyNeeded: number; estimatesLeft: number }
   paychecksLeft: number
   seSetAside: number
 }
@@ -98,18 +100,22 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const w2 = by('w2'), se = round2(by('1099') + by('business')), dividends = by('dividends'), interest = by('interest'), ltcg = by('capital_gains'), rental = by('rental'), retirement = by('retirement_income'), socialSecurity = by('social_security'), other = by('other')
   const pretax = by('pretax_deduction'), adjustments = by('adjustment'), itemized = by('itemized'), credits = by('credit')
   // self-employment tax (Schedule SE): 92.35% of net SE income; 12.4% SS up to the wage base (less W-2 wages already taxed), 2.9% Medicare on all
-  const seBase = Math.max(0, se) * T.seTaxableShare; const ssRoom = Math.max(0, T.ssWageBase - w2); const seTax = round2(Math.min(seBase, ssRoom) * 0.124 + seBase * T.medicareRate); const seDeduction = round2(seTax / 2)
+  const seBase = Math.max(0, se) * T.seTaxableShare; const ssRoom = Math.max(0, T.ssWageBase - w2); const seTax = round2(Math.min(seBase, ssRoom) * T.seSocialSecurityRate + seBase * T.medicareRate); const seDeduction = round2(seTax / 2)
   // provisional income for Social Security taxability (simplified: 85% taxable above the upper threshold, 50% between, none below)
   const provisional = w2 + se + dividends + interest + ltcg + rental + retirement + other + 0.5 * socialSecurity; const ssLo = st === 'mfj' ? 32000 : 25000, ssHi = st === 'mfj' ? 44000 : 34000
   const taxableSS = round2(socialSecurity <= 0 ? 0 : provisional <= ssLo ? 0 : provisional <= ssHi ? Math.min(0.5 * socialSecurity, 0.5 * (provisional - ssLo)) : Math.min(0.85 * socialSecurity, 0.85 * (provisional - ssHi) + Math.min(0.5 * socialSecurity, 0.5 * (ssHi - ssLo))))
   const totalIncome = round2(w2 + se + dividends + interest + ltcg + rental + retirement + taxableSS + other)
   const agi = round2(Math.max(0, totalIncome - pretax - adjustments - seDeduction))
-  const standard = T.standardDeduction[st] + p.age65 * T.additionalDeduction65[st]; const deduction = Math.max(standard, itemized)
+  // the 65+ add-on: one for the filer and, on a joint return, one for the spouse (IRC §63(f)) — dependents never add one, so "People 65+ on return"
+  // counts at most 2 on a joint return and 1 on any other. Not asked, so not modelled: blindness (the same amount again per person), and the narrow
+  // married-filing-separately case where a spouse with no income who files no return also counts.
+  const over65 = Math.min(Math.max(0, Math.floor(+p.age65 || 0)), st === 'mfj' ? 2 : 1)
+  const standard = T.standardDeduction[st] + over65 * T.additionalDeduction65[st]; const deduction = Math.max(standard, itemized)
   // 2025–2028 senior deduction (Schedule 1-A Part V; sources on FederalYear.senior): for the filer and, on a joint return, the spouse who is 65+, each
   // $6,000 less 6% of MAGI above $75,000 ($150,000 joint), whether or not they itemize; none married filing separately. MAGI = AGI here (the foreign
-  // income exclusions that would be added back are not modelled). Dependents never count, so at most 2 people on a joint return and 1 otherwise.
+  // income exclusions that would be added back are not modelled). The same people as the 65+ add-on.
   const S = T.senior, seniorOver = S ? S.magiOver[st] : null
-  const seniors = S && seniorOver != null ? Math.min(Math.max(0, Math.floor(+p.age65 || 0)), st === 'mfj' ? 2 : 1) : 0
+  const seniors = S && seniorOver != null ? over65 : 0
   const seniorDeduction = S && seniorOver != null && seniors ? round2(seniors * Math.max(0, S.perPerson - S.phaseoutRate * Math.max(0, agi - seniorOver))) : 0
   const taxableIncome = Math.max(0, round2(agi - deduction - seniorDeduction)); const ltcgTaxable = Math.min(ltcg + dividends * 0.0, taxableIncome)   // dividends treated as ordinary unless entered as capital gains
   const ordinaryTaxable = Math.max(0, taxableIncome - ltcgTaxable)
@@ -119,7 +125,9 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const ltcgTax = round2(g15 * 0.15 + g20 * 0.20)
   const earned = w2 + Math.max(0, se) * T.seTaxableShare; const addMed = round2(Math.max(0, earned - T.additionalMedicareThreshold[st]) * T.additionalMedicareRate)
   const nii = dividends + interest + ltcg + rental; const niit = round2(Math.max(0, Math.min(nii, agi - T.niitThreshold[st])) * T.niitRate)
-  const ctc = Math.max(0, p.dependentsUnder17 * T.childTaxCredit - Math.max(0, Math.ceil(Math.max(0, agi - T.ctcPhaseoutStart[st]) / 1000)) * 50) + p.otherDependents * 500
+  // child tax credit plus the credit for other dependents, the two together reduced by $50 for each $1,000 (or part of $1,000) of AGI over the threshold
+  // (sources in taxTables.ts) — the other-dependent credit shrinks too once the reduction is larger than the child credit
+  const ctc = Math.max(0, p.dependentsUnder17 * T.childTaxCredit + p.otherDependents * T.otherDependentCredit - Math.ceil(Math.max(0, agi - T.ctcPhaseoutStart[st]) / 1000) * T.ctcPhaseoutPer1000)
   const fedCredits = round2(ctc + credits)
   const fedTotal = round2(Math.max(0, ordinary + ltcgTax - fedCredits) + seTax + addMed + niit)
   const marginal = marginalRate(ordinaryTaxable, T.brackets[st])
@@ -145,7 +153,11 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const highAgi = st === 'mfs' ? T.safeHarborHighAgi / 2 : T.safeHarborHighAgi
   const prior = p.priorYearTax > 0 ? p.priorYearTax * (p.priorYearAgi > highAgi ? T.safeHarborHighPct : 1) : Infinity
   const required = round2(Math.min(fedTotal * T.safeHarborPct, prior)); const basis: TaxEstimate['safeHarbor']['basis'] = prior < fedTotal * T.safeHarborPct ? (p.priorYearAgi > highAgi ? '110% of last year' : '100% of last year') : '90% of this year'
-  const shortfall = round2(Math.max(0, required - paidTotal)); const penaltyEstimate = round2(shortfall * T.underpaymentRate * 0.5)   // roughly half a year outstanding on average
+  // no penalty at all when this year's tax minus withholding (so far, still to come and extra) is under $1,000 — estimated payments do not count toward
+  // that test (Form 2210, "Exceptions to the Penalty"; source in taxTables.ts). Otherwise the penalty on the shortfall, quarter by quarter.
+  const owedAfterWithholding = round2(fedTotal - (withheld + projectedWithholding + extra)); const short = round2(Math.max(0, required - paidTotal))
+  const metBy: TaxEstimate['safeHarbor']['metBy'] = short <= 0 ? 'safe harbor' : owedAfterWithholding < T.penaltyMinimum ? 'under $1,000' : null
+  const shortfall = metBy ? 0 : short; const penalty = underpaymentPenalty(shortfall, p.year)
   const estimatesLeft = T.calendar.filter(c => c.kind === 'estimate' && c.date >= asOf).length; const quarterlyNeeded = round2(shortfall > 0 ? shortfall / Math.max(1, estimatesLeft) : 0)   // only deadlines still ahead
   const seSetAside = round2(Math.max(0, se) * (p.seSetAsidePct || 0) / 100)
   return {
@@ -157,8 +169,26 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
     totalTax, effectiveAll: totalIncome > 0 ? round2(totalTax / totalIncome) : null,
     paid: { withheld, estimates, projectedWithholding, extraWithholding: extra, plannedEstimates: p.plannedEstimates, total: paidTotal },
     balance, refund: Math.max(0, balance), due: Math.max(0, -balance),
-    safeHarbor: { required, basis, met: shortfall <= 0, shortfall, penaltyEstimate, quarterlyNeeded, estimatesLeft }, seSetAside, paychecksLeft: p.paychecksLeft,
+    safeHarbor: { required, basis, met: metBy != null, metBy, owedAfterWithholding, shortfall, penaltyEstimate: penalty.amount, penaltyRates: penalty.rates, quarterlyNeeded, estimatesLeft }, seSetAside, paychecksLeft: p.paychecksLeft,
   }
+}
+/** The underpayment penalty (IRC §6654, the way Form 2210's penalty worksheet figures it) on a safe-harbor shortfall for a tax year. The shortfall is spread
+ *  evenly over the four required installments — Form 2210 counts withholding as paid a quarter on each due date — and each part is charged from the day
+ *  after its due date (April 15, June 15, September 15, January 15) to April 15 of the next year, for the days in each of Form 2210's periods (April 16 –
+ *  June 30, July – September, October – December, January 1 – April 15) at that quarter's IRS rate ÷ the days in that calendar year. The January – March
+ *  rate also covers April 1–15, as on Form 2210 (IRC §6621(b)(2)(B)). Rates: UNDERPAYMENT_RATES in taxTables.ts; quarters not announced yet use the
+ *  latest published rate. Returns the amount and the rates used. */
+export function underpaymentPenalty(shortfall: number, year: number): { amount: number; rates: number[] } {
+  if (!(shortfall > 0)) return { amount: 0, rates: [] }
+  const next = year + 1, dues = [`${year}-04-15`, `${year}-06-15`, `${year}-09-15`, `${next}-01-15`], part = shortfall / dues.length
+  const periods = [[`${year}-04-16`, `${year}-06-30`], [`${year}-07-01`, `${year}-09-30`], [`${year}-10-01`, `${year}-12-31`], [`${next}-01-01`, `${next}-04-15`]].map(([from, to]) => ({ from, to, rate: underpaymentRateOn(from) }))
+  const daysInYear = (d: string) => { const y = +d.slice(0, 4); return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 366 : 365 }
+  let amount = 0; const used = new Set<number>()
+  for (const due of dues) for (const per of periods) {
+    const from = addDays(due, 1) > per.from ? addDays(due, 1) : per.from; if (from > per.to) continue
+    amount += part * per.rate * (diffDays(per.to, from) + 1) / daysInYear(per.from); used.add(per.rate)
+  }
+  return { amount: round2(amount), rates: [...used].sort((a, b) => a - b) }
 }
 /** Which withholding change (per paycheck) would land the federal balance at zero. */
 export function withholdingToBreakEven(d: Data, s: Settings, p: Partial<TaxProfile>, asOf = today()): number | null { const e = estimateTax(d, s, { ...p, extraWithholdingPerCheck: 0 }, asOf); if (!e.paychecksLeft) return null; return round2(-e.balance / e.paychecksLeft) }
