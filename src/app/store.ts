@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isNative } from './native'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Repo } from './data/repo'
 import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type Role, type RowOf, type Settings } from './data/types'
@@ -15,6 +16,7 @@ export const splitDups = (d: Data): Data => { const all = [...d.transactions, ..
 
 import { setErrorSink } from '../lib/errors'
 import { saveOffline, loadOffline, clearOffline, makeSnapshot, isNetworkError } from '../lib/offlineCache'
+let signingOut = false   // set while signOut runs: a refresh finishing then must not write the offline copy back
 export type Mode = 'db' | 'demo' | null
 export interface Toast { id: number; text: string; err?: boolean; action?: { label: string; run: () => void } }
 /** One reversible step (0.19.0): what it was, and how to put it back. */
@@ -24,10 +26,11 @@ interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
   repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean; modules: string[] | null
   households: Array<{ id: string; name: string; role: Role }>
-  latest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean; recovering: boolean
+  latest: string | null; nativeMin: string | null; nativeLatest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean; recovering: boolean
   /** 0.25.0: set while showing the read-only offline copy (or once the connection drops): when that copy was saved */
   offlineAt: string | null
   requestDeletion: (confirm: string) => Promise<string>; cancelDeletion: () => Promise<void>
+  accountDeletionPreview: () => Promise<AccountDeletionPlan>; deleteAccount: (password: string) => Promise<{ households_deleted: number }>
   settings: () => Settings
   canEdit: () => boolean; isOwner: () => boolean; canView: (path: string) => boolean; mustChangePassword: () => boolean
   boot: () => Promise<void>
@@ -69,7 +72,7 @@ let deduping = false
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, nativeMin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   // a household scheduled for deletion is read-only for everyone (0.25.0); so is an offline copy
   canEdit: () => { const s = get(); return (s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly)) && !s.household?.deletion_scheduled_for && !s.offlineAt },
@@ -83,7 +86,7 @@ export const useStore = create<State>((set, get) => ({
       if (localStorage.getItem(LS('mode')) === 'demo') { await get().enterDemo(); return }
       if (!hasSupabase()) { set({ booting: false }); return }
       const { data: { session } } = await sb().auth.getSession()
-      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } })
+      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
       set({ session, user: session?.user || null })
       // offline with an expired token: the session cannot be refreshed, but the copy this device kept can still be shown read-only
       if (!session && typeof navigator !== 'undefined' && navigator.onLine === false) { const u = cachedUser(); if (u && await openOffline(u)) { set({ user: u }); return } }
@@ -104,7 +107,8 @@ export const useStore = create<State>((set, get) => ({
   async verifyRecoveryCode(code) { const { error } = await sb().auth.mfa.recoveryCodes.verify({ code: code.trim() }); if (error) throw new Error(authMessage(error)); set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signInWithPasskey() { const { data, error } = await sb().auth.signInWithPasskey(); if (error) throw new Error(authMessage(error)); const user = data?.user || (await sb().auth.getUser()).data.user; if (!user) throw new Error('The passkey was accepted but no session came back — try again'); set({ mfaPending: false }); await loadHouseholds(user) },
   async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
-  async signOut() { setErrorSink(null); await clearOffline(); try { await sb().auth.signOut() } catch { /* offline: the local session is cleared below anyway */ } unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }) },
+  // stop live updates first, so a refresh already on its way cannot write the offline copy back after it is cleared (0.25.1)
+  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); try { await sb().auth.signOut() } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }); await clearOffline() } finally { signingOut = false } },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -119,14 +123,18 @@ export const useStore = create<State>((set, get) => ({
     setErrorSink(async r => { const uid = get().user?.id; if (!uid) return; const { error } = await sb().from('app_errors').insert({ household_id: id, user_id: uid, source: r.source, version: r.version, message: r.message, stack: r.stack || null, url: r.url, user_agent: r.user_agent, context: r.context || {} }); if (error && !/app_errors/.test(error.message)) throw error })
     void get().checkLatest(); startVersionWatch(get)
   },
+  // deleting your own account (0.25.1, required by both app stores) — the delete-account function does the work, then this device forgets everything
+  async accountDeletionPreview() { return fnCall<AccountDeletionPlan>('delete-account', { action: 'preview' }) },
+  async deleteAccount(password) { const r = await fnCall<{ households_deleted: number }>('delete-account', { action: 'delete', password }); try { localStorage.removeItem(LS('household')) } catch { /* */ } await get().signOut(); return r },
   async requestDeletion(confirm) { const at = await need(get).requestDeletion(confirm); await get().refresh(); return at },
   async cancelDeletion() { await need(get).cancelDeletion(); await get().refresh() },
-  async checkLatest() { try { const { data } = await sb().from('app_meta').select('value').eq('key', 'latest_version').maybeSingle(); if (data?.value) set({ latest: data.value }) } catch { /* optional */ } },
+  // the website's release (reload to get it) and, for the phone apps (0.25.1), the newest build in the stores and the oldest still allowed
+  async checkLatest() { try { const { data } = await sb().from('app_meta').select('key, value').in('key', ['latest_version', 'latest_native_version', 'min_native_version']); const v = (k: string) => (data || []).find(r => r.key === k)?.value || null; set({ latest: v('latest_version'), nativeLatest: v('latest_native_version'), nativeMin: v('min_native_version') }) } catch { /* optional */ } },
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
     try { const r = await repo.loadAll(); set({ household: r.household, data: splitDups(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {})
-      const uid = get().user?.id; if (repo.mode === 'db' && uid) void saveOffline(makeSnapshot(uid, r, APP_VERSION)) }
+      const uid = get().user?.id; if (repo.mode === 'db' && uid && !signingOut && get().repo === repo) void saveOffline(makeSnapshot(uid, r, APP_VERSION)) }
     catch (e) { if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
       set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
@@ -243,4 +251,14 @@ function startVersionWatch(get: () => { checkLatest: () => Promise<void>; mode: 
   versionTimer = window.setInterval(() => { if (get().mode === 'db' && document.visibilityState === 'visible') void get().checkLatest() }, 10 * 60 * 1000)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && get().mode === 'db') void get().checkLatest() })
 }
-export const outdated = () => { const l = useStore.getState().latest; return !!l && cmpVer(APP_VERSION, l) < 0 }
+export interface AccountDeletionPlan { solo: Array<{ id: string; name: string }>; shared: Array<{ id: string; name: string; role: string }>; blocked: Array<{ id: string; name: string }> }
+/** Call an edge function and surface its own error message (a non-2xx reply carries { error } in the body). */
+async function fnCall<T>(name: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await sb().functions.invoke(name, { body })
+  if (error) { let msg = error.message; try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === 'function') { const j = await ctx.json(); if (j?.error || j?.message) msg = j.error || j.message } } catch { /* keep message */ } throw new Error(msg) }
+  return data as T
+}
+export const outdated = () => { const l = useStore.getState().latest; return !isNative() && !!l && cmpVer(APP_VERSION, l) < 0 }
+/** Phone apps: a newer build is in the store (a gentle note) / this build is too old to keep using (a full-screen notice). */
+export const nativeUpdate = () => { const l = useStore.getState().nativeLatest; return isNative() && !!l && cmpVer(APP_VERSION, l) < 0 }
+export const updateRequired = () => { const m = useStore.getState().nativeMin; return isNative() && !!m && cmpVer(APP_VERSION, m) < 0 }

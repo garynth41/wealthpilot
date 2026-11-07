@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { saveFile, printAvailable } from '../app/native'
 import { useData } from '../app/hooks'
 import { Card, KPI, Btn, Seg, Note, Field } from '../components/ui'
 import { Chart, C, PALETTE, cssVar } from '../components/Chart'
@@ -35,7 +36,7 @@ export function ReportsPage() {
   const excel = async () => { const XLSX = await import('xlsx'); const wb = XLSX.utils.book_new(); const rep = repX()
     const sum = XLSX.utils.aoa_to_sheet([[rep.title], [`Period ${rep.from} to ${rep.to}`, `Previous ${rep.prevFrom} to ${rep.prevTo}`], [], ['Section', 'Measure', 'Value', 'Previous', 'Change'], ...rep.sections.flatMap(sec => sec.kpis.map(k => [sec.title, k.label, k.value, k.prev ?? '', k.prev != null ? k.value - k.prev : '']))]); sum['!cols'] = [{ wch: 22 }, { wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 12 }]; XLSX.utils.book_append_sheet(wb, sum, 'Summary')
     for (const sec of rep.sections) if (sec.table) { const ws = XLSX.utils.aoa_to_sheet([sec.table.headers, ...sec.table.rows, [], ...sec.notes.map(n => [n])]); ws['!cols'] = sec.table.headers.map(h => ({ wch: Math.max(12, h.length + 4) })); XLSX.utils.book_append_sheet(wb, ws, sec.title.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)) }
-    XLSX.writeFile(wb, file + '.xlsx') }
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer; await saveFile(file + '.xlsx', buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') }
   const pdf = () => { const t = document.title; document.title = file; window.print(); setTimeout(() => { document.title = t }, 500) }
   const sec = (id: SectionId) => rep.sections.find(s => s.id === id)
   const spend = sec('spending'), cf = sec('cashflow'), inv = sec('investments'), inc = sec('income'), bud = sec('budget'), tr = sec('trend'), acc = sec('accounts'), dbt = sec('debts'), gl = sec('goals'), mer = sec('merchants')
@@ -64,7 +65,7 @@ export function ReportsPage() {
   const statusCls = (v: string) => /over|behind/i.test(v) ? 'crit' : /slightly|—/i.test(v) ? 'warn' : /within|on track|reached/i.test(v) ? 'good' : ''
   const curY = today().slice(0, 4)
   return <>
-    <Card span={12} className="noprint" title="Build a report" hint={`${on.length} of ${ALL_SECTIONS.length} sections`} right={<span className="btnrow"><Btn primary sm onClick={pdf} title="Opens the print dialog — choose “Save as PDF”">PDF</Btn><Btn sm onClick={excel} title="One worksheet per section">Excel</Btn><Btn sm onClick={csv}>CSV</Btn></span>}>
+    <Card span={12} className="noprint" title="Build a report" hint={`${on.length} of ${ALL_SECTIONS.length} sections`} right={<span className="btnrow">{printAvailable() && <Btn primary sm onClick={pdf} title="Opens the print dialog — choose “Save as PDF”">PDF</Btn>}<Btn sm primary={!printAvailable()} onClick={excel} title="One worksheet per section">Excel</Btn><Btn sm onClick={csv}>CSV</Btn></span>}>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <Field label="Period"><Seg value={kind} options={[['month', 'Monthly'], ['quarter', 'Quarterly'], ['year', 'Annual / YTD'], ['custom', 'Custom range']]} onChange={setK} /></Field>
         {kind !== 'custom' ? <Field label="Which"><select className="inp" value={anchor} onChange={e => setAnchor(e.target.value)} style={{ minWidth: 180 }}>{options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>

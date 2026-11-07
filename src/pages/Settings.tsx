@@ -1,4 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
+import { DeleteAccountCard } from './DeleteAccount'
+import { remindersOn, setReminders, rescheduleReminders } from '../app/nativeReminders'
+import { isNative, passkeysAvailable, webPushAvailable, saveFile } from '../app/native'
 import { DeleteHouseholdCard } from './DeleteHousehold'
 import { offlineCopyOn, setOfflineCopy } from '../lib/offlineCache'
 import { passwordProblems } from '../lib/access'
@@ -30,8 +33,8 @@ export function SettingsPage() {
   const [name, setName] = useState(household?.name || ''); const [s, setS] = useState({ ...settings }); const fileRef = useRef<HTMLInputElement>(null)
   const saveGeneral = () => guarded(async () => { if (name !== household?.name) await repo!.renameHousehold(name); await saveSettings({ periodType: s.periodType, periodAnchor: s.periodAnchor || null, semimonthlyDays: s.semimonthlyDays, reserveFloor: +s.reserveFloor || 0, runwayGreen: +s.runwayGreen || 6, runwayYellow: +s.runwayYellow || 3, dueSoonDays: +s.dueSoonDays || 7, budgetCritPct: +s.budgetCritPct || 10, savingsTargetPct: +s.savingsTargetPct || 20, includeRetirementInCash: !!s.includeRetirementInCash, payFrequencyDefault: s.payFrequencyDefault }); await refresh() }, 'Settings saved')
   const catCols: Col<Category>[] = [{ k: 'group', label: 'Group', type: 'select', opts: [...groups, 'Income', 'Housing', 'Transport', 'Food', 'Health', 'Bills', 'Debt', 'Personal', 'Savings', 'Other'].filter((v, i, a) => a.indexOf(v) === i), w: 110 }, { k: 'name', label: 'Category', type: 'text', w: 160 }, { k: 'kind', label: 'Kind', type: 'select', opts: ['expense', 'income', 'transfer'], w: 100 }, { k: 'priority', label: 'Priority', type: 'select', opts: ['Essential', 'Important', 'Discretionary'], w: 120 }, { k: 'cost_type', label: 'Cost type', type: 'select', opts: ['Fixed', 'Variable', 'Irregular'], w: 100 }, { k: 'default_budget', label: 'Default budget', type: 'money', cls: 'num' }, { k: 'budget_cadence', label: 'Cadence', type: 'select', opts: ['period', 'monthly', 'yearly'], labels: { period: 'per period', monthly: 'per month', yearly: 'per year (sinking fund)' }, w: 150 }, { k: 'rollover', label: 'Rollover', type: 'bool' }, { k: 'sort_order', label: 'Order', type: 'int', w: 60 }, { k: 'archived', label: 'Archived', type: 'bool' }, { k: 'notes', label: 'Notes', type: 'text', w: 160 }, { k: 'ref', label: 'ID', type: 'ro', cls: 'id' }]
-  const exportJson = () => guarded(async () => { const j = await repo!.exportJson(); const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `wealthpilot-backup-${today()}.json`; a.click() }, 'Backup downloaded')
-  const exportCsv = () => { const rows = data.transactions.map(t => [t.date, t.kind, t.amount, t.payee || '', data.categories.find(c => c.id === t.category_id)?.name || '', data.accounts.find(a => a.id === t.account_id)?.name || '', data.accounts.find(a => a.id === t.to_account_id)?.name || '', t.status, t.source, (t.memo || '').replace(/"/g, '""')]); const csv = ['date,kind,amount,payee,category,account,to_account,status,source,memo', ...rows.map(r => r.map(v => `"${String(v)}"`).join(','))].join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = `wealthpilot-transactions-${today()}.csv`; a.click() }
+  const exportJson = () => guarded(async () => { const j = await repo!.exportJson(); await saveFile(`wealthpilot-backup-${today()}.json`, JSON.stringify(j, null, 2), 'application/json') }, isNative() ? 'Backup ready' : 'Backup downloaded')
+  const exportCsv = () => { const rows = data.transactions.map(t => [t.date, t.kind, t.amount, t.payee || '', data.categories.find(c => c.id === t.category_id)?.name || '', data.accounts.find(a => a.id === t.account_id)?.name || '', data.accounts.find(a => a.id === t.to_account_id)?.name || '', t.status, t.source, (t.memo || '').replace(/"/g, '""')]); const csv = ['date,kind,amount,payee,category,account,to_account,status,source,memo', ...rows.map(r => r.map(v => `"${String(v)}"`).join(','))].join('\n'); void saveFile(`wealthpilot-transactions-${today()}.csv`, csv, 'text/csv') }
   const importJson = (modeI: 'merge' | 'replace') => { const f = fileRef.current?.files?.[0]; if (!f) return useStore.getState().toast('Choose a backup file first', true); const r = new FileReader(); r.onload = () => guarded(async () => { const j = JSON.parse(String(r.result)); if (modeI === 'replace' && !(await confirm('Replace EVERYTHING in this household with the backup? This cannot be undone.', 'Replace'))) return; const n = await repo!.importJson(j, modeI); await refresh(); useStore.getState().toast(`${n} rows imported`) }); r.readAsText(f) }
   const tabs: Array<[typeof tab, string]> = [['general', 'General'], ['categories', 'Categories'], ['rules', 'Payee rules'], ['members', 'Members'], ['notifications', 'Notifications'], ['security', 'Security'], ['data', 'Backup & data'], ['activity', 'Activity log']]
   return <>
@@ -45,7 +48,7 @@ export function SettingsPage() {
         <Note>Changing the cadence does not touch existing periods; the Budget page simply starts offering the new slices.</Note></Card>
       <Card span={6} title="Planning thresholds"><div className="grid2"><Field label="Reserve floor" hint="cash you will not go below"><input className="inp" inputMode="decimal" value={s.reserveFloor} onChange={e => setS({ ...s, reserveFloor: parseNum(e.target.value) || 0 })} /></Field><Field label="Savings-rate target %"><input className="inp" inputMode="numeric" value={s.savingsTargetPct} onChange={e => setS({ ...s, savingsTargetPct: +e.target.value || 0 })} /></Field><Field label="Runway green at (months)"><input className="inp" inputMode="numeric" value={s.runwayGreen} onChange={e => setS({ ...s, runwayGreen: +e.target.value || 0 })} /></Field><Field label="Runway yellow at (months)"><input className="inp" inputMode="numeric" value={s.runwayYellow} onChange={e => setS({ ...s, runwayYellow: +e.target.value || 0 })} /></Field><Field label="Over budget is red above %"><input className="inp" inputMode="numeric" value={s.budgetCritPct} onChange={e => setS({ ...s, budgetCritPct: +e.target.value || 0 })} /></Field><Field label="Bill reminder window (days)"><input className="inp" inputMode="numeric" value={s.dueSoonDays} onChange={e => setS({ ...s, dueSoonDays: +e.target.value || 0 })} /></Field></div>
         <label className="gm-ign" style={{ fontSize: 13 }}><input type="checkbox" checked={!!s.includeRetirementInCash} onChange={e => setS({ ...s, includeRetirementInCash: e.target.checked })} /> count retirement accounts as cash (last resort)</label></Card>
-      <Card span={12} title="Email capture (Gmail / Outlook)" hint="where the Google and Microsoft client IDs go"><div className="btnrow"><Pill cls={settings.gmail?.clientId ? 'good' : 'idle'}>Gmail {settings.gmail?.clientId ? 'client ID saved' : 'not set up'}</Pill><Pill cls={settings.outlook?.clientId ? 'good' : 'idle'}>Outlook {settings.outlook?.clientId ? 'client ID saved' : 'not set up'}</Pill><Btn primary onClick={() => open(<MailSetup onDone={close} />, { wide: true })} disabled={!canEdit}>Open email capture settings</Btn></div><Note>Paste the Google OAuth client ID and/or Microsoft application ID here, plus how far back to read and whether to file automatically. The same box opens from <b>Email Money Capture → Set up Gmail</b>.</Note></Card>
+      {isNative() ? <Card span={12} title="Email capture (Gmail / Outlook)" hint="where the Google and Microsoft client IDs go"><Note>Set up email capture on the WealthPilot website — Google and Microsoft do not allow their sign-in inside apps. Items it files show up in this app.</Note></Card> : <Card span={12} title="Email capture (Gmail / Outlook)" hint="where the Google and Microsoft client IDs go"><div className="btnrow"><Pill cls={settings.gmail?.clientId ? 'good' : 'idle'}>Gmail {settings.gmail?.clientId ? 'client ID saved' : 'not set up'}</Pill><Pill cls={settings.outlook?.clientId ? 'good' : 'idle'}>Outlook {settings.outlook?.clientId ? 'client ID saved' : 'not set up'}</Pill><Btn primary onClick={() => open(<MailSetup onDone={close} />, { wide: true })} disabled={!canEdit}>Open email capture settings</Btn></div><Note>Paste the Google OAuth client ID and/or Microsoft application ID here, plus how far back to read and whether to file automatically. The same box opens from <b>Email Money Capture → Set up Gmail</b>.</Note></Card>}
       <DeviceDisplay />
       <Card span={6} title="Save"><Btn primary onClick={saveGeneral} disabled={!canEdit}>Save settings</Btn><Note>Settings are shared by everyone in the household.</Note></Card>
       <DeleteHouseholdCard />
@@ -156,6 +159,7 @@ function SecurityTab() {
       <Note>Every insert, update and delete on household data is written to the activity log by a database trigger — including balance edits, goal changes and import batches — and cannot be edited from the app.</Note>
     </Card>
     <ErrorsPanel />
+    <DeleteAccountCard />
   </div>
 }
 function KPIs({ items }: { items: Array<[string, string, string]> }) { return <>{items.map(([l, v, s]) => <div key={l} className="kpi info"><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>)}</> }
@@ -184,11 +188,11 @@ function MembersTab() {
   const draft = inviteEmailDraft({ appName: APP_NAME, household: household?.name || 'Household', inviter, email: email.trim().toLowerCase(), displayName: dname, access, siteUrl, note })
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && (pick.level !== 'limited' || pick.modules.length > 0) && email.trim().toLowerCase() !== (user?.email || '').toLowerCase()
   const showResult = (r: InviteResult, to: string, dn: string, a: typeof access, n: string) => {
-    const d = inviteEmailDraft({ appName: APP_NAME, household: household?.name || 'Household', inviter, email: to, displayName: dn, access: a, siteUrl, note: n, tempPassword: r.temp_password, existing: r.existing })
+    const d = inviteEmailDraft({ appName: APP_NAME, household: household?.name || 'Household', inviter, email: to, displayName: dn, access: a, siteUrl, note: n, })
     const copy = (t: string) => navigator.clipboard?.writeText(t).then(() => useStore.getState().toast('Copied'))
-    open(<><MHead title={r.existing ? 'Added to the household' : 'Account created — send the invitation'} /><MBody>
+    open(<><MHead title="Invitation ready" /><MBody>
       {r.sent ? <div className="msg good">The invitation was emailed to {to}.</div> : r.send_error ? <div className="msg warn">Automatic email failed ({r.send_error}) — send it yourself below.</div> : <div className="msg info">{r.can_send ? 'Send the invitation below.' : 'Automatic sending is not set up, so send this email yourself — copy it or open it in your email app.'}</div>}
-      {r.temp_password && <div className="field"><label>Temporary password — shown once, never stored</label><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}><code style={{ fontSize: 18, padding: '6px 10px', background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 8 }}>{r.temp_password}</code><Btn sm onClick={() => copy(r.temp_password!)}>Copy</Btn></div></div>}
+      <Note>{to} joins the household the next time they sign in with that address — or as soon as they sign up with it and confirm it. Until then they are listed under Waiting to sign up.</Note>
       <div className="field"><label>Subject</label><input className="inp" readOnly value={d.subject} /></div>
       <div className="field"><label>Message</label><textarea className="inp" readOnly rows={14} value={d.body} style={{ fontFamily: 'var(--mono)', fontSize: 12.5 }} /></div>
     </MBody><MFoot><Btn onClick={() => copy(`Subject: ${d.subject}\n\n${d.body}`)}>Copy email</Btn><a className="btn primary" href={mailtoLink(to, d.subject, d.body)}>Open in email app</a><Btn onClick={close}>Done</Btn></MFoot></>)
@@ -196,7 +200,7 @@ function MembersTab() {
   const invite = async () => {
     if (!valid || !repo) return; setBusy(true)
     const to = email.trim().toLowerCase(), dn = dname.trim(), a = access, n = note
-    try { const r = await repo.inviteWithPassword({ email: to, display_name: dn || null, role: a.role, read_only: a.read_only, modules: a.modules, subject: draft.subject, body: draft.body }); setEmail(''); setDname(''); setNote(''); await refresh(); showResult(r, to, dn, a, n) }
+    try { const r = await repo.inviteWithPassword({ email: to, display_name: dn || null, role: a.role, read_only: a.read_only, modules: a.modules, note: n, send: true }); setEmail(''); setDname(''); setNote(''); await refresh(); showResult(r, to, dn, a, n) }
     catch (e) { useStore.getState().toast((e as Error).message, true) } finally { setBusy(false) }
   }
   const editAccess = (m: Member) => { let p = pickFrom(m); const Body = () => { const [v, setV] = useState(p); return <><MHead title={`Access for ${m.email}`} /><MBody><AccessPicker v={v} onChange={x => { p = x; setV(x) }} allowOwner /></MBody><MFoot><Btn onClick={close}>Cancel</Btn><Btn primary onClick={() => { const a = accessToMember(p.level, p.modules, p.editWithin); if (p.level === 'limited' && !p.modules.length) { useStore.getState().toast('Pick at least one section', true); return } close(); guarded(() => repo!.setMemberAccess(m.user_id, a.role, a.read_only, a.modules).then(refresh), 'Access updated') }}>Save</Btn></MFoot></> }; open(<Body />) }
@@ -206,13 +210,13 @@ function MembersTab() {
       return <tr key={m.user_id}><td>{m.display_name ? <><b>{m.display_name}</b><br /></> : null}{m.email}{me ? ' (you)' : ''}</td><td><Pill cls={lvCls[lv]}>{ACCESS_LABEL[lv]}</Pill>{lv === 'limited' && <div className="note" style={{ margin: '3px 0 0' }}>{describeAccess({ role: m.role, read_only: m.read_only, modules: m.modules ?? null }).replace(/^Limited — /, '')}</div>}</td><td>{m.last_seen_at ? fmtDY(m.last_seen_at.slice(0, 10)) : '—'}{m.last_version ? ` · v${m.last_version}` : ''}</td>
         <td style={{ whiteSpace: 'nowrap' }}>{isOwner && !me && <><Btn sm onClick={() => editAccess(m)}>Change</Btn> <button className="del" title="Remove from household" onClick={async () => { if (await confirm(`Remove ${m.email} from this household? Their sign-in stays; they just lose access here.`, 'Remove')) guarded(() => repo!.removeMember(m.user_id).then(refresh), 'Removed') }}>✕</button></>}</td></tr> })}</tbody></table></div>
       {data.invites.filter(i => !i.accepted_at).length > 0 && <Note>Waiting to sign up: {data.invites.filter(i => !i.accepted_at).map(i => `${i.email} (${ACCESS_LABEL[accessLevel({ role: i.role, read_only: !!i.read_only, modules: i.modules ?? null })]})`).join(', ')}</Note>}</Card>
-    <Card span={5} title="Invite someone" hint="creates their sign-in with a temporary password and drafts the invitation email for you">{isOwner ? <>
+    <Card span={5} title="Invite someone" hint="records the invitation and drafts the email — they join by signing in with that address">{isOwner ? <>
       <Field label="Email"><input className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" /></Field>
       <Field label="Name (optional)"><input className="inp" value={dname} onChange={e => setDname(e.target.value)} placeholder="how the email greets them" /></Field>
       <AccessPicker v={pick} onChange={setPick} />
       <Field label="Personal note (optional)"><textarea className="inp" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="added to the end of the email" /></Field>
-      <Btn primary onClick={invite} disabled={!valid || busy}>{busy ? 'Creating…' : 'Create sign-in & draft email'}</Btn>
-      <Note>New people get a one-time temporary password and must choose their own the first time they sign in. Someone who already has a {APP_NAME} account is simply added — the email tells them to use their existing password.{mode === 'demo' ? ' In the demo no real account is created.' : ''}</Note>
+      <Btn primary onClick={invite} disabled={!valid || busy}>{busy ? 'Inviting…' : 'Invite & draft email'}</Btn>
+      <Note>They join the next time they sign in to {APP_NAME} with that address. Someone new signs up with it first — signing up asks them to confirm the address, which is what proves it is theirs.{mode === 'demo' ? ' In the demo nobody is emailed.' : ''}</Note>
       <details style={{ marginTop: 8 }}><summary className="note" style={{ cursor: 'pointer', marginTop: 0 }}>Preview the email</summary><pre className="note" style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: 12 }}>{`Subject: ${draft.subject}\n\n${draft.body}`}</pre></details>
     </> : <Note>Only owners can invite people or change access.</Note>}</Card>
   </div>
@@ -236,13 +240,15 @@ function ErrorsPanel() {
 }
 /** Nightly backups (migration 0009): list the last 30 days in the private backups bucket, download one, or back up now. */
 function NightlyBackups() {
-  const { mode, household, guarded, canEdit } = useData(); type F = { name: string; updated_at?: string; metadata?: { size?: number } }
+  const { mode, household, guarded, canEdit } = useData(); const limited = useStore(st => st.role !== 'owner' && !!st.modules); type F = { name: string; updated_at?: string; metadata?: { size?: number } }
   const [files, setFiles] = useState<F[] | null>(null); const [err, setErr] = useState('')
   const load = async () => { if (mode !== 'db' || !household) return; const { data, error } = await sb().storage.from('backups').list(household.id, { limit: 60, sortBy: { column: 'name', order: 'desc' } }); if (error) { setErr(/not found|bucket/i.test(error.message) ? 'Nightly backups need migration 0009.' : error.message); return } setFiles((data || []).filter(f => f.name.endsWith('.json')) as F[]) }
-  useEffect(() => { void load() }, [mode, household?.id])   // eslint-disable-line react-hooks/exhaustive-deps
-  const download = (name: string) => guarded(async () => { const { data, error } = await sb().storage.from('backups').download(`${household!.id}/${name}`); if (error) throw error; const a = document.createElement('a'); a.href = URL.createObjectURL(data); a.download = `wealthpilot-backup-${name}`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000) })
+  useEffect(() => { if (!limited) void load() }, [mode, household?.id, limited])   // eslint-disable-line react-hooks/exhaustive-deps
+  const download = (name: string) => guarded(async () => { const { data, error } = await sb().storage.from('backups').download(`${household!.id}/${name}`); if (error) throw error; await saveFile(`wealthpilot-backup-${name}`, data, 'application/json') })
   const now = () => guarded(async () => { const { data, error } = await sb().functions.invoke('backup-household', { body: { action: 'backup', household_id: household!.id } }); if (error) throw error; if (!data?.ok) throw new Error(data?.message || 'Backup failed'); await load() }, 'Backed up')
   if (mode !== 'db') return null
+  // a backup holds every section, so members limited to some sections do not get one (the database enforces it too — 0.25.1)
+  if (limited) return <Card span={6} title="Nightly backups" hint="automatic, 03:25 UTC, kept 30 days, private to this household"><Note>Nightly backups hold the whole household, so they are available to owners and members with full access.</Note></Card>
   return <Card span={6} title="Nightly backups" hint="automatic, 03:25 UTC, kept 30 days, private to this household" right={canEdit ? <Btn sm primary onClick={now}>Back up now</Btn> : undefined}>
     {err && <div className="msg warn">{err}</div>}
     {files && files.length === 0 && <div className="empty">No backups yet — the first one is taken tonight.</div>}
@@ -256,12 +262,12 @@ function NightlyBackups() {
 const b64ToBytes = (b64: string) => { const pad = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, c => c.charCodeAt(0)) }
 /** Settings → Notifications (0.19.0): push on this device, email, which rules fire, the weekly digest, a test button, what was sent. */
 function NotificationsTab() {
-  const { data, settings, mode, household, user, guarded, saveSettings, canEdit } = useData(); const toast = useStore.getState().toast
+  const { data, settings, mode, household, user, guarded, saveSettings, isOwner } = useData(); const canEdit = isOwner /* 0.25.1: the household alert settings are the owners' (the database enforces it) */; const toast = useStore.getState().toast
   const prefs: NotifyPrefs = { push: true, email: false, digest: true, ...NOTIFY_DEFAULTS, ...(settings.notify || {}) }
   const set = (patch: Partial<NotifyPrefs>) => guarded(() => saveSettings({ notify: { ...prefs, ...patch } }), 'Saved')
   const [sub, setSub] = useState<'checking' | 'on' | 'off' | 'unsupported' | 'denied'>('checking'); const [recent, setRecent] = useState<Array<{ id: string; at: string; kind: string; title: string; channel: string; status: string; detail: string | null }> | null>(null)
   const [preview, setPreview] = useState<Alert[] | null>(null)
-  const supported = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+  const supported = webPushAvailable()
   const reg = async () => (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready)
   const check = async () => { if (!supported) return setSub('unsupported'); if (Notification.permission === 'denied') return setSub('denied'); try { const r = await reg(); const s = await r.pushManager.getSubscription(); setSub(s ? 'on' : 'off') } catch { setSub('off') } }
   const loadRecent = async () => { if (mode !== 'db' || !household) return; const { data: rows } = await sb().from('notifications').select('id, at, kind, title, channel, status, detail').eq('household_id', household.id).order('at', { ascending: false }).limit(25); setRecent((rows || []) as typeof recent) }
@@ -278,13 +284,13 @@ function NotificationsTab() {
   const runPreview = () => guarded(async () => { const t = today(); const alerts = computeAlerts({ today: t, now: new Date().toISOString(), accounts: data.accounts, recurring: data.recurring, occurrences: data.occurrences, transactions: data.transactions, paySchedules: data.paySchedules, sync: null, reserveFloor: +settings.reserveFloor || 0, includeRetirementInCash: !!settings.includeRetirementInCash, prefs }); setPreview(alerts) })
   const Toggle = ({ k, label, hint }: { k: keyof NotifyPrefs; label: string; hint?: string }) => <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', cursor: 'pointer' }}><input type="checkbox" checked={!!prefs[k]} onChange={e => set({ [k]: e.target.checked } as Partial<NotifyPrefs>)} disabled={!canEdit} style={{ marginTop: 3 }} /><span><b style={{ fontWeight: 500 }}>{label}</b>{hint && <span className="note" style={{ display: 'block', margin: 0 }}>{hint}</span>}</span></label>
   return <div className="grid g12">
-    <Card span={6} title="Push notifications" hint="to this phone or computer, even when the app is closed" right={<Pill cls={sub === 'on' ? 'good' : sub === 'denied' ? 'crit' : 'idle'}>{sub === 'checking' ? '…' : sub === 'on' ? 'on here' : sub === 'denied' ? 'blocked' : sub === 'unsupported' ? 'not supported' : 'off here'}</Pill>}>
+    {isNative() ? <PhoneReminders /> : <Card span={6} title="Push notifications" hint="to this phone or computer, even when the app is closed" right={<Pill cls={sub === 'on' ? 'good' : sub === 'denied' ? 'crit' : 'idle'}>{sub === 'checking' ? '…' : sub === 'on' ? 'on here' : sub === 'denied' ? 'blocked' : sub === 'unsupported' ? 'not supported' : 'off here'}</Pill>}>
       {mode !== 'db' ? <Note>Push and email alerts work for a signed-in household; the offline demo only shows the rules below.</Note> : <>
         <div className="btnrow">{sub === 'on' ? <Btn onClick={disablePush}>Turn off on this device</Btn> : <Btn primary onClick={enablePush} disabled={sub === 'unsupported' || sub === 'denied'}>Enable on this device</Btn>}<Btn onClick={test} disabled={sub !== 'on' && !prefs.email}>Send a test</Btn></div>
         {sub === 'denied' && <div className="msg warn" style={{ marginTop: 8 }}>Notifications are blocked for this site in the browser settings — allow them there, then try again.</div>}
         {sub === 'unsupported' && <div className="msg warn" style={{ marginTop: 8 }}>On iPhone, install the app first (Share → Add to Home Screen) and open it from the home screen; push works from the installed app on iOS 16.4 and later.</div>}
         <Note>Alerts are checked every morning at 7:30 am Eastern (8:30 am during daylight saving time). Each device opts in separately; turn one off here or in the browser.</Note></>}
-    </Card>
+    </Card>}
     <Card span={6} title="Email" hint="the same alerts and the Monday digest by email">
       <Toggle k="email" label="Email me" hint={prefs.email_to || user?.email ? `to ${prefs.email_to || user?.email}` : 'set an address below'} />
       <Field label="Send to" hint="leave blank for the household owner's address"><input className="inp" type="email" defaultValue={prefs.email_to || ''} placeholder={user?.email || 'you@example.com'} onBlur={e => { const v = e.target.value.trim() || null; if (v !== (prefs.email_to || null)) set({ email_to: v }) }} disabled={!canEdit} /></Field>
@@ -314,6 +320,19 @@ function NotificationsTab() {
 }
 
 /** This device (0.23.0): the number and date format and privacy mode — stored in this browser, like the theme. */
+/** The phone apps (0.25.1): bill reminders scheduled on the phone itself (see src/app/nativeReminders.ts). */
+function PhoneReminders() {
+  const data = useStore(s => s.data); const [on, setOn] = useState(remindersOn()); const [n, setN] = useState<number | null>(null); const [msg, setMsg] = useState('')
+  useEffect(() => { if (on) void rescheduleReminders(data).then(setN) }, [on, data])
+  const toggle = async (v: boolean) => { const r = await setReminders(v, data); setOn(r === 'on'); setMsg(r === 'denied' ? 'Notifications are turned off for WealthPilot in this phone\'s Settings. Allow them there, then turn this on again.' : ''); setN(r === 'on' ? await rescheduleReminders(data) : null) }
+  return <Card span={6} title="Reminders on this phone" hint="bill reminders from the phone itself, even with no connection" right={<Pill cls={on ? 'good' : 'idle'}>{on ? 'on' : 'off'}</Pill>}>
+    <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0', cursor: 'pointer', minHeight: 44 }}><input type="checkbox" checked={on} onChange={e => void toggle(e.target.checked)} /><span><b style={{ fontWeight: 500 }}>Remind me about bills on this phone</b></span></label>
+    {msg && <div className="msg warn" role="alert" style={{ marginTop: 8 }}>{msg}</div>}
+    {on && n != null && <Note>{n ? `${n} reminder${n === 1 ? '' : 's'} scheduled for the next five weeks.` : 'Nothing due in the next five weeks needs a reminder.'}</Note>}
+    <Note>Each reminder arrives at 9 AM: as many days before each bill as its Remind (days) column on Bills says (3 unless you change it), and again on the due day. Bills already paid are skipped, and the list is redone whenever bills or payments change. Low cash, large charges and bank-sync problems still come by email when Email me is on.</Note>
+  </Card>
+}
+
 function DeviceDisplay() {
   const { settings, saveSettings, guarded, canEdit } = useData()
   const [loc, setLoc] = useState(localePreference()); const [priv, setPriv] = useState(privacyOn()); const [offline, setOffline] = useState(offlineCopyOn())
@@ -329,19 +348,19 @@ const ALERT_KINDS: Array<[string, string]> = [['bill_due', 'Bills due'], ['bill_
 /** Who gets what (0.21.0): per member, push to their devices, email to their own address, the Monday digest, and which alerts.
  *  Unset rows follow the household switches above; when nobody picks email for themselves, the household address gets it. */
 function MemberRouting({ prefs }: { prefs: NotifyPrefs }) {
-  const { data, guarded, saveSettings, canEdit, user } = useData(); const members = data.members
+  const { data, guarded, saveSettings, canEdit, isOwner, user } = useData(); const members = data.members
   const mm = prefs.members || {}
   const setM = (uid: string, patch: Partial<MemberNotify>) => guarded(() => saveSettings({ notify: { ...prefs, members: { ...mm, [uid]: { ...(mm[uid] || {}), ...patch } } } }), 'Saved')
   const reset = (uid: string) => { const next = { ...mm }; delete next[uid]; guarded(() => saveSettings({ notify: { ...prefs, members: next } }), 'Back to the household default') }
   return <Card span={12} title="Who gets what" hint="each member's own channels · unset rows follow the household switches">
     {!members.length ? <div className="empty">Members appear here once the household has them (Settings → Members).</div> : <div className="tblwrap"><table className="tbl"><caption className="sr-only">Notification routing by member</caption><thead><tr><th scope="col">Member</th><th scope="col">Push</th><th scope="col">Email</th><th scope="col">Email to</th><th scope="col">Monday digest</th><th scope="col">Alerts</th><th scope="col" /></tr></thead><tbody>
-      {members.map(m => { const p = mm[m.user_id] || {}; const custom = !!mm[m.user_id]; const kinds = p.kinds || null; const who = m.display_name || m.email
+      {members.map(m => { const p = mm[m.user_id] || {}; const custom = !!mm[m.user_id]; const kinds = p.kinds || null; const who = m.display_name || m.email; const rowEdit = isOwner || (canEdit && m.user_id === user?.id)   // owners set anyone's; others only their own (0.25.1)
         return <tr key={m.user_id}><td>{who}{m.user_id === user?.id ? <span className="note" style={{ margin: 0 }}> (you)</span> : null}<div className="note" style={{ margin: 0 }}>{m.role}{custom ? '' : ' · household default'}</div></td>
-          <td><input type="checkbox" checked={p.push ?? (prefs.push !== false)} onChange={e => setM(m.user_id, { push: e.target.checked })} disabled={!canEdit} aria-label={`Push for ${who}`} /></td>
-          <td><input type="checkbox" checked={p.email === true} onChange={e => setM(m.user_id, { email: e.target.checked })} disabled={!canEdit} aria-label={`Email for ${who}`} /></td>
-          <td><input className="inp" type="email" defaultValue={p.email_to || ''} placeholder={m.email} style={{ minWidth: 180 }} onBlur={e => { const v = e.target.value.trim() || null; if (v !== (p.email_to || null)) setM(m.user_id, { email_to: v }) }} disabled={!canEdit || p.email !== true} aria-label={`Email address for ${who}`} /></td>
-          <td><input type="checkbox" checked={p.digest !== false} onChange={e => setM(m.user_id, { digest: e.target.checked })} disabled={!canEdit} aria-label={`Monday digest for ${who}`} /></td>
-          <td><details><summary style={{ cursor: 'pointer' }}>{kinds ? `${kinds.length} of ${ALERT_KINDS.length}` : 'All'}</summary><div style={{ display: 'grid', gap: 2, padding: '6px 0' }}>{ALERT_KINDS.map(([k, l]) => <label key={k} style={{ fontSize: 13 }}><input type="checkbox" checked={!kinds || kinds.includes(k)} disabled={!canEdit} onChange={e => { const cur = kinds || ALERT_KINDS.map(x => x[0]); const next = e.target.checked ? [...new Set([...cur, k])] : cur.filter(x => x !== k); setM(m.user_id, { kinds: next.length === ALERT_KINDS.length ? null : next }) }} /> {l}</label>)}</div></details></td>
+          <td><input type="checkbox" checked={p.push ?? (prefs.push !== false)} onChange={e => setM(m.user_id, { push: e.target.checked })} disabled={!rowEdit} aria-label={`Push for ${who}`} /></td>
+          <td><input type="checkbox" checked={p.email === true} onChange={e => setM(m.user_id, { email: e.target.checked })} disabled={!rowEdit} aria-label={`Email for ${who}`} /></td>
+          <td><input className="inp" type="email" defaultValue={p.email_to || ''} placeholder={m.email} style={{ minWidth: 180 }} onBlur={e => { const v = e.target.value.trim() || null; if (v !== (p.email_to || null)) setM(m.user_id, { email_to: v }) }} disabled={!rowEdit || p.email !== true} aria-label={`Email address for ${who}`} /></td>
+          <td><input type="checkbox" checked={p.digest !== false} onChange={e => setM(m.user_id, { digest: e.target.checked })} disabled={!rowEdit} aria-label={`Monday digest for ${who}`} /></td>
+          <td><details><summary style={{ cursor: 'pointer' }}>{kinds ? `${kinds.length} of ${ALERT_KINDS.length}` : 'All'}</summary><div style={{ display: 'grid', gap: 2, padding: '6px 0' }}>{ALERT_KINDS.map(([k, l]) => <label key={k} style={{ fontSize: 13 }}><input type="checkbox" checked={!kinds || kinds.includes(k)} disabled={!rowEdit} onChange={e => { const cur = kinds || ALERT_KINDS.map(x => x[0]); const next = e.target.checked ? [...new Set([...cur, k])] : cur.filter(x => x !== k); setM(m.user_id, { kinds: next.length === ALERT_KINDS.length ? null : next }) }} /> {l}</label>)}</div></details></td>
           <td>{custom && canEdit && <Btn sm onClick={() => reset(m.user_id)}>Reset</Btn>}</td></tr> })}
     </tbody></table></div>}
     <Note>Push goes to every device the member turned on (each device opts in from the Push card). Email to a member goes to their own address; the household "Email me" address above is used only when no member has email on. The household switches under "What to alert on" still decide which alerts exist at all.</Note>
@@ -360,14 +379,14 @@ function Passkeys() {
   const { guarded } = useData(); const confirm = useConfirm()
   type PK = { id: string; friendly_name?: string; created_at: string; last_used_at?: string }
   const [list, setList] = useState<PK[] | null>(null); const [on, setOn] = useState<boolean | null>(null); const [err, setErr] = useState('')
-  const supported = typeof window !== 'undefined' && 'PublicKeyCredential' in window
+  const supported = passkeysAvailable()
   const load = async () => { const f = await authFeatures(); setOn(f ? f.passkeys : null); if (f && !f.passkeys) { setList([]); return } const { data, error } = await sb().auth.passkey.list(); if (error) { setErr(authMessage(error)); setList([]) } else { setErr(''); setList((data || []) as PK[]) } }
   useEffect(() => { load() /* eslint-disable-line */ }, [])
   const add = () => guarded(async () => { const { error } = await sb().auth.registerPasskey(); if (error) throw new Error(authMessage(error)); await load() }, 'Passkey added — next time choose “Sign in with a passkey”')
   const rename = (p: PK, name: string) => guarded(async () => { const n = name.trim().slice(0, 120); if (!n || n === p.friendly_name) return; const { error } = await sb().auth.passkey.update({ passkeyId: p.id, friendlyName: n }); if (error) throw new Error(authMessage(error)); await load() })
   const drop = async (p: PK) => { if (!(await confirm(`Remove the passkey “${p.friendly_name || 'Passkey'}”? That device will need the password again.`, 'Remove'))) return; guarded(async () => { const { error } = await sb().auth.passkey.delete({ passkeyId: p.id }); if (error) throw new Error(authMessage(error)); await load() }, 'Passkey removed') }
   return <Card span={6} title="Passkeys" hint="sign in with Face ID, a fingerprint, Windows Hello or a security key — no password to type or steal" right={on === false ? <Pill cls="warn">off for this app</Pill> : list && list.length ? <Pill cls="good">{list.length} added</Pill> : <Pill cls="idle">none yet</Pill>}>
-    {!supported && <Note>This browser does not support passkeys.</Note>}
+    {!supported && <Note>{isNative() ? 'Passkeys work on the WealthPilot website. In this app, unlock with Face ID or your fingerprint instead — set the lock under This device.' : 'This browser does not support passkeys.'}</Note>}
     {on === false && <div className="banner warn" style={{ marginBottom: 8 }}>Passkeys are switched off for this app. The owner turns them on in Supabase → <b>Authentication → Passkeys</b> (relying party <code>{location.hostname}</code>, origin <code>{location.origin}</code>); then add one here.</div>}
     {list && list.length > 0 && <div className="tblwrap"><table className="tbl"><caption className="sr-only">Passkeys</caption><thead><tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col" /></tr></thead><tbody>{list.map(p => <tr key={p.id}><td><input className="inp" defaultValue={p.friendly_name || 'Passkey'} aria-label="Passkey name" onBlur={e => rename(p, e.target.value)} style={{ maxWidth: 220 }} /></td><td>{fmtDY(p.created_at.slice(0, 10))}</td><td>{p.last_used_at ? ago(p.last_used_at) : '—'}</td><td><button className="del" onClick={() => drop(p)} aria-label={`Remove passkey ${p.friendly_name || ''}`}>✕</button></td></tr>)}</tbody></table></div>}
     {err && <div className="msg warn">{err}</div>}
@@ -384,7 +403,7 @@ function RecoveryCodes({ hasTotp }: { hasTotp: boolean }) {
   useEffect(() => { load() /* eslint-disable-line */ }, [hasTotp])
   const make = (again: boolean) => guarded(async () => { if (again && !(await confirm('Make a new set? The old codes stop working at once.', 'Make new codes'))) return; const r = again ? await sb().auth.mfa.recoveryCodes.regenerate() : await sb().auth.mfa.recoveryCodes.generate({ friendlyName: 'WealthPilot recovery codes' }); if (r.error) throw new Error(authMessage(r.error)); setCodes(r.data.codes); await load() })
   const text = codes ? `WealthPilot recovery codes — ${new Date().toLocaleDateString()}\nEach code works once, instead of the authenticator app.\n\n${codes.join('\n')}\n` : ''
-  const download = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.download = 'wealthpilot-recovery-codes.txt'; a.click() }
+  const download = () => { void saveFile('wealthpilot-recovery-codes.txt', text, 'text/plain') }
   return <Card span={6} title="Recovery codes" hint="for when the phone with the authenticator app is lost" right={st ? <Pill cls={st.remaining <= 2 ? 'warn' : 'good'}>{st.remaining} of {st.total} left</Pill> : <Pill cls="idle">{hasTotp ? 'not made' : 'needs two-factor'}</Pill>}>
     {!hasTotp ? <Note>Turn on two-factor authentication first — recovery codes back up the authenticator app and cannot replace it.</Note> : <>
       {codes ? <><div className="banner good" style={{ marginBottom: 8 }}><b>Save these now — they are shown only once.</b> Each works one time, in place of the 6-digit code.</div>

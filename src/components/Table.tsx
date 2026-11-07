@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, type ReactNode } from 'react'
+import { saveFile } from '../app/native'
 import { parseNum, fm2 } from '../lib/money'
 import { Btn } from './ui'
 import { LS } from '../app/config'
@@ -9,11 +10,11 @@ import { unmasked } from '../lib/display'
 /** Download rows as CSV or Excel. Values are the displayed text (labels, formatted money) so the file reads like the screen. */
 export async function exportTable(name: string, headers: string[], body: Array<Array<string | number>>, fmt: 'csv' | 'xlsx') {
   const file = `${name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}`
-  if (fmt === 'csv') { const esc = (v: string | number) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t }; const text = (headers.length ? [headers, ...body] : body).map(r => r.map(esc).join(',')).join('\r\n'); dl(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }), file + '.csv'); return }
+  if (fmt === 'csv') { const esc = (v: string | number) => { const t = String(v ?? ''); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t }; const text = (headers.length ? [headers, ...body] : body).map(r => r.map(esc).join(',')).join('\r\n'); await dl(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }), file + '.csv'); return }
   const XLSX = await import('xlsx'); const ws = XLSX.utils.aoa_to_sheet(headers.length ? [headers, ...body] : body); ws['!cols'] = headers.map((h, i) => ({ wch: Math.min(48, Math.max(h.length, ...body.map(r => String(r[i] ?? '').length)) + 2) }))
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31) || 'Sheet1'); XLSX.writeFile(wb, file + '.xlsx')
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31) || 'Sheet1'); const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer; await saveFile(file + '.xlsx', buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 }
-const dl = (blob: Blob, filename: string) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000) }
+const dl = (blob: Blob, filename: string) => saveFile(filename, blob, blob.type || 'text/csv')
 
 export interface Col<R> { k: string; label: string; type?: 'text' | 'number' | 'money' | 'date' | 'select' | 'ro' | 'bool' | 'int'; opts?: string[]; labels?: Record<string, string>; w?: number; cls?: string; fmt?: (r: R) => ReactNode; sortVal?: (r: R) => string | number | null; min?: number; max?: number; placeholder?: string }
 interface Props<R extends { id: string }> { rows: R[]; cols: Col<R>[]; onChange?: (row: R, k: string, v: unknown) => void; onDelete?: (row: R) => void; onAdd?: () => void; addLabel?: string; rowCls?: (r: R) => string; foot?: ReactNode; editable?: boolean; search?: boolean; empty?: string; maxH?: number; defaultSort?: { k: string; dir: 1 | -1 }; deleteLabel?: (r: R) => string; actions?: (r: R) => ReactNode; id?: string; pageSize?: number; name?: string; exportable?: boolean; selected?: Set<string>; onSelect?: (ids: Set<string>) => void; caption?: string; /** phones (0.23.0): a sideways swipe on a card */ onSwipe?: (row: R, dir: 'left' | 'right') => void; swipeHint?: string }

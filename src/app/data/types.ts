@@ -158,8 +158,8 @@ export interface SyncLogRow { id: number; started_at: string; finished_at: strin
 export interface SyncStatus { connection: SyncConnection | null; log: SyncLogRow[]; available: boolean; /** 0.25.0: when this household's manual syncs ran in the last 24 hours (for the sync limit) */ requests?: string[] }
 export interface SyncResult { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string; merged?: number; review?: number; earliest?: Record<string, string> }
 /** What an owner asks for when inviting; the server issues the temporary password and returns it once. */
-export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; subject: string; body: string }
-export interface InviteResult { user_id: UUID; existing: boolean; temp_password: string | null; sent: boolean; send_error?: string | null; can_send: boolean }
+export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; note?: string; send?: boolean }
+export interface InviteResult { user_id: UUID | null; existing: boolean; pending?: boolean; temp_password: string | null; sent: boolean; send_error?: string | null; can_send: boolean }
 export interface ActivityRow { id: number; household_id: UUID; user_email?: string | null; action: string; table_name: string; record_id?: string | null; summary?: string | null; created_at: string }
 
 /** Household-level settings stored in households.settings (merged over SETTINGS_DEFAULTS). */

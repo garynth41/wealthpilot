@@ -122,10 +122,8 @@ export function inviteEmailDraft(i: InviteDraftInput): { subject: string; body: 
     `Sign in: ${i.siteUrl}`,
     `Email: ${i.email}`,
   ]
-  if (i.existing) lines.push('Password: the one you already use for ' + i.appName + ' — the household will appear when you sign in.')
-  else {
-    lines.push(`Temporary password: ${i.tempPassword || TEMP_PLACEHOLDER}`, '', 'This temporary password is for your first sign-in only — you will be asked to choose your own password straight away. Please do not forward this message.')
-  }
+  // 0.25.1: no temporary passwords — the person signs in (or signs up) with this address, which proves it is theirs
+  lines.splice(lines.indexOf(`Sign in: ${i.siteUrl}`), 2, `To join, open ${i.siteUrl} and sign in with ${i.email} — or create your account with that address if you do not have one yet. The household appears as soon as you are signed in.`)
   if (i.note && i.note.trim()) lines.push('', i.note.trim())
   lines.push('', 'Thanks,', i.inviter)
   return { subject, body: lines.join('\n') }

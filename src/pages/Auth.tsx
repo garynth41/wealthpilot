@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { passkeysAvailable } from '../app/native'
 import { useStore } from '../app/store'
 import { APP_NAME, APP_VERSION } from '../app/config'
 import { hasSupabase } from '../app/supabase'
@@ -25,7 +26,7 @@ export function AuthPage({ recover }: { recover?: boolean }) {
       {mode !== 'recover' && <div className="field"><label htmlFor="email">Email</label><input id="email" className="inp" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></div>}
       {mode !== 'forgot' && <div className="field"><label htmlFor="pw">{mode === 'recover' ? 'New password' : 'Password'}{mode !== 'signin' && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> (8+ characters)</span>}</label><PasswordInput id="pw" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 8} required value={pw} onChange={e => setPw(e.target.value)} /></div>}
       <Btn type="submit" primary block disabled={busy}>{{ signin: 'Sign in', signup: 'Create account', forgot: 'Send reset link', recover: 'Update password', mfa: 'Verify' }[mode]}</Btn>
-      {mode === 'signin' && typeof window !== 'undefined' && 'PublicKeyCredential' in window && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={() => run(() => signInWithPasskey())}><span aria-hidden>🔑</span> Sign in with a passkey</Btn></div>}
+      {mode === 'signin' && passkeysAvailable() && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={() => run(() => signInWithPasskey())}><span aria-hidden>🔑</span> Sign in with a passkey</Btn></div>}
       {msg && <div className={`msg ${msg.cls}`}>{msg.text}</div>}
       <div className="links">{mode === 'signin' ? <><button type="button" onClick={() => setMode('signup')}>Create an account</button><button type="button" onClick={() => setMode('forgot')}>Forgot password?</button></> : <button type="button" onClick={() => setMode('signin')}>← Back to sign in</button>}</div>
     </form> : <div className="msg crit">Supabase is not configured — copy <code>.env.example</code> to <code>.env</code>.</div>}

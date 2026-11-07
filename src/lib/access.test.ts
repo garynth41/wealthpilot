@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isCommonPassword, MODULES, GRANTABLE, ALWAYS_ON, moduleForPath, allowedModules, canViewPath, allowedPaths, normaliseModules, accessLevel, accessToMember, describeAccess, genTempPassword, isTempPassword, passwordProblems, inviteEmailDraft, TEMP_PLACEHOLDER, mailtoLink } from './access'
+import { isCommonPassword, MODULES, GRANTABLE, ALWAYS_ON, moduleForPath, allowedModules, canViewPath, allowedPaths, normaliseModules, accessLevel, accessToMember, describeAccess, genTempPassword, isTempPassword, passwordProblems, inviteEmailDraft, mailtoLink } from './access'
 import { VIEWS } from '../components/Layout'
 
 describe('modules', () => {
@@ -75,16 +75,12 @@ describe('common-password blocklist', () => {
 
 describe('invitation email', () => {
   const base = { appName: 'WealthPilot', household: 'Thomas', inviter: 'gary@x.com', email: 'pat@example.com', siteUrl: 'https://example.github.io/wealthpilot/' }
-  it('carries the temporary password, the access line and the site link — nothing else from the household', () => {
-    const d = inviteEmailDraft({ ...base, displayName: 'Pat', access: { role: 'editor', read_only: false, modules: ['budget'] }, tempPassword: 'WP-abcd-efgh-jkmn', note: 'Call me if stuck.' })
+  it('carries the access line and the site link — never a password, nothing else from the household (0.25.1)', () => {
+    const d = inviteEmailDraft({ ...base, displayName: 'Pat', access: { role: 'editor', read_only: false, modules: ['budget'] }, note: 'Call me if stuck.' })
     expect(d.subject).toBe('You\'re invited to "Thomas" on WealthPilot')
-    expect(d.body).toMatch(/^Hi Pat,/); expect(d.body).toContain('Temporary password: WP-abcd-efgh-jkmn'); expect(d.body).toContain('Limited — Budget (can add and change there)')
-    expect(d.body).toContain(base.siteUrl); expect(d.body).toContain('Call me if stuck.'); expect(d.body).toContain('first sign-in only')
-  })
-  it('uses a placeholder until the server has issued the password, and a different line for existing users', () => {
-    expect(inviteEmailDraft({ ...base, access: { role: 'viewer', read_only: true, modules: null } }).body).toContain(TEMP_PLACEHOLDER)
-    const e = inviteEmailDraft({ ...base, access: { role: 'viewer', read_only: true, modules: null }, existing: true }).body
-    expect(e).not.toContain('Temporary'); expect(e).toContain('the one you already use'); expect(e).toMatch(/^Hi pat,/)
+    expect(d.body).toMatch(/^Hi Pat,/); expect(d.body).toContain('Limited — Budget (can add and change there)')
+    expect(d.body).toContain(`To join, open ${base.siteUrl} and sign in with ${base.email}`); expect(d.body).toContain('create your account with that address'); expect(d.body).toContain('Call me if stuck.')
+    expect(d.body).not.toMatch(/password|Email: /i)
   })
   it('builds a mailto link with everything encoded', () => {
     const l = mailtoLink('pat@example.com', 'A & B', 'line 1\nline 2'); expect(l.startsWith('mailto:pat%40example.com?subject=A%20%26%20B&body=line%201%0Aline%202')).toBe(true)

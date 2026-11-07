@@ -1,5 +1,6 @@
 // Receipts and documents on a transaction (0.19.0): photos and PDFs in the private `attachments` bucket (migration 0011), one row per file.
 import { useRef, useState } from 'react'
+import { saveFile, isNative } from '../app/native'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { Transaction, Attachment } from '../app/data/types'
@@ -13,7 +14,7 @@ const safeName = (n: string) => n.normalize('NFKD').replace(/[^\w.-]+/g, '_').sl
 export const attachmentsFor = (d: { attachments?: Attachment[] }, id: string): Attachment[] => (d.attachments || []).filter(a => a.transaction_id === id)
 
 /** Download one stored file (private bucket: the browser gets a short-lived blob). */
-export async function openAttachment(path: string, name: string) { const { data: blob, error } = await sb().storage.from('attachments').download(path); if (error) throw error; const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.target = '_blank'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 4000) }
+export async function openAttachment(path: string, name: string) { const { data: blob, error } = await sb().storage.from('attachments').download(path); if (error) throw error; if (isNative()) return saveFile(name, blob, blob.type); const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.target = '_blank'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 4000) }
 export const statementFiles = (d: { attachments?: Attachment[] }, id: string): Attachment[] => (d.attachments || []).filter(a => a.statement_id === id)
 export function AttachmentsModal({ txn, onDone }: { txn: Transaction; onDone: () => void }) {
   const { data, mode, household, insert, remove, guarded, canEdit } = useData(); const confirm = useConfirm(); const toast = useStore.getState().toast

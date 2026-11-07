@@ -1,11 +1,13 @@
 // Idle lock (0.20.0): after N minutes without a tap, click or key press the app hides every figure behind a lock screen; unlock with the
-// password (plus the authenticator code when two-factor is on) or a passkey. The setting is per device — a shared computer can lock after
+// password (plus the authenticator code when two-factor is on) or a passkey — in the phone apps (0.25.1) with Face ID, Touch ID or the
+// fingerprint instead, offered as soon as the lock appears (the password still works). The setting is per device — a shared computer can lock after
 // 5 minutes while your own phone stays open — and the lock survives a reload, so closing and reopening the tab does not get around it.
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useStore } from '../app/store'
 import { LS } from '../app/config'
 import { Btn, PasswordInput, useModal } from './ui'
 import { Logo } from './Logo'
+import { passkeysAvailable, biometryAvailable, verifyBiometry } from '../app/native'
 
 export const IDLE_CHOICES: Array<[number, string]> = [[0, 'Never'], [5, '5 minutes'], [15, '15 minutes'], [30, '30 minutes'], [60, '1 hour'], [240, '4 hours']]
 const read = (k: string) => { try { return localStorage.getItem(LS(k)) } catch { return null } }
@@ -45,6 +47,9 @@ function LockScreen({ onUnlock, minutes }: { onUnlock: () => void; minutes: numb
   const { user, mode, signIn, verifyMfa, verifyRecoveryCode, signInWithPasskey, signOut, exitDemo } = useStore()
   const [pw, setPw] = useState(''); const [code, setCode] = useState(''); const [step, setStep] = useState<'pw' | 'code' | 'recovery'>('pw'); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false)
   const email = user?.email || ''
+  const [bio, setBio] = useState<{ ok: boolean; label: string }>({ ok: false, label: '' })
+  const tryBio = async (label: string) => { if (await verifyBiometry(`Unlock with ${label}`)) onUnlock() }
+  useEffect(() => { let live = true; if (mode === 'db') biometryAvailable().then(b => { if (!live) return; setBio(b); if (b.ok) void tryBio(b.label) }); return () => { live = false } }, [mode])   // eslint-disable-line react-hooks/exhaustive-deps
   const run = async (fn: () => Promise<void>) => { setBusy(true); setErr(''); try { await fn() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }
   const submit = (e: FormEvent) => { e.preventDefault()
     if (step === 'pw') run(async () => { await signIn(email, pw); setPw(''); if (useStore.getState().mfaPending) { setStep('code'); return } onUnlock() })
@@ -58,7 +63,8 @@ function LockScreen({ onUnlock, minutes }: { onUnlock: () => void; minutes: numb
       {step === 'pw' ? <div className="field"><label htmlFor="lock-pw">Password</label><PasswordInput id="lock-pw" autoComplete="current-password" required autoFocus value={pw} onChange={e => setPw(e.target.value)} /></div>
         : <div className="field"><label htmlFor="lock-code">{step === 'recovery' ? 'A recovery code' : '6-digit code from your authenticator app'}</label><input id="lock-code" className="inp" inputMode={step === 'recovery' ? 'text' : 'numeric'} autoComplete="one-time-code" required autoFocus value={code} onChange={e => setCode(e.target.value)} /></div>}
       <Btn type="submit" primary block disabled={busy}>{step === 'pw' ? 'Unlock' : 'Verify'}</Btn>
-      {step === 'pw' && 'PublicKeyCredential' in window && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={passkey}><span aria-hidden>🔑</span> Unlock with a passkey</Btn></div>}
+      {step === 'pw' && bio.ok && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={() => void tryBio(bio.label)}>Unlock with {bio.label}</Btn></div>}
+      {step === 'pw' && passkeysAvailable() && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={passkey}><span aria-hidden>🔑</span> Unlock with a passkey</Btn></div>}
       {err && <div className="msg crit" role="alert">{err}</div>}
       <div className="links">{step !== 'pw' && <button type="button" onClick={() => { setStep(step === 'code' ? 'recovery' : 'code'); setCode('') }}>{step === 'code' ? 'Use a recovery code' : 'Use the authenticator app'}</button>}<button type="button" onClick={() => { write('locked', null); signOut() }}>Sign out instead</button></div>
     </form>}

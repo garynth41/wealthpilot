@@ -5,7 +5,6 @@ import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { syncSlot, syncLimitMessage } from '../../lib/syncLimit'
 import { monthKey, today } from '../../lib/dates'
-import { genTempPassword } from '../../lib/access'
 import { balanceFor, dropKnown } from '../../lib/simplefin'
 import { verifiedBalance } from '../../lib/reconcile'
 
@@ -144,10 +143,10 @@ export class MemoryRepo implements Repo {
   async syncDisconnect(): Promise<void> { this.sim = { connected: false, map: {}, last: null, log: [], failNext: null, lastError: null, requests: [] } }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly, modules } : m); this.persist(); this.emit() }
-  /** Demo: no real account is created; a temporary password is generated locally so the invitation flow can be tried end to end. */
-  async inviteWithPassword(req: InviteRequest) { const email = req.email.trim().toLowerCase(); const existing = this.data.members.find(m => m.email === email); const user_id = existing?.user_id || demoId(); const temp = existing ? null : genTempPassword()
-    this.data.members = [...this.data.members.filter(m => m.user_id !== user_id), { household_id: this.household.id, user_id, email, display_name: req.display_name || null, role: req.role, read_only: req.read_only, modules: req.modules, joined_at: new Date().toISOString() }]; this.data.invites = this.data.invites.filter(i => i.email !== email); this.persist(); this.emit()
-    return { user_id, existing: !!existing, temp_password: temp, sent: false, send_error: null, can_send: false } }
+  /** Demo: like the real thing, the invitation waits until the person signs in (nobody is emailed and no account is created). */
+  async inviteWithPassword(req: InviteRequest) { const email = req.email.trim().toLowerCase()
+    this.data.invites = [...this.data.invites.filter(x => x.email !== email), { id: demoId(), household_id: this.household.id, email, role: req.role, read_only: req.read_only, modules: req.modules, display_name: req.display_name || null, created_at: new Date().toISOString(), accepted_at: null }]
+    this.persist(); this.emit(); return { user_id: null, existing: false, pending: true, temp_password: null, sent: false, send_error: null, can_send: false } }
   async exportJson() { return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
   async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
     let n = 0; if (mode === 'replace') this.data = emptyData()

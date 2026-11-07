@@ -452,6 +452,28 @@ export const settings: GuidePage = {
       tips: ['The log cannot be edited from the app.', 'The offline demo has no activity log.'],
     },
     {
+      title: 'Reminders on this phone',
+      what: 'In the iPhone and Android apps, on the Notifications tab (in place of Push notifications): bill reminders scheduled on the phone itself, so they arrive even with no connection.',
+      how: ['Tick Remind me about bills on this phone and allow notifications when the phone asks.', 'To change how early a bill reminds you, set its Remind (days) column on Bills.'],
+      fields: [
+        { term: 'When reminders arrive', text: 'At 9 AM: as many days before each bill as its Remind (days) column says (3 unless you change it), and again on the due day — for the next five weeks.' },
+        { term: 'Paid bills', text: 'A due date already marked paid, or with a matching payment recorded near it, gets no reminder.' },
+        { term: 'Kept up to date', text: 'The list is redone whenever bills or payments change on this phone, and each time the app opens.' },
+      ],
+      tips: ['Low cash, large charges and bank-sync problems still come by email when Email me is on.', 'If notifications were turned off for WealthPilot in the phone\'s Settings, allow them there and tick the box again.'],
+    },
+    {
+      title: 'Delete my account',
+      what: 'On the Security tab: delete your own sign-in, immediately and for good, together with every household you are the only member of.',
+      how: ['Click Delete my account… to see exactly what will happen.', 'Save a backup first if you might want anything.', 'Type your password and the words delete my account, then click Delete my account permanently.'],
+      fields: [
+        { term: 'Deleted with your account', text: 'Households where you are the only member — every account, transaction, bill, goal, file and nightly backup in them.' },
+        { term: 'You leave', text: 'Households you share: the other members keep everything, and where your name appears in history it becomes “a former member”.' },
+        { term: 'First', text: 'A household where you are the only owner and other people are members. Make one of them an owner on the Members tab, or delete that household, then come back.' },
+      ],
+      tips: ['With two-factor on, sign in again with your code just before deleting.', 'To leave one household but keep your account, ask an owner to remove you on the Members tab instead.'],
+    },
+    {
       title: 'Delete this household',
       what: 'On the General tab: permanently delete the household — every account, transaction, budget, bill, goal, receipt and statement PDF, the bank connection and the nightly backups, for every member — after a 7-day grace period.',
       how: ['Click Download a backup first if you might want any of it.', 'Click Delete this household…, type the household\'s name, tick that you understand, and click Schedule deletion.', 'For 7 days the household is read-only and every member sees a red banner with the date; any owner can click Cancel the deletion (in the banner or here) to put everything back to normal.', 'After the 7 days the nightly clean-up removes it for good.'],
@@ -464,6 +486,7 @@ export const settings: GuidePage = {
     },
   ],
   tasks: [
+    { q: 'How do I delete my account?', steps: ['Open Settings → Security and scroll to Delete my account.', 'Click Delete my account… and read what will be deleted and what you will leave.', 'If a household is listed under First, make another member its owner (Members tab) or delete it.', 'Type your password and delete my account, then click Delete my account permanently.'] },
     { q: 'How do I delete our household?', steps: ['Open Settings → General and scroll to Delete this household (owners only).', 'Click Download a backup first if you want a copy.', 'Click Delete this household…, type its name, tick the box and click Schedule deletion.', 'It is read-only for 7 days and then deleted for good; any owner can cancel before then.'] },
     { q: 'How do I invite someone and limit what they see?', steps: ['Open the Members tab.', 'Under Invite someone, type their email and name.', 'Choose Limited, tick the sections they may open, and tick "Can add and change things in those sections" if they should edit there.', 'Click Create sign-in & draft email, then send them the email with the temporary password (Copy email or Open in email app).', 'To change it later, click Change beside them under Members.'] },
     { q: 'How do I turn on two-factor authentication?', steps: ['Open the Security tab.', 'Click Set up two-factor and scan the QR code with your authenticator app.', 'Type the 6-digit code and click Verify & turn on.', 'Under Recovery codes, click Make 10 recovery codes and save them.'] },

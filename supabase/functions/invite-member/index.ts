@@ -1,18 +1,21 @@
-// invite-member — creates (or finds) the invited person's account, adds them to the household with the chosen access,
-// issues a one-time temporary password for new accounts and, when RESEND_API_KEY + INVITE_FROM are set, emails the invitation.
-// The temporary password is returned to the inviting owner exactly once (so they can send it themselves) and is never stored.
-// Deploy: supabase functions deploy invite-member   (or the Supabase MCP deploy_edge_function tool)
-// Secrets (optional): RESEND_API_KEY, INVITE_FROM ("WealthPilot <invites@yourdomain>")
+// invite-member — an owner invites someone to the household with the chosen access (0.25.1: rewritten for safety).
+// The invitation is recorded (household_invites); the person joins the next time they sign in — or, if they have no account yet, once
+// they sign up with that address and confirm it. Before 0.25.1 this function created a confirmed account for any address and returned
+// a temporary password to the inviter, so anyone could claim a stranger's email address; it no longer creates accounts at all.
+// When RESEND_API_KEY + INVITE_FROM are set it also emails the invitation: a fixed message (the inviter may add a short plain-text
+// note), at most 20 invitations per household per day, and it never says whether the address already has an account.
+// Secrets (optional): RESEND_API_KEY, INVITE_FROM ("WealthPilot <invites@yourdomain>"), APP_URL
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 const ROLES = ['owner', 'editor', 'viewer']
 const MODULES = ['transactions', 'budget', 'bills', 'income', 'accounts', 'connections', 'investments', 'tax', 'goals', 'hardship']   // keep in step with src/lib/access.ts GRANTABLE
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-function tempPassword() { const b = crypto.getRandomValues(new Uint8Array(12)); const g = (o: number) => [...b.slice(o, o + 4)].map(x => ALPHABET[x % ALPHABET.length]).join(''); return `WP-${g(0)}-${g(4)}-${g(8)}` }
+const DAILY = 20
+const APP_URL = Deno.env.get('APP_URL') || 'https://garynth41.github.io/wealthpilot/'
 
-interface Body { household_id: string; email: string; role?: string; read_only?: boolean; modules?: string[] | null; display_name?: string | null; subject?: string; body?: string }
+interface Body { household_id: string; email: string; role?: string; read_only?: boolean; modules?: string[] | null; display_name?: string | null; note?: string; send?: boolean }
+const clean = (s: unknown, n: number) => String(s ?? '').replace(/[<>]/g, '').replace(/\s+\n/g, '\n').trim().slice(0, n)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
@@ -27,43 +30,42 @@ Deno.serve(async (req) => {
   let b: Body
   try { b = await req.json() } catch { return json(400, { error: 'Bad JSON' }) }
   const email = String(b.email || '').trim().toLowerCase()
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(400, { error: 'Enter a valid email address' })
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return json(400, { error: 'Enter a valid email address' })
   if (!b.household_id) return json(400, { error: 'household_id required' })
   const role = ROLES.includes(String(b.role)) ? String(b.role) : 'viewer'
   const read_only = role === 'viewer' ? true : !!b.read_only
-  const modules = Array.isArray(b.modules) ? [...new Set(b.modules.filter(m => MODULES.includes(String(m))))].sort() : null
-  if (Array.isArray(b.modules) && modules!.length === 0) return json(400, { error: 'Pick at least one module for limited access' })
+  const modules = role === 'owner' ? null : Array.isArray(b.modules) ? [...new Set(b.modules.filter(m => MODULES.includes(String(m))))].sort() : null
+  if (Array.isArray(b.modules) && role !== 'owner' && modules!.length === 0) return json(400, { error: 'Pick at least one section for limited access' })
   if (email === (user.email || '').toLowerCase()) return json(400, { error: 'That is your own email' })
 
   const admin = createClient(url, service, { auth: { persistSession: false } })
-  const { data: me } = await admin.from('household_members').select('role, email').eq('household_id', b.household_id).eq('user_id', user.id).maybeSingle()
+  const { data: me } = await admin.from('household_members').select('role').eq('household_id', b.household_id).eq('user_id', user.id).maybeSingle()
   if (!me || me.role !== 'owner') return json(403, { error: 'Only an owner can invite members' })
-  const { data: hh } = await admin.from('households').select('name').eq('id', b.household_id).single()
+  const { data: hh } = await admin.from('households').select('name, deletion_scheduled_for').eq('id', b.household_id).single()
+  if (hh?.deletion_scheduled_for) return json(403, { error: 'This household is scheduled for deletion' })
+  const since = new Date(Date.now() - 86400000).toISOString()
+  const { count } = await admin.from('activity_log').select('id', { count: 'exact', head: true }).eq('household_id', b.household_id).eq('action', 'invite').gte('created_at', since)
+  if ((count || 0) >= DAILY) return json(429, { error: `That is ${DAILY} invitations today — try again tomorrow` })
 
-  // existing account?
-  const { data: existingId } = await admin.rpc('user_id_by_email', { p_email: email })
-  let userId: string | null = (existingId as string | null) || null, temp: string | null = null, existing = !!userId
-  if (!userId) {
-    temp = tempPassword()
-    const { data: created, error: cErr } = await admin.auth.admin.createUser({ email, password: temp, email_confirm: true, user_metadata: { must_change_password: true, display_name: b.display_name || null, invited_by: user.email || null } })
-    if (cErr || !created.user) return json(500, { error: cErr?.message || 'Could not create the account' })
-    userId = created.user.id
-  }
-  const { error: mErr } = await admin.from('household_members').upsert({ household_id: b.household_id, user_id: userId, email, display_name: b.display_name || null, role, read_only, modules }, { onConflict: 'household_id,user_id' })
-  if (mErr) return json(500, { error: mErr.message })
-  const inviteRow = { household_id: b.household_id, email, role, read_only, modules, display_name: b.display_name || null, invited_by: user.id, invited_user_id: userId, accepted_at: new Date().toISOString(), temp_password_issued_at: temp ? new Date().toISOString() : null, sent_at: null as string | null }
+  const display_name = clean(b.display_name, 80) || null
+  const inviteRow = { household_id: b.household_id, email, role, read_only, modules, display_name, invited_by: user.id, invited_user_id: null, accepted_at: null, temp_password_issued_at: null, sent_at: null as string | null }
 
-  // optional automatic email
+  // optional automatic email: a fixed message, so the function cannot be used to send anything else
   let sent = false, sendError: string | null = null
   const key = Deno.env.get('RESEND_API_KEY'), from = Deno.env.get('INVITE_FROM')
-  if (key && from && b.subject && b.body) {
-    const text = b.body.replace('{{TEMP_PASSWORD}}', temp || '')
+  if (key && from && b.send) {
+    const access = role === 'owner' ? 'owner' : `${read_only ? 'read-only' : 'full'} access${modules ? ' to ' + modules.join(', ') : ''}`
+    const note = clean(b.note, 500)
+    const text = [`Hi${display_name ? ' ' + display_name : ''},`, '', `${user.email} has invited you to the "${clean(hh?.name, 80) || 'Household'}" household on WealthPilot (${access}).`, '',
+      `To join, open ${APP_URL} and sign in with this email address — or create your account with it if you do not have one yet. The household appears as soon as you are signed in.`,
+      ...(note ? ['', `A note from ${user.email}:`, note] : []), '', 'If you were not expecting this, you can ignore it.'].join('\n')
     try {
-      const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [email], reply_to: user.email || undefined, subject: b.subject, text }) })
+      const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [email], subject: `You're invited to a household on WealthPilot`, text }) })
       if (r.ok) { sent = true; inviteRow.sent_at = new Date().toISOString() } else sendError = `Email provider replied ${r.status}`
     } catch (e) { sendError = (e as Error).message }
   }
-  await admin.from('household_invites').upsert(inviteRow, { onConflict: 'household_id,email' })
-  await admin.from('activity_log').insert({ household_id: b.household_id, user_id: user.id, user_email: user.email, action: 'invite', table_name: 'household_members', record_id: userId, summary: `${email} · ${role}${read_only ? ' read-only' : ''}${modules ? ' · ' + modules.join(',') : ''}${existing ? ' (existing account)' : ' (temporary password issued)'}` })
-  return json(200, { ok: true, user_id: userId, existing, temp_password: temp, sent, send_error: sendError, household: hh?.name || null, can_send: !!(key && from) })
+  const { error: iErr } = await admin.from('household_invites').upsert(inviteRow, { onConflict: 'household_id,email' })
+  if (iErr) return json(500, { error: iErr.message })
+  await admin.from('activity_log').insert({ household_id: b.household_id, user_id: user.id, user_email: user.email, action: 'invite', table_name: 'household_invites', record_id: email, summary: `${email} · ${role}${read_only ? ' read-only' : ''}${modules ? ' · ' + modules.join(',') : ''}${sent ? ' · emailed' : ''}` })
+  return json(200, { ok: true, user_id: null, existing: false, pending: true, temp_password: null, sent, send_error: sendError, household: hh?.name || null, can_send: !!(key && from) })
 })

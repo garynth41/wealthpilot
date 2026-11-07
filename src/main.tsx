@@ -1,4 +1,5 @@
 import { StrictMode } from 'react'
+import { isNative } from './app/native'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles.css'
@@ -12,4 +13,5 @@ window.addEventListener('vite:preloadError', e => { if (reloadForNewVersion()) e
 createRoot(document.getElementById('root')!).render(<StrictMode><RootBoundary><App /></RootBoundary></StrictMode>)
 
 // Installable app + offline shell (production builds only; the dev server never registers it)
-if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => { /* optional */ }) })
+// never inside the phone apps (0.25.1): they ship the app inside themselves, and the stores deliver updates
+if (import.meta.env.PROD && !isNative() && 'serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => { /* optional */ }) })

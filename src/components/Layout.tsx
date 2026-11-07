@@ -1,7 +1,9 @@
 import { lockNow } from './IdleLock'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
-import { useStore, outdated } from '../app/store'
+import { useStore, outdated, nativeUpdate, updateRequired } from '../app/store'
+import { initNative, syncSystemBars, storeName, storeUrl, openExternal, isNative } from '../app/native'
+import { rescheduleReminders, wireReminderTaps } from '../app/nativeReminders'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
 import { Logo } from './Logo'
 import { fmtDY, fmtDT, today, addDays, ago } from '../lib/dates'
@@ -87,6 +89,16 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [loc.pathname])   // eslint-disable-line react-hooks/exhaustive-deps
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
   const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname)
+  // the phone apps (0.25.1): back button, refresh on return to the app, reminder taps, and reminders kept in step with the data
+  const navRef = useRef(nav); navRef.current = nav
+  useEffect(() => {
+    if (!isNative()) return
+    void initNative({ back: () => navRef.current(-1), atRoot: () => !location.hash || location.hash === '#/' || location.hash === '#', onResume: () => { const s = useStore.getState(); if (s.mode === 'db') void s.refresh(); void s.checkLatest() } })
+    void wireReminderTaps(u => navRef.current(u)); syncSystemBars(document.documentElement.dataset.theme === 'dark')
+    let t: ReturnType<typeof setTimeout> | undefined; void rescheduleReminders(useStore.getState().data)
+    const off = useStore.subscribe((s, p) => { if (s.data !== p.data) { clearTimeout(t); t = setTimeout(() => void rescheduleReminders(s.data), 1500) } })
+    return () => { off(); clearTimeout(t) }
+  }, [])
   useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); if (keepHelp.current) keepHelp.current = false; else setHelp(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
   // a card's ? (lib/helpBus) opens the drawer at that card
   useEffect(() => { const on = (e: Event) => { const d = (e as CustomEvent<HelpRequest>).detail || {}; setHelp({ card: d.card ?? null, tab: d.tab }) }; window.addEventListener(HELP_EVENT, on); return () => window.removeEventListener(HELP_EVENT, on) }, [])
@@ -102,6 +114,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const tabs = visible.filter(v => v.tab)
   if (blocked) return <Navigate to="/" replace />
   const access = mode === 'db' ? { role, read_only: readOnly, modules } : null
+  if (updateRequired()) return <div className="lockscreen" role="alert"><div className="box"><h2>Update WealthPilot</h2><p className="note">This version (v{APP_VERSION}) is too old to keep your data in step with the household. Install the latest version from {storeName()} — nothing you saved is lost.</p>{storeUrl() ? <Btn primary block onClick={() => void openExternal(storeUrl())}>Open {storeName()}</Btn> : <p className="note">Open {storeName()} and update WealthPilot.</p>}</div></div>
   return <div className={`app ${collapsed ? 'rail-collapsed' : ''}`}>
     <a href="#main" className="skip">Skip to content</a>
     {palette && <Palette onClose={() => setPalette(false)} />}
@@ -125,6 +138,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <nav className="histnav" aria-label="History"><button className="hn-btn" onClick={() => nav(-1)} title="Back"><span aria-hidden>←</span> Back</button><button className="hn-btn" onClick={() => nav(1)} title="Forward">Forward <span aria-hidden>→</span></button><span className="hn-crumb">{view.path !== '/' && <><NavLink to="/">Home</NavLink> › <span>{view.zone}</span> › </>}<b>{view.title}</b></span></nav>
       <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Ctrl K: search and jump" style={{ padding: '6px 10px' }}><span aria-hidden="true">⌕ </span><kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button className="btn" onClick={() => setHelp({})} title="Help for this page (F1)" style={{ padding: '6px 10px' }}><span aria-hidden="true">ⓘ </span>Help</button><button className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Hidden — show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? <><span aria-hidden="true">◉ </span>Hidden</> : '◎'}</button><button className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
       {outdated() && <div className="banner crit">A newer release (v{useStore.getState().latest}) is available — this tab is still running <b>v{APP_VERSION}</b>. <Btn sm primary onClick={() => { try { navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.update())) } catch { /* */ } location.reload() }}>Reload now</Btn></div>}
+      {nativeUpdate() && <div className="banner info" role="status">A newer version of WealthPilot (v{useStore.getState().nativeLatest}) is in {storeName()}. {storeUrl() && <Btn sm primary onClick={() => void openExternal(storeUrl())}>Update</Btn>}</div>}
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
       {offlineAt && mode === 'db' ? <div className="banner warn" role="status" data-testid="offline-banner">You're offline — showing your data as of <b>{fmtDT(offlineAt)}</b>. Changes are paused until you're back online; the page updates by itself when the connection returns.</div>
         : !online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes are paused until you are back online.'}</div>}
@@ -151,6 +165,7 @@ export function setThemeMode(m: ThemeMode) {
   if (changed) themeSubs.forEach(cb => cb())
   // phones paint the status bar / address bar from theme-color, so keep it in step with the theme (white rail in light, near-black in dark)
   try { const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', t === 'dark' ? '#0b0d10' : '#ffffff') } catch { /* */ }
+  syncSystemBars(t === 'dark')   // the phone apps paint their own status bar
 }
 /** Light / dark / system (follows the OS). Persisted in localStorage; "system" re-applies live when the OS switches. */
 export function ThemeBtn() {

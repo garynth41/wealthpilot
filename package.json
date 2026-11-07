@@ -18,6 +18,17 @@
     "engines:sync": "node scripts/sync-engines.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.6.0",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capgo/capacitor-native-biometric": "^8.9.1",
     "@supabase/supabase-js": "^2.118.0",
     "@tanstack/react-query": "^5.105.3",
     "date-fns": "^4.4.0",
@@ -29,6 +40,8 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.6",
