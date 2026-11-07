@@ -35,8 +35,8 @@ code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--ink); color: var(--surface); display: grid; place-items: center; font-weight: 700; font-size: 14px }
 .toc { font-size: 15px } .toc ol { margin: 6px 0 0 }
 footer.site { border-top: 1px solid var(--line); color: var(--ink-3); font-size: 14px }
-footer.site .in { padding-top: 18px; padding-bottom: 28px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center }
-footer.site a { color: var(--ink-2) }
+footer.site .in { padding-top: 8px; padding-bottom: 20px; display: flex; flex-wrap: wrap; gap: 0 18px; align-items: center }
+footer.site a { color: var(--ink-2); display: inline-flex; align-items: center; min-height: 44px }
 .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 18px; border-radius: 8px; background: var(--ink); color: var(--surface); text-decoration: none; font-weight: 600 }
 .btn:hover { opacity: .9 }
 @media (max-width: 560px) { h1 { font-size: 27px } h2 { font-size: 19px } header.site .in { gap: 4px } nav.pages a { padding: 10px 8px; font-size: 14.5px } }

@@ -29,7 +29,8 @@ begin
   perform set_config('wealthpilot.deletion_rpc', 'on', true);
   perform set_config('wealthpilot.forget_user', p_user::text, true);
   update public.activity_log set user_email = 'a former member' where user_id = p_user;
-  update public.audit_events set user_email = 'a former member' where user_id = p_user;
+  -- one statement for both columns: the immutable audit trail accepts exactly this change (5f), and no half-way version of it
+  update public.audit_events set user_email = 'a former member', user_id = null where user_id = p_user;
   update public.transaction_comments set author_email = 'a former member' where created_by = p_user;
   for r in select c.conrelid::regclass as tbl, a.attname as col
     from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]

@@ -4,7 +4,7 @@
 //   assets/icon-background.png  1024² Android adaptive icon background (the dark tile)
 //   assets/splash.png / splash-dark.png  2732² launch screens
 //   android notification icon   white mark on transparent, every density (only if android/ exists)
-//   store/feature-graphic.png   1024×500 Google Play feature graphic
+//   store/feature-graphic.png   1024×500 Google Play feature graphic; store/play-icon-512.png the 512² Play listing icon
 // then runs @capacitor/assets to produce every size iOS and Android need. Playwright renders the SVG, so the result is identical anywhere.
 import { chromium } from 'playwright'
 import { mkdirSync, existsSync } from 'node:fs'
@@ -20,6 +20,7 @@ const jobs = [
   ['assets/icon-only.png', 1024, 1024, svg(1024, 1024, centred(1.0, glyph()), BG)],
   ['assets/icon-foreground.png', 1024, 1024, svg(1024, 1024, centred(0.62, glyph()))],
   ['assets/icon-background.png', 1024, 1024, svg(1024, 1024, '', BG)],
+  ['store/play-icon-512.png', 512, 512, svg(512, 512, centred(1.0, glyph()), BG)],
   ['assets/splash.png', 2732, 2732, svg(2732, 2732, centred(0.36, glyph()), BG)],
   ['assets/splash-dark.png', 2732, 2732, svg(2732, 2732, centred(0.36, glyph()), BG)],
 ]
