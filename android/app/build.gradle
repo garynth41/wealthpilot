@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+// WealthPilot (0.25.1): the version comes from package.json — 0.25.1 → versionName "0.25.1", versionCode 250100 (+ WP_BUILD_NUMBER for a
+// rebuild of the same version, since Google Play needs a higher code for every upload). Release signing reads the upload key from
+// environment variables (CI secrets) and never from the repo; without them a release build is simply unsigned. See docs/MOBILE.md.
+def wpPkg = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+def wpParts = wpPkg.version.tokenize('.').collect { it.replaceAll('[^0-9]', '').toInteger() }
+def wpCode = wpParts[0] * 1000000 + wpParts[1] * 10000 + wpParts[2] * 100 + (System.getenv('WP_BUILD_NUMBER') ?: '0').toInteger() % 100
+def wpKeystore = System.getenv('WP_UPLOAD_KEYSTORE')
+
 android {
     namespace = "io.github.garynth41.wealthpilot"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +15,8 @@ android {
         applicationId "io.github.garynth41.wealthpilot"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode wpCode
+        versionName wpPkg.version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +24,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (wpKeystore) {
+                storeFile file(wpKeystore)
+                storePassword System.getenv('WP_UPLOAD_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('WP_UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('WP_UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (wpKeystore) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

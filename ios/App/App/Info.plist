@@ -22,6 +22,14 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>WealthPilot uses the camera only when you take a photo of a receipt or statement to attach it.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>WealthPilot opens your photos only when you choose a receipt or statement to attach.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock WealthPilot with Face ID instead of typing your password.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -49,7 +57,7 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
