@@ -46,7 +46,7 @@ describe('alert rules', () => {
   it('the weekly digest: cash, what is due this week, last week vs the week before, top payees', () => {
     const d = computeDigest({ today: '2026-11-09', reserveFloor: 3000, accounts: base().accounts, recurring: base().recurring, occurrences: [], transactions: [{ id: '1', date: '2026-11-03', kind: 'expense', amount: 120, payee: 'Kroger' }, { id: '2', date: '2026-11-05', kind: 'expense', amount: 80, payee: 'Shell' }, { id: '3', date: '2026-10-28', kind: 'expense', amount: 300 }, { id: '4', date: '2026-11-04', kind: 'income', amount: 2865 }] })
     expect(d.cash).toBe(5200); expect(d.lastWeek).toBe(200); expect(d.priorWeek).toBe(300); expect(d.income).toBe(2865); expect(d.topPayees[0]).toEqual(['Kroger', 120])
-    expect(d.overdue.map(o => o.name)).toContain('Netflix'); expect(d.week.every(w => w.due >= '2026-11-09' && w.due <= '2026-11-15')).toBe(true); expect(d.safeThisWeek).toBe(Math.max(0, 5200 - d.dueTotal - 3000))
+    expect(d.overdue.map(o => o.name)).toContain('Netflix'); expect(d.week.every(w => w.due >= '2026-11-09' && w.due <= '2026-11-15')).toBe(true); expect(d.overdueTotal).toBeCloseTo(150 + 15.49, 2); expect(d.safeThisWeek).toBeCloseTo(Math.max(0, 5200 - d.dueTotal - d.overdueTotal - 3000), 2)   // 0.25.1: overdue bills are still owed
   })
 })
 

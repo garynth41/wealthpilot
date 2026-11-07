@@ -1,7 +1,7 @@
 // Reports (0.8.0): monthly / quarterly / annual reports with spending, cash-flow, net-worth, investment and tax sections.
 // Pure: buildReport() returns a Report object; reportRows() flattens it for CSV / Excel. Pages render and export only.
 import type { Data, Settings, Account, Transaction } from '../app/data/types'
-import { addDays, monthEnd, monthStart, mAdd, today, diffDays } from './dates'
+import { addDays, monthEnd, monthStart, mAdd, today, diffDays, fmtDY } from './dates'
 import { round2, sum, fmtMoney } from './money'
 import { rangeStat, inRange, spentIn } from './budget'
 import { merchantAnalysis, merchantKey } from './intelligence'
@@ -11,7 +11,7 @@ import { portfolio } from './portfolio'
 import { estimateTax } from './tax'
 import { expectedIncome } from './paySchedule'
 import { recActive, isOutflow, recMonthly, nextDue, upcoming, REC_PER_YEAR } from './recurring'
-import { payoffProjection, simulate } from './debts'
+import { payoffProjection, simulate, aprAt, hasPromo } from './debts'
 import { goalProgress } from './goals'
 import { plannedForPeriod } from './sinking'
 import { ACCOUNT_KIND_LABEL } from '../app/data/types'
@@ -161,10 +161,12 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
   }
   if (period('debts')) {
     const ls = liabilities(d).filter(a => debtBal(a, d) >= 1 || debtPaidInRange(d, a, r.from, r.to) > 0)
-    const rows = ls.map(a => { const bal = debtBal(a, d), pay = debtPlanned(a), paid = round2(debtPaidInRange(d, a, r.from, r.to)), pr = payoffProjection(bal, +a.apr || 0, Math.max(pay, 1)), u = utilization(a); return [a.name, ACCOUNT_KIND_LABEL[a.kind], bal, +a.apr || 0, +a.minimum_payment || 0, pay, paid, round2(bal * (+a.apr || 0) / 100 / 12), isFinite(pr.months) ? pr.months : '', u != null ? round2(u) : ''] as Array<string | number> }).sort((a, b) => +b[2] - +a[2])
+    const rows = ls.map(a => { const bal = debtBal(a, d), pay = debtPlanned(a), paid = round2(debtPaidInRange(d, a, r.from, r.to)), pr = payoffProjection(bal, m => aprAt(a, m, asOf), Math.max(pay, 1)), u = utilization(a), rate = aprAt(a, 0, asOf); return [a.name, ACCOUNT_KIND_LABEL[a.kind], bal, rate, +a.minimum_payment || 0, pay, paid, round2(bal * rate / 100 / 12), isFinite(pr.months) ? pr.months : '', u != null ? round2(u) : ''] as Array<string | number> }).sort((a, b) => +b[2] - +a[2])
     const sim = simulate(liabilities(d), 0, 'avalanche'); const total = round2(sum(rows.map(x => +x[2])))
     out.push({ id: 'debts', title: 'Debt', kpis: [{ label: 'Total owed', value: total, fmt: 'money' }, { label: 'Paid this period', value: round2(sum(rows.map(x => +x[6]))), fmt: 'money' }, { label: 'Interest per month (est.)', value: round2(sum(rows.map(x => +x[7]))), fmt: 'money' }, { label: 'Planned per month', value: round2(sum(rows.map(x => +x[5]))), fmt: 'money' }, ...(total > 0 && isFinite(sim.months) ? [{ label: 'Debt-free in (months)', value: sim.months, fmt: 'num' as const }] : [])],
-      table: { headers: ['Account', 'Type', 'Balance', 'APR %', 'Minimum', 'Planned', 'Paid this period', 'Interest / mo', 'Months to payoff', 'Utilization'], rows }, notes: total > 0 ? [`At the planned payments (avalanche order) the last balance clears in about ${isFinite(sim.months) ? sim.months + ' months' : 'more than 30 years'}, paying roughly ${fmtMoney(sim.interest)} in interest.`] : ['No debt balances.'] })
+      table: { headers: ['Account', 'Type', 'Balance', 'APR %', 'Minimum', 'Planned', 'Paid this period', 'Interest / mo', 'Months to payoff', 'Utilization'], rows }, notes: total > 0 ? [`At the planned payments (avalanche order) the last balance clears in about ${isFinite(sim.months) ? sim.months + ' months' : 'more than 30 years'}, paying roughly ${fmtMoney(sim.interest)} in interest.`,
+        // 0.25.1: APR % and Interest / mo are the rate in force today; say when a promotional rate steps up
+        ...ls.filter(a => hasPromo(a, asOf)).map(a => `${a.name}: ${+a.promo_apr!}% until ${fmtDY(a.promo_until!)}, then ${+a.apr || 0}% — the table shows the rate in force today.`)] : ['No debt balances.'] })
   }
   if (period('goals')) {
     const gs = d.goals.filter(g => g.status === 'Active' || g.status === 'Reached').sort((a, b) => a.priority - b.priority)

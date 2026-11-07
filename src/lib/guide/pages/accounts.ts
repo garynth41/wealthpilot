@@ -68,7 +68,7 @@ export const accounts: GuidePage = {
       how: ['Use the + buttons to add a card or loan, then copy the statement balance, minimum payment, due date and APR into the row.', 'Click Record payment when you pay: it logs the transfer from your bank, lowers the balance and marks the statement paid.', 'Click New statement when a new statement arrives: the old one moves to Statement history and the due date resets.'],
       fields: [
         { term: 'Balance owed', text: 'What you owe today.' },
-        { term: 'APR % / Promo APR % / Promo ends', text: 'The interest rate, and a promotional rate (for example a 0% balance transfer) with its end date. The payoff plan uses the promo rate until it ends.' },
+        { term: 'APR % / Promo APR % / Promo ends', text: 'The interest rate, and a promotional rate (for example a 0% balance transfer) with its end date. The promo rate applies through the end date and the APR after it, in the payoff plan, the forecast, interest totals and the avalanche order.' },
         { term: 'Credit limit / Available', text: 'The card\'s limit and how much of it is left.' },
         { term: 'Utilization', text: 'Balance divided by limit. Green under 30%, amber 30–80%, red above 80%. Under 30% (better, under 10%) helps your credit score.' },
         { term: 'Statement / Statement bal.', text: 'The date and balance of the latest statement.' },
@@ -76,7 +76,7 @@ export const accounts: GuidePage = {
         { term: 'Planned payment', text: 'What you intend to pay each month — never less than the minimum. The budget, forecast and payoff plan all use it.' },
         { term: 'Due status', text: 'For the current statement: Paid, Due in N days (Autopay in N days when autopay is on), Due today, Overdue N days, Nothing due, or No due date.' },
         { term: 'Autopay / Autopay from', text: 'Whether the lender pulls the payment automatically, and from which account (so the forecast takes it from the right place).' },
-        { term: 'Interest / mo', text: 'Roughly what this balance costs in interest each month at the current APR.' },
+        { term: 'Interest / mo', text: 'Roughly what this balance costs in interest each month at the rate that applies now: the promo rate until Promo ends, then the APR.' },
       ],
       tips: ['A loan paid down to zero is marked Paid off automatically; a card stays Active at a zero balance.'],
     },

@@ -180,11 +180,14 @@ export function computeDigest(inp: DigestInput) {
   const t = inp.today; const live = inp.transactions.filter(x => !x.duplicate_of && x.status !== 'void')
   const cash = inp.accounts.filter(a => a.status === 'Active' && !LIAB.includes(a.kind) && (a.include_in_cash || (inp.includeRetirementInCash && a.kind === 'retirement'))).reduce((n, a) => n + (a.bank_balance ?? a.balance ?? 0), 0)
   const week = inp.recurring.filter(r => r.status === 'Active' && r.kind !== 'income').flatMap(r => dueDatesN(r, t, addDaysN(t, 6)).filter(d => !paidFor(r, d, inp.occurrences, live)).map(d => ({ name: r.name, amount: +r.amount || 0, due: d, autopay: r.autopay }))).sort((a, b) => a.due.localeCompare(b.due))
-  const overdue = inp.recurring.filter(r => r.status === 'Active' && r.kind !== 'income' && !r.autopay).flatMap(r => dueDatesN(r, addDaysN(t, -30), addDaysN(t, -1)).filter(d => !paidFor(r, d, inp.occurrences, live)).map(d => ({ name: r.name, amount: +r.amount || 0, due: d })))
+  // 0.25.1: everything due in the last 30 days and still unpaid is still owed — autopay included (an autopay that never went through), as in
+  // the app's Safe to spend — so it is listed and taken off what is safe to spend
+  const overdue = inp.recurring.filter(r => r.status === 'Active' && r.kind !== 'income').flatMap(r => dueDatesN(r, addDaysN(t, -30), addDaysN(t, -1)).filter(d => !paidFor(r, d, inp.occurrences, live)).map(d => ({ name: r.name, amount: +r.amount || 0, due: d, autopay: r.autopay }))).sort((a, b) => a.due.localeCompare(b.due))
+  const overdueTotal = overdue.reduce((n, o) => n + o.amount, 0)
   const spend = (from: string, to: string) => live.filter(x => x.kind === 'expense' && x.date >= from && x.date <= to).reduce((n, x) => n + x.amount, 0)
   const lastWeek = spend(addDaysN(t, -7), addDaysN(t, -1)), priorWeek = spend(addDaysN(t, -14), addDaysN(t, -8)), income = live.filter(x => x.kind === 'income' && x.date >= addDaysN(t, -7) && x.date <= addDaysN(t, -1)).reduce((n, x) => n + x.amount, 0)
   const byPayee = new Map<string, number>(); for (const x of live.filter(x => x.kind === 'expense' && x.date >= addDaysN(t, -7) && x.date <= addDaysN(t, -1))) { const k = (x.payee || 'Unknown').trim(); byPayee.set(k, (byPayee.get(k) || 0) + x.amount) }
   const topPayees = [...byPayee.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
   const dueTotal = week.reduce((n, w) => n + w.amount, 0)
-  return { cash, floor: inp.reserveFloor, safeThisWeek: Math.max(0, cash - dueTotal - inp.reserveFloor), week, dueTotal, overdue, lastWeek, priorWeek, income, topPayees, uncategorized: live.filter(x => x.kind === 'expense' && x.date >= addDaysN(t, -7) && !inp.categoriesOf?.(x) && !(x as { category_id?: string | null }).category_id).length }
+  return { cash, floor: inp.reserveFloor, safeThisWeek: Math.max(0, cash - dueTotal - overdueTotal - inp.reserveFloor), week, dueTotal, overdue, overdueTotal, lastWeek, priorWeek, income, topPayees, uncategorized: live.filter(x => x.kind === 'expense' && x.date >= addDaysN(t, -7) && !inp.categoriesOf?.(x) && !(x as { category_id?: string | null }).category_id).length }
 }
