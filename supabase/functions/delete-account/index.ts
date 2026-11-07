@@ -63,7 +63,8 @@ Deno.serve(async (req) => {
     const check = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } })
     const { error: pe } = await check.auth.signInWithPassword({ email: user.email, password: String(b.password) })
     if (pe) return json(403, { error: /invalid/i.test(pe.message) ? 'That password is not right' : pe.message })
-    await check.auth.signOut().catch(() => { /* the check session is thrown away either way */ })
+    // scope local: end only the session this check opened (the default, global, would also sign the person out of the app)
+    await check.auth.signOut({ scope: 'local' }).catch(() => { /* the check session is thrown away either way */ })
     // with two-factor on, the session asking must itself have passed it
     const { data: f } = await admin.auth.admin.mfa.listFactors({ userId: user.id })
     if ((f?.factors || []).some(x => x.status === 'verified') && claims(jwt).aal !== 'aal2') return json(403, { error: 'Two-factor is on: sign out, sign in again with your code, then delete the account' })
