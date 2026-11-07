@@ -38,7 +38,7 @@ const RENAME = Object.entries({
   'Spectrum': 'Internet provider', 'Verizon': 'Phone plan', 'GEICO auto': 'Car insurance', 'GEICO': 'Car insurer', 'Netflix': 'Streaming', 'Spotify': 'Music', 'Planet Fitness': 'Gym',
   'Kroger': 'Grocery store', 'Olentangy Property Mgmt': 'Property manager', 'Meridian Aviation Group': 'Employer', 'Paycheck — Meridian': 'Paycheck', 'Anthem': 'Health insurer',
   'Haven Life': 'Life insurer', 'Progressive': 'Car insurer', '2021 Honda CR-V': 'Family SUV', 'Auto — Honda CR-V': 'Auto — family SUV', 'Honda CR-V': 'family SUV',
-  'Thomas household (demo)': 'Our household', 'Thomas household': 'Our household', 'Gary': 'Alex',
+  'Sample household (demo)': 'Our household', 'Thomas household (demo)': 'Our household', 'Thomas household': 'Our household', 'Gary': 'Alex',
 }).sort((a, b) => b[0].length - a[0].length)
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.woff2': 'font/woff2' }
