@@ -10,7 +10,7 @@
 // Maintenance (pg_cron secret): { action: "maintenance_all", backfill_from?: "YYYY-MM-DD", dry_run?: true } — backfill (optional) and de-duplicate every household; dry_run only previews the merge plan.
 // The access URL contains the SimpleFIN credentials: it is only ever in sync_secrets (no browser access), never logged, never returned.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { planDedupe, type DTxn } from './dedupe.ts'
+import { planDedupe, type DAccount, type DTxn } from './dedupe.ts'
 import { verifiedBalance, type RTxn } from './reconcile.ts'
 import { syncLimitMessage, SYNC_GAP_MINUTES, SYNC_DAILY, type SyncSlot } from './syncLimit.ts'
 import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
@@ -53,7 +53,10 @@ async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: nu
   const { data, error } = await admin.from('transactions').select('*').eq('household_id', hh).gte('date', since).limit(20000)
   if (error) throw new Error('Reading transactions for de-duplication failed: ' + error.message)
   const rows = (data || []).map(t => ({ ...t, amount: Number(t.amount) })) as DTxn[]
-  const plan = planDedupe(rows); let merged = 0
+  // the accounts' kinds let the two bank rows of a card or loan payment (out of checking, onto the card) become one transfer (0.25.1)
+  const { data: accts, error: ae } = await admin.from('accounts').select('id, kind, name, institution').eq('household_id', hh)
+  if (ae) throw new Error('Reading accounts for de-duplication failed: ' + ae.message)
+  const plan = planDedupe(rows, (accts || []) as DAccount[]); let merged = 0
   if (dryRun) {
     const byId = new Map(rows.map(t => [t.id, t])); const brief = (id: string): Brief => { const t = byId.get(id)!; return { date: t.date, amount: t.amount, kind: t.kind, payee: t.payee ?? null, source: t.external_id?.startsWith('sfin:') ? 'bank' : t.source ?? null, account_id: t.account_id ?? t.to_account_id ?? null } }
     return { merged: plan.auto.reduce((n, g) => n + g.dups.length, 0), review: plan.review.length, preview: { auto: plan.auto.map(g => ({ keep: brief(g.keeper), merge: g.dups.map(brief), confidence: g.confidence, reason: g.reason, patch: g.patch })), review: plan.review.slice(0, 60).map(p => ({ a: brief(p.a), b: brief(p.b), reason: p.reason })) } }
@@ -101,7 +104,7 @@ async function runSync(hh: string, trigger: Trigger, fromDate?: string): Promise
         const existing = [...(ex || []).map(e => ({ account_id: e.account_id as string, date: e.date as string, kind: e.kind as string, amount: Number(e.amount), external_id: e.external_id as string | null })), ...(byId || []).map(e => ({ account_id: null, date: '', kind: '', amount: 0, external_id: e.external_id as string }))]
         const { fresh, skipped: sk } = dropKnown(incoming, localId, existing); skipped += sk
         for (let i = 0; i < fresh.length; i += 200) {
-          const rows = fresh.slice(i, i + 200).map(t => ({ ...t, household_id: hh, account_id: localId }))
+          const rows = fresh.slice(i, i + 200).map(t => ({ ...t, household_id: hh }))   // toNewTxns sets the account (a card payment is a transfer into it)
           const { error } = await admin.from('transactions').insert(rows); if (error) throw new Error('Saving transactions failed: ' + error.message)
         }
         added += fresh.length

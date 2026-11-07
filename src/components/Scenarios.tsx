@@ -24,8 +24,8 @@ export function ScenarioBar({ kind, current, onLoad, goalId, compact }: { kind: 
     <span className="l">Scenarios</span>
     {list.length === 0 && !naming && <span className="note" style={{ margin: 0 }}>none saved yet</span>}
     {list.map(x => <span key={x.id} className={`schip${active?.id === x.id ? ' on' : ''}`}>
-      <button className="go" onClick={() => load(x)} title={x.notes || `Load “${x.name}”`} aria-pressed={active?.id === x.id}>{x.pinned ? '★ ' : ''}{x.name}</button>
-      {canEdit && <><button className="mini" onClick={() => pin(x)} aria-label={x.pinned ? `Unpin ${x.name}` : `Pin ${x.name}`} title={x.pinned ? 'Unpin' : 'Pin to the front'}>{x.pinned ? '☆' : '★'}</button><button className="mini" onClick={() => drop(x)} aria-label={`Delete scenario ${x.name}`} title="Delete">✕</button></>}
+      <button type="button" className="go" onClick={() => load(x)} title={x.notes || `Load “${x.name}”`} aria-pressed={active?.id === x.id}>{x.pinned ? '★ ' : ''}{x.name}</button>
+      {canEdit && <><button type="button" className="mini" onClick={() => pin(x)} aria-label={x.pinned ? `Unpin ${x.name}` : `Pin ${x.name}`} title={x.pinned ? 'Unpin' : 'Pin to the front'}>{x.pinned ? '☆' : '★'}</button><button type="button" className="mini" onClick={() => drop(x)} aria-label={`Delete scenario ${x.name}`} title="Delete">✕</button></>}
     </span>)}
     {canEdit && (naming ? <span className="schip naming"><input className="inp" autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setNaming(false) }} placeholder="e.g. Job change in March" aria-label="Scenario name" maxLength={60} /><Btn sm primary onClick={save} disabled={!name.trim()}>Save</Btn><Btn sm onClick={() => setNaming(false)}>Cancel</Btn></span>
       : <><Btn sm onClick={() => { setName(''); setNaming(true) }}>{active ? 'Save a copy…' : 'Save as scenario…'}</Btn>{last && <Btn sm onClick={() => overwrite(last)} title={`Replace “${last.name}” with these sliders`}>Update “{last.name}”</Btn>}</>)}

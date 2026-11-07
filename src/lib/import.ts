@@ -3,6 +3,7 @@
 import type { Account, Data, Transaction } from '../app/data/types'
 import { isLiability } from './accounts'
 import { parseNum, round2 } from './money'
+import { cardCredit } from './simplefin'
 
 // ---------------- CSV ----------------
 /** RFC 4180-ish CSV → rows of strings. Handles quoted fields, embedded commas/newlines, CRLF, BOM, and ; or tab delimiters. */
@@ -83,14 +84,16 @@ export function detectMapping(rows: string[][]): Mapping | null {
 }
 
 // ---------------- rows → transactions ----------------
-export interface ImportRow { date: string; payee: string; memo: string; amount: number; kind: 'expense' | 'income'; external_id: string; raw: string[]; line: number; warn?: string }
+export interface ImportRow { date: string; payee: string; memo: string; amount: number; kind: 'expense' | 'income'; external_id: string; raw: string[]; line: number; warn?: string
+  /** the file's Type column (or OFX TRNTYPE), lower case — Sale, Return, Payment… — when there is one */
+  type?: string }
 /** FNV-1a of the stable fields — used as external_id when the file has no transaction id, so a re-import of the same file is a no-op. */
 export function rowHash(date: string, amount: number, payee: string, n = 0) { let h = 0x811c9dc5; for (const ch of `${date}|${amount.toFixed(2)}|${payee.trim().toLowerCase()}|${n}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0 } return 'h' + h.toString(16).padStart(8, '0') }
 /** Apply a mapping to CSV rows. Sign convention: a Type column wins; else debit/credit columns; else the sign with `negativeIsOutflow` (default true — flip it for card files that list charges as positive). */
 export function mapRows(rows: string[][], m: Mapping, opts: { card?: boolean; source?: string } = {}): ImportRow[] {
   const body = m.hasHeader ? rows.slice(1) : rows; const out: ImportRow[] = []; const seen = new Map<string, number>()
   body.forEach((r, i) => {
-    const date = parseDate(r[m.date] || ''); const payee = (r[m.payee] || '').trim(); const memo = m.memo != null ? (r[m.memo] || '').trim() : ''
+    const date = parseDate(r[m.date] || ''); const payee = (r[m.payee] || '').trim(); const memo = m.memo != null ? (r[m.memo] || '').trim() : ''; const type = m.type != null ? (r[m.type] || '').trim().toLowerCase() : ''
     let amt: number | null = null, kind: ImportRow['kind'] | null = null
     if (m.debit != null || m.credit != null) { const dr = m.debit != null ? parseNum(r[m.debit]) : null, cr = m.credit != null ? parseNum(r[m.credit]) : null; if (dr) { amt = Math.abs(dr); kind = 'expense' } else if (cr) { amt = Math.abs(cr); kind = 'income' } }
     else if (m.amount != null) { const a = parseNum(r[m.amount]); if (a != null) { amt = Math.abs(a); const ty = m.type != null ? (r[m.type] || '').toLowerCase() : ''
@@ -98,9 +101,9 @@ export function mapRows(rows: string[][], m: Mapping, opts: { card?: boolean; so
       if (/^(dr|debit|withdrawal|purchase|sale|charge|fee|check|pos|atm)/.test(ty) || (/^payment/.test(ty) && !opts.card)) kind = 'expense'
       else if (/^(cr|credit|deposit|refund|return|reversal)/.test(ty) || (/^payment/.test(ty) && opts.card)) kind = 'income'
       else kind = (a < 0) === m.negativeIsOutflow ? 'expense' : 'income' } }   // otherwise the sign decides; negativeIsOutflow is user-flippable (card issuers disagree: Chase sales are negative, Amex charges are positive)
-    if (!date || amt == null || !amt) { if (r.some(c => c.trim())) out.push({ date: date || '', payee, memo, amount: amt || 0, kind: kind || 'expense', external_id: '', raw: r, line: i + 1 + (m.hasHeader ? 1 : 0), warn: !date ? 'no date' : 'no amount' }); return }
+    if (!date || amt == null || !amt) { if (r.some(c => c.trim())) out.push({ date: date || '', payee, memo, amount: amt || 0, kind: kind || 'expense', external_id: '', raw: r, line: i + 1 + (m.hasHeader ? 1 : 0), warn: !date ? 'no date' : 'no amount', ...(type ? { type } : {}) }); return }
     const fileId = m.id != null ? (r[m.id] || '').trim() : ''; const key = `${date}|${amt.toFixed(2)}|${payee.toLowerCase()}`; const n = seen.get(key) || 0; seen.set(key, n + 1)
-    out.push({ date, payee, memo, amount: round2(amt), kind: kind!, external_id: (opts.source || 'csv') + ':' + (fileId || rowHash(date, amt, payee, n)), raw: r, line: i + 1 + (m.hasHeader ? 1 : 0) })
+    out.push({ date, payee, memo, amount: round2(amt), kind: kind!, external_id: (opts.source || 'csv') + ':' + (fileId || rowHash(date, amt, payee, n)), raw: r, line: i + 1 + (m.hasHeader ? 1 : 0), ...(type ? { type } : {}) })
   })
   return out
 }
@@ -116,7 +119,7 @@ export function parseOfx(text: string): OfxResult {
     const date = parseDate(tag(b, 'DTPOSTED').slice(0, 8)) || ''; const a = parseNum(tag(b, 'TRNAMT')); const name = tag(b, 'NAME') || tag(b, 'PAYEE'); const memo = tag(b, 'MEMO'); const fit = tag(b, 'FITID'); const type = tag(b, 'TRNTYPE').toUpperCase()
     if (!date || a == null) { rows.push({ date, payee: name, memo, amount: a || 0, kind: 'expense', external_id: '', raw: [b.trim()], line: i + 1, warn: !date ? 'no date' : 'no amount' }); return }
     const kind: ImportRow['kind'] = a < 0 || type === 'DEBIT' || type === 'FEE' || type === 'PAYMENT' && a < 0 ? 'expense' : 'income'
-    rows.push({ date, payee: name, memo, amount: round2(Math.abs(a)), kind, external_id: 'ofx:' + (fit || rowHash(date, Math.abs(a), name, i)), raw: [b.trim()], line: i + 1 })
+    rows.push({ date, payee: name, memo, amount: round2(Math.abs(a)), kind, external_id: 'ofx:' + (fit || rowHash(date, Math.abs(a), name, i)), raw: [b.trim()], line: i + 1, ...(type ? { type: type.toLowerCase() } : {}) })
   })
   const bal = parseNum(tag(body.split(/<LEDGERBAL>/i)[1] || '', 'BALAMT')); const balAsOf = parseDate(tag(body.split(/<LEDGERBAL>/i)[1] || '', 'DTASOF').slice(0, 8)) || undefined
   return { rows, acctId: tag(body, 'ACCTID') || undefined, acctType: tag(body, 'ACCTTYPE') || (/<CCSTMTRS>/i.test(body) ? 'CREDITCARD' : undefined), org: tag(body, 'ORG') || undefined, balance: bal ?? undefined, balanceAsOf: balAsOf, start: parseDate(tag(body, 'DTSTART').slice(0, 8)) || undefined, end: parseDate(tag(body, 'DTEND').slice(0, 8)) || undefined }
@@ -133,7 +136,10 @@ export function dedupe(d: Data, account: Account, rows: ImportRow[]): Proposed[]
   const existing = d.transactions.filter(t => t.status !== 'void' && (t.account_id === account.id || t.to_account_id === account.id))
   return rows.map(row => {
     const txn: Partial<Transaction> = { date: row.date, kind: row.kind, amount: row.amount, account_id: account.id, payee: row.payee || null, memo: row.memo || null, tags: [], status: 'cleared', source: 'import', external_id: row.external_id || null, exclude_from_budget: false }
-    if (isLiability(account) && row.kind === 'income') { txn.kind = 'transfer'; txn.account_id = null; txn.to_account_id = account.id }   // a credit on a card = a payment to it
+    // a credit on a card or loan (0.25.1), by the same rule as the bank feed (cardCredit): a payment (the Type column or the description says
+    // so) is a transfer into it; a return, refund or other credit stays a credit on it, which takes spending down — and when the same amount
+    // left checking or savings within 4 days the duplicate engine makes the pair one transfer
+    if (isLiability(account) && row.kind === 'income' && cardCredit(`${row.payee} ${row.memo}`, row.type) === 'payment') { txn.kind = 'transfer'; txn.account_id = null; txn.to_account_id = account.id }
     if (row.warn) return { row, dup: null, txn }
     if (row.external_id && byExt.has(row.external_id)) return { row, dup: 'external_id', match: byExt.get(row.external_id), txn }
     if (seenIds.has(row.external_id)) return { row, dup: 'in_file', txn }; seenIds.add(row.external_id)

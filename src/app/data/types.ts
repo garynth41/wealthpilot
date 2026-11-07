@@ -158,8 +158,8 @@ export interface SyncLogRow { id: number; started_at: string; finished_at: strin
 export interface SyncStatus { connection: SyncConnection | null; log: SyncLogRow[]; available: boolean; /** 0.25.0: when this household's manual syncs ran in the last 24 hours (for the sync limit) */ requests?: string[] }
 export interface SyncResult { ok: boolean; accounts: number; added: number; skipped: number; unmapped: number; message: string; merged?: number; review?: number; earliest?: Record<string, string> }
 /** What an owner asks for when inviting; the server issues the temporary password and returns it once. */
-export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; subject: string; body: string }
-export interface InviteResult { user_id: UUID; existing: boolean; temp_password: string | null; sent: boolean; send_error?: string | null; can_send: boolean }
+export interface InviteRequest { email: string; display_name?: string | null; role: Role; read_only: boolean; modules: string[] | null; note?: string; send?: boolean }
+export interface InviteResult { user_id: UUID | null; existing: boolean; pending?: boolean; temp_password: string | null; sent: boolean; send_error?: string | null; can_send: boolean }
 export interface ActivityRow { id: number; household_id: UUID; user_email?: string | null; action: string; table_name: string; record_id?: string | null; summary?: string | null; created_at: string }
 
 /** Household-level settings stored in households.settings (merged over SETTINGS_DEFAULTS). */
@@ -207,7 +207,10 @@ export interface RetirementInputs {
   currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number
   /** Social Security, $/yr in today's dollars (kept for compatibility; ssMonthly wins when set) */
   socialSecurity: number; currentIncome: number
-  /** 0.20.0: Social Security as the SSA statement shows it — monthly benefit at a claiming age — plus any pensions; ssHaircut = the share of the benefit to assume is NOT paid (0.25 = plan on 75%) */
+  /** 0.20.0: Social Security as the SSA statement shows it — ssMonthly is the monthly benefit at full retirement age (by birth year, worked out from
+   *  currentAge: 67 for 1960 or later, 66 to 66 and 10 months for 1943–1959; since 0.25.1 the claiming age ssStartAge scales it — 70% at 62 … 124% at 70
+   *  when it is 67, lib/retirement.ts ssClaimFactor / fullRetirementAge) — plus any pensions;
+   *  ssHaircut = the share of the benefit to assume is NOT paid (0.25 = plan on 75%) */
   ssMonthly?: number | null; ssStartAge?: number | null; ssHaircut?: number; pensions?: Pension[]
 }
 export interface PayeeRule { id: string; pattern: string; match: 'contains' | 'starts' | 'exact' | 'regex'; category_id?: string | null; account_id?: string | null; rename?: string | null; exclude_from_budget?: boolean; kind?: 'expense' | 'income' | null; tags?: string[] | null; review?: boolean; goal_id?: string | null; enabled: boolean; hits?: number; created_at?: string; source?: 'manual' | 'learned' }

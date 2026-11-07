@@ -1,10 +1,11 @@
 import type { Repo } from './repo'
-import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
+import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type MemberNotify, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
 import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
+import { withMemberNotify } from '../../lib/memberNotify'
+import { restoreBackup, RESTORE_ORDER, type RestoreSummary } from '../../lib/restore'
 
 const COLLECTIONS = Object.keys(TABLE) as Collection[]
-const IMPORT_ORDER: Collection[] = ['scenarios', 'accounts', 'scores', 'holdings', 'lots', 'insurance', 'estate', 'categories', 'paySchedules', 'periods', 'lines', 'recurring', 'goals', 'transactions', 'splits', 'attachments', 'comments', 'statements', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems', 'reconciliations']
 const strip = <T extends object>(row: T) => { const r = { ...row } as Record<string, unknown>; for (const k of ['created_at', 'updated_at', 'created_by', 'updated_by', 'value']) delete r[k]; return r }   // 'value' is a generated column on holdings
 
 export class SupabaseRepo implements Repo {
@@ -53,6 +54,11 @@ export class SupabaseRepo implements Repo {
     const next = { ...SETTINGS_DEFAULTS, ...(cur?.settings || {}), ...patch }
     const { error } = await sb().from('households').update({ settings: next, updated_at: new Date().toISOString() }).eq('id', this.hh); if (error) throw error; return next
   }
+  async saveMemberNotify(userId: string, patch: Partial<MemberNotify> | null) {
+    const { data: cur, error: e1 } = await sb().from('households').select('settings').eq('id', this.hh).single(); if (e1) throw e1
+    const stored = (cur?.settings || {}) as Settings; const next = { ...SETTINGS_DEFAULTS, ...stored, notify: withMemberNotify(stored.notify, userId, patch) }
+    const { error } = await sb().from('households').update({ settings: next, updated_at: new Date().toISOString() }).eq('id', this.hh); if (error) throw error; return next
+  }
   async requestDeletion(confirm: string) { const { data, error } = await sb().rpc('request_household_deletion', { p_household: this.hh, p_confirm: confirm }); if (error) throw error; return String(data) }
   async cancelDeletion() { const { error } = await sb().rpc('cancel_household_deletion', { p_household: this.hh }); if (error) throw error }
   async renameHousehold(name: string) { const { error } = await sb().from('households').update({ name }).eq('id', this.hh); if (error) throw error }
@@ -87,19 +93,25 @@ export class SupabaseRepo implements Repo {
     if (error) { let msg = error.message; try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === 'function') { const j = await ctx.json(); if (j?.error) msg = j.error } } catch { /* keep message */ } throw new Error(msg) }
     if (!data?.ok) throw new Error(data?.error || 'Invitation failed'); return data as InviteResult }
   async exportJson() { const all = await this.loadAll(); return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: all.household, ...all.data } }
-  async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
-    let n = 0
-    if (mode === 'replace') for (const k of [...IMPORT_ORDER].reverse()) { const { error } = await sb().from(TABLE[k]).delete().eq('household_id', this.hh); if (error) throw error }
-    const idMap = new Map<string, string>()
-    const remap = (row: Record<string, unknown>) => { const out: Record<string, unknown> = {}; for (const [k, v] of Object.entries(row)) { if (k === 'id' || k === 'household_id' || k === 'created_at' || k === 'updated_at' || k === 'created_by' || k === 'updated_by') continue; out[k] = typeof v === 'string' && idMap.has(v) ? idMap.get(v) : v } return out }
-    const links: Array<[string, string]> = []   // accounts point at each other (an asset's loan): link them once both exist
-    for (const k of IMPORT_ORDER) {
-      const rows = ((json[k] as Record<string, unknown>[] | undefined) || []).filter(r => k !== 'attachments' || String(r.path || '').startsWith(this.hh + '/'))   // a file stored under another household cannot be re-linked
-      for (const r of rows) { const row = remap(r); if (k === 'accounts' && row.linked_account_id) { links.push([String(r.id), String(r.linked_account_id)]); row.linked_account_id = null }
-        const { data, error } = await sb().from(TABLE[k]).insert({ ...row, household_id: this.hh }).select('id').single(); if (error) throw error; if (typeof r.id === 'string') idMap.set(r.id, data.id); n++ }
-    }
-    for (const [a, b] of links) if (idMap.has(a) && idMap.has(b)) await sb().from('accounts').update({ linked_account_id: idMap.get(b) }).eq('id', idMap.get(a)!).eq('household_id', this.hh)
-    return n
+  /** Restore a JSON backup with the shared rules in lib/restore.ts: merge matches existing rows by id, then by natural key, updates a row in place
+   *  only when the backup's copy is newer, and re-points every child at the surviving parent. A new row keeps its backup id unless that id is
+   *  already taken (for example by the household the backup came from), in which case the database gives it a new one. */
+  async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<RestoreSummary> {
+    const c = sb()
+    if (mode === 'replace') for (const k of [...RESTORE_ORDER].reverse()) { const { error } = await c.from(TABLE[k]).delete().eq('household_id', this.hh); if (error) throw error }
+    const missing = (e: { code?: string; message?: string } | null) => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|schema cache/i.test(e.message || ''))
+    const res = await Promise.all(RESTORE_ORDER.map(k => c.from(TABLE[k]).select('*').eq('household_id', this.hh).limit(20000)))
+    const existing: Partial<Record<Collection, Record<string, unknown>[]>> = {}
+    RESTORE_ORDER.forEach((k, i) => { const r = res[i]; if (r.error && !missing(r.error)) throw r.error; existing[k] = (r.data || []).map(this.num) })
+    return restoreBackup(existing, json, {
+      insert: async (coll, row) => {
+        const body: Record<string, unknown> = { ...strip(row), household_id: this.hh }
+        let r = await c.from(TABLE[coll]).insert(body).select('id').single()
+        if (r.error && r.error.code === '23505' && /_pkey/.test(r.error.message || '') && body.id) { delete body.id; r = await c.from(TABLE[coll]).insert(body).select('id').single() }   // the id belongs to a row elsewhere
+        if (r.error) throw r.error; return String(r.data.id)
+      },
+      update: async (coll, id, patch) => { const { data, error } = await c.from(TABLE[coll]).update(strip(patch)).eq('id', id).eq('household_id', this.hh).select('id'); if (error) throw error; return (data || []).length > 0 },
+    }, { attachmentPrefix: this.hh + '/' })   // a file stored under another household cannot be re-linked
   }
   subscribe(onChange: () => void) {
     const ch = sb().channel('hh-' + this.hh)

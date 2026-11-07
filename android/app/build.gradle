@@ -1,0 +1,77 @@
+apply plugin: 'com.android.application'
+
+// WealthPilot (0.25.1): the version comes from package.json — 0.25.1 → versionName "0.25.1", versionCode 250100 (+ WP_BUILD_NUMBER, 0–99,
+// for a rebuild of the same version, since Google Play needs a higher code for every upload; the iOS build number is the same figure).
+// Release signing reads the upload key from environment variables (CI secrets) and never from the repo; without them a release build
+// is simply unsigned. See docs/MOBILE.md.
+def wpPkg = new groovy.json.JsonSlurper().parse(file('../../package.json'))
+def wpParts = wpPkg.version.tokenize('.').collect { it.replaceAll('[^0-9]', '').toInteger() }
+def wpBuild = (System.getenv('WP_BUILD_NUMBER') ?: '0').trim().toInteger()
+if (wpBuild < 0 || wpBuild > 99) throw new GradleException("WP_BUILD_NUMBER must be 0 to 99 (a rebuild of the same version) — raise the version in package.json instead")
+if (wpParts.size() != 3 || wpParts[1] > 99 || wpParts[2] > 99) throw new GradleException("package.json version must look like 1.2.3 with minor and patch below 100")
+def wpCode = wpParts[0] * 1000000 + wpParts[1] * 10000 + wpParts[2] * 100 + wpBuild
+def wpKeystore = System.getenv('WP_UPLOAD_KEYSTORE')
+
+android {
+    namespace = "io.github.garynth41.wealthpilot"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "io.github.garynth41.wealthpilot"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode wpCode
+        versionName wpPkg.version
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (wpKeystore) {
+                storeFile file(wpKeystore)
+                storePassword System.getenv('WP_UPLOAD_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('WP_UPLOAD_KEY_ALIAS')
+                keyPassword System.getenv('WP_UPLOAD_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (wpKeystore) signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

@@ -1,0 +1,38 @@
+WealthPilot puts your household's money in one place: what's coming in, what's going out, what's due, and the plan for what comes next. Share it with your partner or family, each with exactly the access you choose.
+
+EVERYDAY MONEY
+• Budgets by month, paycheck, week, every two weeks or twice a month, with rollover and a clear amount left to spend
+• Safe to spend: what you can spend today after upcoming bills, overdue bills and your cash floor
+• Bills and subscriptions with due dates, autopay, reminders on your phone and one-tap Mark paid
+• Give every paycheck a job the moment it lands
+• Transactions with categories, splits, tags, comments, receipts and payee rules that file things for you
+• Import bank files (CSV, OFX, QFX), or connect your banks through SimpleFIN Bridge for a daily sync
+• Reconcile accounts against your statements, checkbook style
+
+DEBTS AND GOALS
+• Debt payoff plans, avalanche or snowball, that know when a 0% promotion ends
+• Savings goals with target dates, milestones and contribution history
+• Credit scores over time
+
+THE BIGGER PICTURE
+• Net worth across accounts, property and vehicles
+• A cash-flow forecast with what-if changes
+• Investments with tax lots, gains and allocation
+• Retirement projections, Social Security timing and a Monte Carlo check
+• Income-tax estimates: federal, Ohio in full, and a simple rate for other states
+• Insurance, an estate checklist, and a hardship plan for tight months
+• Reports and trends you can export to Excel or CSV
+
+MADE FOR A HOUSEHOLD
+• Invite people as owners, editors or viewers, or limit someone to the sections they need
+• See who changed what, and when
+• Opens without a connection with a read-only copy, and catches up when you're back online
+
+PRIVATE BY DESIGN
+• No ads, no tracking, and your data is never sold
+• Face ID or Touch ID unlock, two-factor sign-in, and a one-tap switch to hide amounts
+• Export everything at any time, and delete your account right in the app
+
+Try it first with the built-in sample data — no account needed.
+
+WealthPilot is a tool for tracking and planning. Its estimates are not financial, tax or legal advice.

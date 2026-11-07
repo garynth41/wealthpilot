@@ -1,13 +1,14 @@
 // Offline demo repo: the same contract as Supabase, kept in this browser (localStorage). Also the harness for the test suites.
 import type { Repo } from './repo'
-import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type MemberNotify, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
 import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { syncSlot, syncLimitMessage } from '../../lib/syncLimit'
 import { monthKey, today } from '../../lib/dates'
-import { genTempPassword } from '../../lib/access'
 import { balanceFor, dropKnown } from '../../lib/simplefin'
 import { verifiedBalance } from '../../lib/reconcile'
+import { restoreBackup, RESTORE_ORDER, type RestoreSummary } from '../../lib/restore'
+import { withMemberNotify } from '../../lib/memberNotify'
 
 const KEY = LS('demo')
 const PREFIX: Partial<Record<Collection, string>> = { reconciliations: 'K', transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I', scenarios: 'N', insurance: 'Y' }
@@ -25,6 +26,9 @@ export class MemoryRepo implements Repo {
   }
   private load(): { household: Household; data: Data } | null { try { const j = JSON.parse(localStorage.getItem(KEY) || 'null'); if (j && j.data && j.household) return { household: j.household, data: { ...emptyData(), ...j.data } } } catch { /* ignore */ } return null }
   private persist() { try { localStorage.setItem(KEY, JSON.stringify({ household: this.household, data: this.data })) } catch { /* quota or private mode */ } }
+  /** set while a restore writes many rows: save and notify once at the end instead of after every row */
+  private batching = false
+  private changed() { if (this.batching) return; this.persist(); this.emit() }
   reset() { const s = demoSeed(); this.household = s.household; this.data = s.data; this.persist(); this.emit() }
   private emit() { this.listeners.forEach(f => f()) }
   /** a copy of every array, so the store's state never aliases the repo's (an insert would otherwise appear twice until the next refresh) */
@@ -44,7 +48,7 @@ export class MemoryRepo implements Repo {
     if ('ref' in r || PREFIX[coll]) { if (!r.ref) r.ref = this.nextRef(coll) }
     if (coll === 'holdings') { const h = r as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }   // mirrors the DB's generated column
     if (coll === 'balances') throw new Error('Balance history is written by the database')
-    ;(this.data[coll] as unknown as RowOf<C>[]).push(r); if (coll === 'accounts') this.recordBalance(r as unknown as Account); this.persist(); this.emit(); return r
+    ;(this.data[coll] as unknown as RowOf<C>[]).push(r); if (coll === 'accounts') this.recordBalance(r as unknown as Account); this.changed(); return r
   }
   async insertMany<C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]) { const out: RowOf<C>[] = []; for (const r of rows) out.push(await this.insert(coll, r)); return out }
   async update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) {
@@ -52,7 +56,7 @@ export class MemoryRepo implements Repo {
     const arr = this.data[coll] as unknown as RowOf<C>[]; const i = arr.findIndex(x => (x as { id: string }).id === id); if (i < 0) throw new Error('Row not found')
     const prev = arr[i]; arr[i] = { ...arr[i], ...patch, updated_at: new Date().toISOString() }; if (coll === 'accounts') this.recordBalance(arr[i] as unknown as Account, prev as unknown as Account)
     if (coll === 'holdings') { const h = arr[i] as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }
-    this.persist(); this.emit(); return arr[i]
+    this.changed(); return arr[i]
   }
   async remove(coll: Collection, id: string) {
     const arr = this.data[coll] as Array<{ id: string }>; const i = arr.findIndex(x => x.id === id); if (i < 0) return; arr.splice(i, 1)
@@ -75,6 +79,7 @@ export class MemoryRepo implements Repo {
     const at = new Date(Date.now() + 7 * 86400000).toISOString(); this.household = { ...this.household, deletion_requested_at: new Date().toISOString(), deletion_requested_by: 'demo', deletion_scheduled_for: at }; this.persist(); this.emit(); return at }
   async cancelDeletion() { this.household = { ...this.household, deletion_requested_at: null, deletion_requested_by: null, deletion_scheduled_for: null }; this.persist(); this.emit() }
   async saveSettings(patch: Partial<Settings>) { this.household = { ...this.household, settings: { ...SETTINGS_DEFAULTS, ...this.household.settings, ...patch } }; this.persist(); this.emit(); return this.household.settings }
+  async saveMemberNotify(userId: string, patch: Partial<MemberNotify> | null) { return this.saveSettings({ notify: withMemberNotify(this.household.settings.notify, userId, patch) }) }
   async renameHousehold(name: string) { this.household = { ...this.household, name }; this.persist(); this.emit() }
   async startPeriod(type: string, start: string, end: string, label?: string) {
     const ex = this.data.periods.find(p => p.start_date === start && p.end_date === end); if (ex) return ex.id
@@ -144,15 +149,24 @@ export class MemoryRepo implements Repo {
   async syncDisconnect(): Promise<void> { this.sim = { connected: false, map: {}, last: null, log: [], failNext: null, lastError: null, requests: [] } }
   async removeMember(userId: string) { this.data.members = this.data.members.filter(m => m.user_id !== userId); this.persist(); this.emit() }
   async setMemberAccess(userId: string, role: Role, readOnly: boolean, modules: string[] | null) { this.data.members = this.data.members.map(m => m.user_id === userId ? { ...m, role, read_only: readOnly, modules } : m); this.persist(); this.emit() }
-  /** Demo: no real account is created; a temporary password is generated locally so the invitation flow can be tried end to end. */
-  async inviteWithPassword(req: InviteRequest) { const email = req.email.trim().toLowerCase(); const existing = this.data.members.find(m => m.email === email); const user_id = existing?.user_id || demoId(); const temp = existing ? null : genTempPassword()
-    this.data.members = [...this.data.members.filter(m => m.user_id !== user_id), { household_id: this.household.id, user_id, email, display_name: req.display_name || null, role: req.role, read_only: req.read_only, modules: req.modules, joined_at: new Date().toISOString() }]; this.data.invites = this.data.invites.filter(i => i.email !== email); this.persist(); this.emit()
-    return { user_id, existing: !!existing, temp_password: temp, sent: false, send_error: null, can_send: false } }
+  /** Demo: like the real thing, the invitation waits until the person signs in (nobody is emailed and no account is created). */
+  async inviteWithPassword(req: InviteRequest) { const email = req.email.trim().toLowerCase()
+    this.data.invites = [...this.data.invites.filter(x => x.email !== email), { id: demoId(), household_id: this.household.id, email, role: req.role, read_only: req.read_only, modules: req.modules, display_name: req.display_name || null, created_at: new Date().toISOString(), accepted_at: null }]
+    this.persist(); this.emit(); return { user_id: null, existing: false, pending: true, temp_password: null, sent: false, send_error: null, can_send: false } }
   async exportJson() { return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
-  async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace') {
-    let n = 0; if (mode === 'replace') this.data = emptyData()
-    for (const k of Object.keys(emptyData()) as Collection[]) { const rows = json[k]; if (Array.isArray(rows)) { for (const r of rows) { (this.data[k] as unknown[]).push({ ...(r as object), household_id: this.household.id }); n++ } } }
-    this.persist(); this.emit(); return n
+  /** The same rules as the database repo (lib/restore.ts): merge matches existing rows by id, then by natural key, and re-points children. */
+  async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<RestoreSummary> {
+    // replace clears the same tables the database repo clears (members, audit trail and email ledger stay); balance history goes with the accounts
+    if (mode === 'replace') { for (const k of RESTORE_ORDER) (this.data as unknown as Record<string, unknown[]>)[k] = []; this.data.duplicates = []; this.data.balances = [] }
+    const rows = this.data as unknown as Record<string, Array<Record<string, unknown>>>
+    const existing = Object.fromEntries(RESTORE_ORDER.map(k => [k, k === 'transactions' ? [...rows.transactions, ...(rows.duplicates || [])] : [...(rows[k] || [])]]))
+    this.batching = true
+    try {
+      return await restoreBackup(existing, json, {
+        insert: async (coll, row) => (await this.insert(coll, row as Partial<RowOf<typeof coll>>)).id,
+        update: async (coll, id, patch) => { if (!(this.data[coll] as Array<{ id: string }>).some(x => x.id === id)) return false; await this.update(coll, id, patch as Partial<RowOf<typeof coll>>); return true },
+      }, { attachmentPrefix: this.household.id + '/' })
+    } finally { this.batching = false; this.persist(); this.emit() }
   }
   subscribe(onChange: () => void) { this.listeners.add(onChange); return () => { this.listeners.delete(onChange) } }
   /** helper for tests: month key of a date */

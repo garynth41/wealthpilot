@@ -2,6 +2,7 @@
 import type { EmailKind } from '../../app/data/types'
 import { iso } from '../dates'
 import { cleanText, datesIn, dateAfter, moneyAfter, moneyIn, orgFromDomain, titleCase, type Msg } from './text'
+import { maskDigits } from '../simplefin'
 
 export type PayeeKind = 'card' | 'bnpl' | 'loc' | 'auto' | 'student' | 'collection' | 'loan' | 'insurance' | 'phone' | 'electric' | 'gasutil' | 'water' | 'internet' | 'school' | 'sub' | 'hsa' | 'benefit' | 'bank' | 'wallet' | 'rent' | 'other' | 'payroll' | 'refund' | 'deposit'
 export const DEBT_KINDS = new Set<PayeeKind>(['card', 'bnpl', 'loc', 'auto', 'student', 'collection', 'loan'])
@@ -34,7 +35,8 @@ export function payeeOf(m: Msg, txt: { subject: string; body: string }): Payee {
   if (!proc) hit = look(from + ' ' + name) || look(txt.subject)
   if (!hit && named) hit = look(named) || { name: named.replace(/\s+(inc|llc|corp)\.?$/i, ''), kind: 'other' }
   if (!hit) hit = look(txt.subject + ' ' + txt.body.slice(0, 600)) || { name: orgFromDomain(from) || name || 'Unknown', kind: 'other' }
-  return { ...hit, merchant: merchant && !/^(the|your|this)\b/i.test(merchant) ? titleCase(merchant.toLowerCase()) : '' }
+  // 0.25.1: a payee or merchant taken from the text never keeps a full account number ("Acme Water account 4400123456" → "…account ••3456")
+  return { ...hit, name: maskDigits(hit.name), merchant: merchant && !/^(the|your|this)\b/i.test(merchant) ? maskDigits(titleCase(merchant.toLowerCase())) : '' }
 }
 /** Last 4 digits only. TO = the bill / card; FROM = the bank account or card paying it. */
 export function last4Of(t: string) {
@@ -102,11 +104,12 @@ export function extract(m: Msg): Fact | Skip | null {
   const nx = t.match(/next payment of (\$[\d,]+(?:\.\d{2})?) will be (?:charged|due|processed) on ([A-Za-z]+ \d{1,2},? \d{4}|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i); if (nx) { f.nextAmt = moneyIn(nx[1])[0]?.v ?? null; const d = datesIn(nx[2], ref)[0]; f.nextDate = d ? d.date : null }
   const anyAmt = () => { const vals = [...new Set(money.filter(x => x.v > 0).map(x => x.v))]; return vals.length === 1 ? vals[0] : null }
   if (kind === 'paid') { const x = A([/amount paid:?|payment amount:?|in the amount of|recurring payment of|payment received:?|received your|payment of/gi, /(?<!sub)\btotal(?! excluding)(?: amount)?:?|amount:|\bpaid:?|charged:?/gi, /\bamount\b(?! due)/gi], 30); f.amount = v(x) ?? anyAmt(); f.txnDate = f.txnDate && f.txnDate <= ref ? f.txnDate : ref
-    if (f.balance != null && f.balance > 0 && f.dueDate && f.dueDate > ref) { f.nextAmt = f.nextAmt ?? f.balance; f.nextDate = f.nextDate || f.dueDate }
+    // the next due date may come from the email; the next amount only when the email states one (0.25.1: the remaining balance is not a minimum payment)
+    if (f.balance != null && f.balance > 0 && f.dueDate && f.dueDate > ref) { f.nextDate = f.nextDate || f.dueDate }
     if (/receipt|subscription|order/i.test(t) && !DEBT_KINDS.has(p.kind)) f.receipt = true }
   else if (kind === 'income') { const x = A([/deposit(?:ed)? (?:amount|of):?|amount:?|payment of|refund of|sent you|you received|net pay:?|take[- ]home:?/gi, /credited/gi], 40); f.amount = v(x) ?? anyAmt(); f.txnDate = D(/\bdate:?|on/gi, 4) || f.txnDate || ref; if (f.txnDate > ref) f.txnDate = ref
     const payer = (t.match(/\bFrom:?\s+([A-Z0-9][A-Za-z0-9&.,' -]{2,40}?)(?=\s+(?:VIEW|View|view|Details|details|to|on|for|was|has|Date|date|Amount|amount|Account|account|Memo|Description|Reference|Type|Status|We|Thank)\b|\s*$|\.)/) || [])[1] || ''
-    if (payer) { f.payer = titleCase(payer.trim().toLowerCase()); f.bank = p.name; f.payee = f.payer; f.ptype = /payroll|salary|wages|paycheck/i.test(f.payer) ? 'payroll' : /odjfs|unemploy|state of ohio|ohio jfs|ssa|social security/i.test(f.payer) ? 'benefit' : /irs|treas|tax ref/i.test(f.payer) ? 'refund' : 'deposit' } }
+    if (payer) { f.payer = maskDigits(titleCase(payer.trim().toLowerCase())); f.bank = p.name; f.payee = f.payer; f.ptype = /payroll|salary|wages|paycheck/i.test(f.payer) ? 'payroll' : /odjfs|unemploy|state of ohio|ohio jfs|ssa|social security/i.test(f.payer) ? 'benefit' : /irs|treas|tax ref/i.test(f.payer) ? 'refund' : 'deposit' } }
   else if (kind === 'scheduled') { const x = A([/total amount:?/gi, /payment amount:?|amount due:?|auto ?pay payment of|recurring payment of|scheduled payment amount is|you(?:'ll| will) pay|payment of/gi, /\bamount:?/gi], 30); f.amount = v(x) ?? f.stmtBal ?? anyAmt(); f.txnDate = f.txnDate || D(/(?:on|for)\b/gi, 6) }
   else if (kind === 'bill' || kind === 'balance') { const x = A(/your payment of|payment due:?|total payment due:?|amount due:?|statement amount:?|bill total:?/gi, 30); f.amount = f.stmtBal != null ? f.stmtBal : (v(x) ?? f.minDue); if (f.stmtBal == null && x) f.stmtBal = v(x)
     if (kind === 'balance') { const pd = A(/payment due:?/gi, 20); if (pd) f.minDue = v(pd) } }
@@ -120,6 +123,8 @@ export function extract(m: Msg): Fact | Skip | null {
   return f
 }
 export const isSkip = (x: Fact | Skip | null): x is Skip => !!x && 'skip' in x
-export const maskDigits = (s: string) => String(s || '').replace(/\d[\d -]{4,}\d/g, m => '••' + m.replace(/\D/g, '').slice(-4))
+/** One masking rule for everything the app stores (0.25.1): any run of 5 or more digits (spaces or dashes allowed inside) keeps only its last
+ *  four. Shared with the bank feed (lib/simplefin.ts, which the bank-sync function carries a copy of). */
+export { maskDigits }
 export const when = (f: Fact) => f.txnDate || f.dueDate || f.stmtDate || f.date
 export const eventDate = (f: Fact) => (f.kind === 'bill' || f.kind === 'balance' ? f.stmtDate || f.date : f.kind === 'scheduled' ? f.date : f.txnDate || f.date)

@@ -1,7 +1,8 @@
 // Recurring bills, subscriptions, debt payments and income: due dates, upcoming occurrences, status.
 import type { Data, Recurring, RecurringFreq, Transaction, BillOccurrence } from '../app/data/types'
 import { addDays, addMonthsClamp, daysInMonth, diffDays, pad, today } from './dates'
-import { close, sum } from './money'
+import { sum } from './money'
+import { amountDueN, billPaymentsN } from './notify'
 
 export const REC_PER_YEAR: Record<RecurringFreq, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, every_2_months: 6, quarterly: 4, every_6_months: 2, yearly: 1, irregular: 0 }
 export const recMonthly = (r: Recurring) => (+r.amount || 0) * REC_PER_YEAR[r.frequency] / 12
@@ -26,21 +27,32 @@ export function dueDates(r: Recurring, from: string, to: string): string[] {
 export const nextDue = (r: Recurring, from = today()) => dueDates(r, from, addDays(from, 400))[0] || null
 
 export interface Upcoming { r: Recurring; date: string; amount: number; occ: BillOccurrence | null; txn: Transaction | null; status: 'paid' | 'scheduled' | 'skipped' | 'overdue' | 'due_today' | 'due_soon' | 'due' | 'autopay'; days: number }
-/** A payment made for this recurring item near the due date (same recurring_id, or same payee + close amount). */
-export function matchTxn(d: Data, r: Recurring, due: string): Transaction | null {
-  const lo = addDays(due, -12), hi = addDays(due, 10)
-  const cands = d.transactions.filter(t => t.status !== 'void' && t.date >= lo && t.date <= hi && (t.recurring_id === r.id || (r.payee && t.payee && t.payee.toLowerCase().includes(r.payee.toLowerCase().split(' ')[0]) && (r.amount_varies || close(t.amount, r.amount, 0.25)))))
-  return cands.sort((a, b) => Math.abs(diffDays(a.date, due)) - Math.abs(diffDays(b.date, due)))[0] || null
+/** The payments for one recurring item's due dates in [from, to] (0.25.1), one to one: a payment covers one due date — the nearest still
+ *  unpaid one whose window it falls in — and each due date takes at most one payment. A due date's window runs from 12 days before it to
+ *  10 days after, but never past half the gap to the due date before or after (a weekly bill's is 3 days either side), so a weekly bill paid
+ *  once is paid for that week only. A payment counts when it carries this item's recurring_id, or — when it is not tied to another item or
+ *  to another due date — when its payee holds the bill's word at a close amount: the first word of the Payee, or with no Payee the first word
+ *  of the name that names a company ("AEP Ohio" yes, "Gas" no). A payment recorded for a due date (Mark paid) belongs to that date, and a
+ *  date marked paid or skipped takes no other payment. The rule itself is billPaymentsN in lib/notify.ts, so the alerts, the Monday digest
+ *  and the phone reminders reach the same answer. */
+export function paymentsFor(d: Data, r: Recurring, from: string, to: string): Map<string, Transaction> {
+  const out = new Map<string, Transaction>(); const dues = dueDates(r, addDays(from, -31), addDays(to, 31)); if (!dues.length) return out
+  for (const [due, t] of billPaymentsN(r, dues, d.occurrences, d.transactions).paid) if (due >= from && due <= to) out.set(due, t)
+  return out
 }
+/** The payment that covers one due date of this recurring item, if any (the one-to-one rule of paymentsFor). */
+export const matchTxn = (d: Data, r: Recurring, due: string): Transaction | null => paymentsFor(d, r, due, due).get(due) || null
 /** Every occurrence of every active recurring item in a window, with its paid/due state. */
 export function upcoming(d: Data, from: string, to: string, kinds?: Recurring['kind'][]): Upcoming[] {
   const t = today(), out: Upcoming[] = []
   for (const r of recActive(d)) {
     if (kinds && !kinds.includes(r.kind)) continue
-    for (const date of dueDates(r, from, to)) {
+    const dates = dueDates(r, from, to); if (!dates.length) continue
+    const paidBy = paymentsFor(d, r, from, to)
+    for (const date of dates) {
       const occ = d.occurrences.find(o => o.recurring_id === r.id && o.due_date === date) || null
-      const txn = (occ?.transaction_id && d.transactions.find(x => x.id === occ.transaction_id)) || matchTxn(d, r, date)
-      const amount = occ?.amount ?? (txn && r.amount_varies ? txn.amount : +r.amount || 0)
+      const txn = (occ?.transaction_id && d.transactions.find(x => x.id === occ.transaction_id)) || paidBy.get(date) || null
+      const amount = amountDueN(r, occ, txn)   // the amount filed for the date, else what was paid when it varies, else the listed amount
       const days = diffDays(date, t)
       let status: Upcoming['status'] = 'due'
       if (occ?.status === 'skipped') status = 'skipped'

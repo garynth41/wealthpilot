@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react'
+import { passkeysAvailable } from '../app/native'
 import { useStore } from '../app/store'
 import { APP_NAME, APP_VERSION } from '../app/config'
 import { hasSupabase } from '../app/supabase'
 import { Btn, PasswordInput } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { passwordProblems } from '../lib/access'
+import { LegalLinks } from './About'
+import { DeleteAccountCard } from './DeleteAccount'
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'recover' | 'mfa'
 export function AuthPage({ recover }: { recover?: boolean }) {
@@ -25,23 +28,26 @@ export function AuthPage({ recover }: { recover?: boolean }) {
       {mode !== 'recover' && <div className="field"><label htmlFor="email">Email</label><input id="email" className="inp" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></div>}
       {mode !== 'forgot' && <div className="field"><label htmlFor="pw">{mode === 'recover' ? 'New password' : 'Password'}{mode !== 'signin' && <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> (8+ characters)</span>}</label><PasswordInput id="pw" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={mode === 'signin' ? undefined : 8} required value={pw} onChange={e => setPw(e.target.value)} /></div>}
       <Btn type="submit" primary block disabled={busy}>{{ signin: 'Sign in', signup: 'Create account', forgot: 'Send reset link', recover: 'Update password', mfa: 'Verify' }[mode]}</Btn>
-      {mode === 'signin' && typeof window !== 'undefined' && 'PublicKeyCredential' in window && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={() => run(() => signInWithPasskey())}><span aria-hidden>🔑</span> Sign in with a passkey</Btn></div>}
+      {mode === 'signin' && passkeysAvailable() && <div style={{ marginTop: 8 }}><Btn block disabled={busy} onClick={() => run(() => signInWithPasskey())}><span aria-hidden>🔑</span> Sign in with a passkey</Btn></div>}
       {msg && <div className={`msg ${msg.cls}`}>{msg.text}</div>}
       <div className="links">{mode === 'signin' ? <><button type="button" onClick={() => setMode('signup')}>Create an account</button><button type="button" onClick={() => setMode('forgot')}>Forgot password?</button></> : <button type="button" onClick={() => setMode('signin')}>← Back to sign in</button>}</div>
     </form> : <div className="msg crit">Supabase is not configured — copy <code>.env.example</code> to <code>.env</code>.</div>}
     <div style={{ borderTop: '1px solid var(--line)', marginTop: 18, paddingTop: 14, textAlign: 'center' }}><div className="note" style={{ marginTop: 0, marginBottom: 8 }}>No account? Try everything with sample data first.</div><Btn onClick={() => enterDemo()} block>Open the offline demo</Btn></div>
-    <div className="note" style={{ textAlign: 'center', marginTop: 14, fontFamily: 'var(--mono)', fontSize: 11 }}>v{APP_VERSION}</div>
+    <LegalLinks short />
+    <div className="note" style={{ textAlign: 'center', marginTop: 6, fontFamily: 'var(--mono)', fontSize: 11 }}>v{APP_VERSION}</div>
   </div></div>
 }
 export function Onboarding() {
-  const { createHousehold, user, signOut, households, openHousehold } = useStore(); const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
+  const { createHousehold, user, signOut, households, openHousehold } = useStore(); const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [del, setDel] = useState(false)
   return <div className="auth"><div className="box"><h2 style={{ marginTop: 0 }}>Welcome{user?.email ? `, ${user.email}` : ''}</h2>
     {households.length > 0 && <div style={{ marginBottom: 14 }}><div className="note" style={{ marginTop: 0 }}>Your households</div>{households.map(h => <Btn key={h.id} block onClick={() => openHousehold(h.id)}>{h.name} · {h.role}</Btn>)}</div>}
     <p className="note" style={{ marginTop: 0 }}>A household holds your accounts, budget and transactions. You can invite a partner later from Settings.</p>
-    <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Thomas household" /></div>
+    <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. The Rivera household" /></div>
     <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household') } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
     {err && <div className="msg crit">{err}</div>}
-    <div className="links"><button onClick={() => signOut()}>Sign out</button></div>
+    {/* 0.25.1: deleting the account is reachable before any household exists too (both app stores require it inside the app) */}
+    <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button><button type="button" aria-expanded={del} onClick={() => setDel(v => !v)}>Delete my account</button></div>
+    {del && <div style={{ marginTop: 14 }}><DeleteAccountCard startOpen /></div>}
   </div></div>
 }
 

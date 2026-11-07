@@ -1,5 +1,6 @@
 // Receipts and documents on a transaction (0.19.0): photos and PDFs in the private `attachments` bucket (migration 0011), one row per file.
 import { useRef, useState } from 'react'
+import { saveFile, isNative } from '../app/native'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { Transaction, Attachment } from '../app/data/types'
@@ -13,7 +14,7 @@ const safeName = (n: string) => n.normalize('NFKD').replace(/[^\w.-]+/g, '_').sl
 export const attachmentsFor = (d: { attachments?: Attachment[] }, id: string): Attachment[] => (d.attachments || []).filter(a => a.transaction_id === id)
 
 /** Download one stored file (private bucket: the browser gets a short-lived blob). */
-export async function openAttachment(path: string, name: string) { const { data: blob, error } = await sb().storage.from('attachments').download(path); if (error) throw error; const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.target = '_blank'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 4000) }
+export async function openAttachment(path: string, name: string) { const { data: blob, error } = await sb().storage.from('attachments').download(path); if (error) throw error; if (isNative()) return saveFile(name, blob, blob.type); const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = name; a.target = '_blank'; a.click(); setTimeout(() => URL.revokeObjectURL(u), 4000) }
 export const statementFiles = (d: { attachments?: Attachment[] }, id: string): Attachment[] => (d.attachments || []).filter(a => a.statement_id === id)
 export function AttachmentsModal({ txn, onDone }: { txn: Transaction; onDone: () => void }) {
   const { data, mode, household, insert, remove, guarded, canEdit } = useData(); const confirm = useConfirm(); const toast = useStore.getState().toast
@@ -34,7 +35,7 @@ export function AttachmentsModal({ txn, onDone }: { txn: Transaction; onDone: ()
     {mode !== 'db' ? <Note>Receipts are stored in your household's private storage, which the offline demo does not have. Sign in to a real household to attach files.</Note> : <>
       {canEdit && <div className="btnrow" style={{ marginBottom: 10 }}><input ref={ref} type="file" accept="image/jpeg,image/png,image/webp,image/heic,application/pdf" multiple capture="environment" className="inp" style={{ maxWidth: 360 }} onChange={e => upload(e.target.files)} aria-label="Add a photo or PDF" disabled={busy} />{busy && <span className="note" style={{ margin: 0 }}>Uploading…</span>}</div>}
       {files.length === 0 ? <div className="empty">No receipts yet. On a phone, the file picker opens the camera.</div> : <div className="tblwrap"><table className="tbl"><caption className="sr-only">Attachments</caption><thead><tr><th scope="col">File</th><th scope="col" className="num">Size</th><th scope="col">Added</th><th scope="col" /></tr></thead><tbody>
-        {files.map(f => <tr key={f.id}><td><button className="btn sm" onClick={() => openFile(f.path, f.name)}>{/^image\//.test(f.mime || '') ? '🖼' : '📄'} {f.name}</button>{f.source === 'email' && <span className="note" style={{ margin: '0 0 0 6px' }}>from email</span>}</td><td className="num">{Math.max(1, Math.round(f.size / 1024))} KB</td><td>{f.created_at ? fmtD(f.created_at.slice(0, 10)) : '—'}</td><td>{canEdit && <button className="del" onClick={() => del(f.id, f.path, f.name)} aria-label={`Remove ${f.name}`}>✕</button>}</td></tr>)}
+        {files.map(f => <tr key={f.id}><td><button type="button" className="btn sm" onClick={() => openFile(f.path, f.name)}>{/^image\//.test(f.mime || '') ? '🖼' : '📄'} {f.name}</button>{f.source === 'email' && <span className="note" style={{ margin: '0 0 0 6px' }}>from email</span>}</td><td className="num">{Math.max(1, Math.round(f.size / 1024))} KB</td><td>{f.created_at ? fmtD(f.created_at.slice(0, 10)) : '—'}</td><td>{canEdit && <button type="button" className="del" onClick={() => del(f.id, f.path, f.name)} aria-label={`Remove ${f.name}`}>✕</button>}</td></tr>)}
       </tbody></table></div>}
       <Note>Photos and PDFs up to 15 MB. Only members of this household can open them, and they are deleted with the transaction.</Note></>}
   </MBody><MFoot><Btn onClick={onDone}>Close</Btn></MFoot></>

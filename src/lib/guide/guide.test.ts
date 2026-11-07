@@ -7,8 +7,8 @@ import { ALL_SECTIONS } from '../reports'
 const SOURCES = import.meta.glob<string>('../../pages/*.tsx', { query: '?raw', import: 'default', eager: true })
 /** Which route(s) each page file's cards appear on. */
 const ROUTES: Record<string, string[]> = {
-  Accounts: ['/accounts'], Allocate: ['/', '/income'], AssetsParts: ['/accounts', '/debts'], BankSync: ['/connections'], Bills: ['/bills'], Budget: ['/budget'], Connections: ['/connections'],
-  Coverage: ['/connections'], Dashboard: ['/'], DeleteHousehold: ['/settings'], DashboardParts: ['/'], Debts: ['/debts'], Email: ['/email'], Forecast: ['/forecast'], Goals: ['/goals'], Hardship: ['/hardship'], Income: ['/income'],
+  About: ['/settings'], Accounts: ['/accounts'], Allocate: ['/', '/income'], AssetsParts: ['/accounts', '/debts'], BankSync: ['/connections'], Bills: ['/bills'], Budget: ['/budget'], Connections: ['/connections'],
+  Coverage: ['/connections'], Dashboard: ['/'], DeleteHousehold: ['/settings'], DeleteAccount: ['/settings'], DashboardParts: ['/'], Debts: ['/debts'], Email: ['/email'], Forecast: ['/forecast'], Goals: ['/goals'], Hardship: ['/hardship'], Income: ['/income'],
   Insights: ['/insights'], Investments: ['/investments'], Lots: ['/investments'], Migrate: ['/connections'], Plan: ['/plan'], Protection: ['/protection'], Reconcile: ['/reconcile'], Reports: ['/reports'],
   Settings: ['/settings'], Tax: ['/tax'], Transactions: ['/transactions'], Trends: ['/trends'],
 }

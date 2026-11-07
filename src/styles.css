@@ -44,15 +44,19 @@ select:disabled{color:var(--ink-3);background:var(--surface-2)}
 .brand .mark{width:34px;height:34px;border-radius:4px;background:var(--rail-active);display:grid;place-items:center;flex:none}
 .brand .mark svg{width:22px;height:22px}
 .brand b{font-family:var(--display);font-weight:700;font-size:18px;display:block;line-height:1.1;letter-spacing:-.02em} .brand small{font-size:11.5px;color:var(--rail-muted)}
-.rail-collapsed .brand > div, .rail-collapsed .nav .zone, .rail-collapsed .nav button span.t, .rail-collapsed .railfoot, .rail-collapsed .me{display:none}
-.rail-collapsed .nav button,.rail-collapsed .nav a{justify-content:center;padding:10px 0}
+/* the collapsed menu (desktop only — the phone menu always shows names): icons, with each page's name kept for screen readers and as the tooltip */
+@media (min-width:901px){
+  .rail-collapsed .brand > div, .rail-collapsed .nav .zone, .rail-collapsed .railfoot, .rail-collapsed .me{display:none}
+  .rail-collapsed .nav button span.t,.rail-collapsed .nav a span.t{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  .rail-collapsed .nav button,.rail-collapsed .nav a{justify-content:center;padding:10px 0}
+}
 .railToggle{position:absolute;top:22px;right:-1px;width:22px;height:26px;border:1px solid var(--rail-line);border-right:0;border-radius:6px 0 0 6px;background:var(--rail-hover);color:var(--rail-ink);cursor:pointer;font-size:16px;line-height:1}
 .nav{flex:1;overflow:auto;padding:4px 10px 12px}
 .nav .zone{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--rail-muted);padding:14px 8px 6px;font-weight:600}
 .nav button,.nav a{display:flex;text-decoration:none;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;color:var(--rail-ink);padding:8px 10px;border-radius:var(--radius);cursor:pointer;font-size:13.5px}
 .nav button svg,.nav a svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .nav button:hover,.nav a:hover{background:var(--rail-hover);color:var(--rail-ink)} .nav button.active,.nav a.active{background:var(--rail-active);color:var(--rail-active-ink);font-weight:500}
-.nav button.active::before,.nav a.active::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--gold);flex:none;margin-right:-4px} .rail-collapsed .nav button.active::before,.rail-collapsed .nav a.active::before{display:none}
+.nav button.active::before,.nav a.active::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--gold);flex:none;margin-right:-4px} @media (min-width:901px){ .rail-collapsed .nav button.active::before,.rail-collapsed .nav a.active::before{display:none} }
 .nav .badge{margin-left:auto;background:var(--crit);color:#fff8f0;font-size:11px;font-weight:600;border-radius:999px;padding:1px 7px;min-width:20px;text-align:center}
 .me{padding:12px 16px;border-top:1px solid var(--rail-line);display:flex;align-items:center;gap:10px}
 .me .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-weight:600;flex:none;font-family:var(--display)}
@@ -78,9 +82,14 @@ kbd{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(-
 /* ---- cards & grid ---- */
 .grid{display:grid;gap:16px} .g12{grid-template-columns:repeat(12,minmax(0,1fr))}
 .span12{grid-column:span 12} .span8{grid-column:span 8} .span7{grid-column:span 7} .span6{grid-column:span 6} .span5{grid-column:span 5} .span4{grid-column:span 4} .span3{grid-column:span 3}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;min-width:0} .card.fill{display:flex;flex-direction:column} .card.fill > h3{flex:none}
-.card h3{font-family:var(--display);font-size:16px;font-weight:700;letter-spacing:-.015em;text-transform:none;color:var(--ink);margin:0 0 10px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
-.card h3 > span:last-child:not(.hint){flex-wrap:wrap} .card h3 .hint{font-family:var(--sans);font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-3);font-size:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:16px 18px;min-width:0} .card.fill{display:flex;flex-direction:column} .card.fill > .card-head{flex:none}
+/* a card's heading row (0.25.1): the title is an h2 under the page's h1; the ?, the hint and the card's controls sit beside it */
+.card-head{display:flex;align-items:baseline;gap:4px 10px;flex-wrap:wrap;margin:0 0 10px}
+.card-head .ch{font-family:var(--display);font-size:16px;font-weight:700;letter-spacing:-.015em;color:var(--ink);margin:0;min-width:0;overflow-wrap:anywhere}
+.card-head .hint{font-family:var(--sans);font-weight:500;text-transform:none;letter-spacing:0;color:var(--ink-3);font-size:12px}
+.card-head .ch-right{margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+/* a sub-heading inside a card */
+.card h3{font-family:var(--display);font-size:15px;font-weight:700;letter-spacing:-.015em;color:var(--ink);margin:0 0 8px}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-bottom:3px solid var(--info);border-radius:var(--radius-lg);padding:12px 14px;box-shadow:none;min-width:0}
 .kpi .l{font-size:12px;color:var(--ink-3);font-weight:500} .kpi .v{font-family:var(--display);font-size:28px;font-weight:700;margin:4px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.03em} .kpi .s{font-size:12px;color:var(--ink-3)}
@@ -142,7 +151,10 @@ kbd{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(-
 .modalBack{position:fixed;inset:0;background:rgba(21,24,28,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
 .modal{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius-lg);width:min(640px,100%);box-shadow:0 20px 60px rgba(21,24,28,.28);max-height:calc(100vh - 80px);max-height:calc(100dvh - 80px);display:flex;flex-direction:column}
 .modal.wide{width:min(960px,100%)} .modal.xwide{width:min(96vw,1400px)}
-.mhead{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line);font-family:var(--display);font-weight:700;font-size:18px;letter-spacing:-.02em} .mclose{border:0;background:none;font-size:22px;cursor:pointer;color:var(--ink-3);line-height:1}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);font-family:var(--display);font-weight:700;font-size:18px;letter-spacing:-.02em} .mclose{border:0;background:none;font-size:22px;cursor:pointer;color:var(--ink-3);line-height:1;flex:none}
+.mhead h2{font:inherit;letter-spacing:inherit;margin:0;min-width:0;overflow-wrap:anywhere} .modal:focus,.helpdrawer:focus{outline:none}
+/* a dialog with a confirmation on top of it (0.25.1): it stays as it was, behind a second shade */
+.modalBack.under{overflow:hidden}
 .mbody{padding:16px 18px;overflow:auto;min-height:0;flex:1 1 auto;-webkit-overflow-scrolling:touch} .mhead,.mfoot{flex:none} .modal > form{display:contents} .mfoot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line)}
 .toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:70;align-items:center}
 .toast{background:var(--sel);color:var(--on-sel);padding:10px 16px;border-radius:var(--radius);font-family:var(--sans);font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:min(560px,92vw)} .toast.err{background:#c2410c;color:#fff} .toast-act{margin-left:12px;border:1px solid currentColor;background:transparent;color:inherit;border-radius:3px;padding:2px 9px;font:inherit;font-weight:600;cursor:pointer;min-height:28px}
@@ -160,7 +172,8 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 .mbar,.tabbar,.backdrop{display:none}
 @media (max-width:900px){
   .app{grid-template-columns:1fr} .app.rail-collapsed{--rail-w:280px}
-  .rail{position:fixed;left:0;top:0;bottom:0;width:min(280px,86vw);z-index:45;transform:translateX(-100%);transition:transform .2s ease;padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);box-shadow:0 0 0 1px var(--rail-line)} .rail.open{transform:none} .railToggle{display:none}
+  /* closed, the menu is out of the tab order and hidden from screen readers too (visibility switches after the slide) — 0.25.1 */
+  .rail{position:fixed;left:0;top:0;bottom:0;width:min(280px,86vw);z-index:45;transform:translateX(-100%);visibility:hidden;transition:transform .2s ease,visibility 0s linear .2s;padding-top:env(safe-area-inset-top);padding-left:env(safe-area-inset-left);padding-bottom:env(safe-area-inset-bottom);box-shadow:0 0 0 1px var(--rail-line)} .rail.open{transform:none;visibility:visible;transition:transform .2s ease,visibility 0s} .railToggle{display:none}
   .nav button,.nav a{min-height:44px;font-size:15px} .nav .zone{min-height:40px} .navtools button{min-height:36px;font-size:12px;padding:6px 10px}
   .backdrop{display:block;position:fixed;inset:0;background:rgba(15,17,20,.45);z-index:44;opacity:0;pointer-events:none;transition:opacity .2s} .backdrop.show{opacity:1;pointer-events:auto}
   .mbar{display:flex;position:fixed;top:0;left:0;right:0;z-index:40;height:calc(52px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);align-items:center;gap:6px;background:var(--rail);color:var(--rail-ink);border-bottom:1px solid var(--rail-line);padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
@@ -177,7 +190,7 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
   .modal,.modal.wide,.modal.xwide{width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - 12px);border-radius:12px 12px 0 0;border-bottom:0} .mhead{padding:14px 16px} .mbody{padding:14px 16px} .mfoot{padding:12px 16px calc(12px + env(safe-area-inset-bottom))} .mfoot .btn{flex:1;justify-content:center}
   .mclose{width:44px;height:44px;display:grid;place-items:center;margin:-8px -10px -8px 0}
   .toasts{bottom:calc(76px + env(safe-area-inset-bottom));left:12px;right:12px;transform:none;align-items:stretch} .toast{max-width:none;text-align:center}
-  .card{padding:14px} .card h3{font-size:15px} .chart{min-height:220px} .tblwrap{-webkit-overflow-scrolling:touch} .slicers{gap:10px;margin-bottom:10px}
+  .card{padding:14px} .card-head .ch{font-size:15px} .chart{min-height:220px} .tblwrap{-webkit-overflow-scrolling:touch} .slicers{gap:10px;margin-bottom:10px}
   .histnav{display:none}
 }
 @media print{.rail,.mbar,.tabbar,.histnav,.ch-x{display:none} .app{grid-template-columns:1fr} .main{padding:0}}
@@ -208,7 +221,7 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 .nav .zone{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;cursor:pointer;text-align:left;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--rail-muted);padding:12px 8px 6px;font-weight:600;font-family:inherit} .nav .zone:hover{color:var(--rail-ink)}
 .nav .zone .chev{width:10px;font-size:11px;opacity:.8} .nav .zone .zt{flex:1} .nav .zone .zc{font-size:9.5px;opacity:.45;letter-spacing:0} .nav .zone .badge{margin-left:0}
 .zoneblock.closed .zone{opacity:.85} .navtools{padding:8px 8px 0} .navtools button{border:1px solid var(--rail-line);background:transparent;color:var(--rail-muted);border-radius:var(--radius);font-size:11px;padding:3px 8px;cursor:pointer} .navtools button:hover{color:var(--rail-ink);background:var(--rail-hover)}
-.rail-collapsed .navtools{display:none}
+@media (min-width:901px){ .rail-collapsed .navtools{display:none} }
 /* click-through highlight (0.15.0): the record a link pointed at */
 @keyframes focusPulse{0%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 6px var(--accent-soft)}60%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 2px var(--accent-soft)}100%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 0 transparent}}
 .focus-hit{animation:focusPulse 1.6s ease-out 3;background:var(--accent-soft)!important;position:relative;z-index:1}
@@ -265,7 +278,6 @@ tr.focus-hit > td{background:var(--accent-soft)!important}
 .helpdrawer .hd-head h2 { margin: 0; font-size: 16px; }
 .helpdrawer .hd-body { padding: 4px 16px 24px; overflow-y: auto; }
 .helpdrawer .hd-intro { color: var(--ink-2); line-height: 1.55; }
-.helpdrawer h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin: 18px 0 6px; }
 .helpdrawer ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.5; font-size: 13.5px; }
 /* pull to refresh (0.23.0) */
 .ptr { display: flex; align-items: flex-end; justify-content: center; padding-bottom: 8px; overflow: hidden; color: var(--ink-3); font-size: 12.5px; transition: height .12s ease-out; }
@@ -274,8 +286,11 @@ tr.focus-hit > td{background:var(--accent-soft)!important}
 .privacy input[inputmode="decimal"]:not(:focus), .privacy input.num:not(:focus) { filter: blur(4px); }
 .btn.on { background: var(--sel); color: var(--on-sel); border-color: var(--sel); }
 /* the guide (0.24.1): a ? on every card heading, the drawer's search and tabs, and the Help Center page */
-.cardhelp { align-self: center; flex: 0 0 auto; width: 20px; height: 20px; margin-left: -4px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-3); font: 600 12px/18px var(--sans); text-align: center; padding: 0; cursor: pointer; transition: color .12s, border-color .12s, background .12s; }
-.cardhelp:hover, .cardhelp:focus-visible { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); outline: none; }
+/* the button is the tap target; the ring inside it is the visible "?" (44 × 44 on phones, 20 × 20 at a desk) */
+.cardhelp { align-self: center; flex: 0 0 auto; display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: -4px; border: 0; border-radius: 50%; background: none; color: var(--ink-3); padding: 0; cursor: pointer; }
+.cardhelp > span { display: block; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); font: 600 12px/18px var(--sans); text-align: center; box-sizing: border-box; transition: color .12s, border-color .12s, background .12s; }
+.cardhelp:hover > span, .cardhelp:focus-visible > span { color: var(--accent-deep); border-color: var(--accent); background: var(--accent-soft); }
+.cardhelp:focus-visible { outline: none; } .cardhelp:focus-visible > span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .helpdrawer { width: min(520px, 100vw); }
 .helpdrawer .hd-tools { display: grid; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
 .helpdrawer .hd-tools .seg { justify-self: start; }
@@ -283,7 +298,8 @@ tr.focus-hit > td{background:var(--accent-soft)!important}
 .helpdrawer .hd-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line); background: var(--surface-2); }
 .helpdrawer .hd-foot .g-hint { margin: 0; }
 .g-page section, .helpdrawer section, .helpcenter section { margin-top: 18px; }
-.g-page h4, .helpdrawer h4, .helpcenter h4 { font: 600 12px/1.3 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 0 0 8px; }
+/* section headings in the guide (0.25.1: one level below the drawer's or the article's h2, so the heading order never skips) */
+.g-page section > h3, .helpdrawer section > h3, .helpcenter section > h3, .g-gloss section > h3, .g-gloss section > h4 { font: 600 12px/1.3 var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin: 0 0 8px; }
 .g-summary { color: var(--ink); line-height: 1.6; font-size: 14.5px; margin: 12px 0 0; }
 .g-hint { color: var(--ink-3); font-size: 12.5px; line-height: 1.5; margin: 0 0 8px; }
 .g-steps { margin: 0; padding-left: 20px; display: grid; gap: 5px; line-height: 1.5; font-size: 13.5px; }
@@ -302,7 +318,7 @@ tr.focus-hit > td{background:var(--accent-soft)!important}
 .g-card[open] > summary { border-bottom: 1px solid var(--line-2); }
 .g-card .g-ct { flex: 1; }
 .g-card .g-cbody { padding: 10px 14px 12px; display: grid; gap: 8px; }
-.g-card .g-cbody h5 { margin: 6px 0 0; font: 600 12.5px/1.3 var(--sans); color: var(--accent-deep); }
+.g-card .g-cbody h4 { margin: 6px 0 0; font: 600 12.5px/1.3 var(--sans); color: var(--accent-deep); text-transform: none; letter-spacing: 0; }
 .g-card .g-what { margin: 0; line-height: 1.55; color: var(--ink); }
 .g-card.g-focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .g-task > summary { font-weight: 500; }
@@ -361,5 +377,108 @@ a.g-where { color: var(--link); }
 .quickcats .btn { min-height: 44px; justify-content: center; text-align: center; white-space: normal; }
 .swipehint { margin: 0 0 8px; }
 .chart-empty { display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--ink-3); font-size: 13px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface-2); flex: 1 1 auto; }
-/* phone header (0.23.0): six controls must fit a 360px screen */
-@media (max-width: 900px) { .mbar { gap: 2px; } .mbar button, .mbar .btn { width: 40px; height: 44px; padding: 0 !important; border: 0; box-sizing: border-box; flex: 0 0 40px; font-size: 20px; } }
+/* phone header (0.23.0): six controls must fit a 360px screen — each a full 44 × 44 tap target (0.25.1); the title gives way */
+@media (max-width: 900px) { .mbar { gap: 0; } .mbar button, .mbar .btn { width: 44px; height: 44px; min-height: 44px; padding: 0 !important; border: 0; box-sizing: border-box; flex: 0 0 44px; font-size: 20px; } .mbar .mb-title { font-size: 16px; padding: 0 2px; } }
+
+/* ---------- 0.25.1 · forms, phones and accessibility ---------- */
+/* a field that cannot be saved says why, right under it */
+.field-err { color: var(--crit-ink); font-size: 12.5px; line-height: 1.4; margin-top: 2px; }
+.field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--crit); }
+/* saved views on the ledger: the view and its remove button side by side */
+.viewchip { display: inline-flex; align-items: stretch; }
+.viewchip > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.viewchip .viewx { border: 1px solid var(--line-strong); border-left: 0; background: var(--surface); color: var(--ink-3); border-radius: 0 var(--radius) var(--radius) 0; padding: 0 9px; cursor: pointer; font-size: 14px; }
+.viewchip .viewx:hover { color: var(--crit-ink); }
+/* sub-headings in a dialog, and the "Technical setup" disclosure in Email capture settings */
+.mbody h3.mh { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.01em; margin: 16px 0 6px; }
+details.techsetup { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px; background: var(--surface-2); }
+details.techsetup > summary { cursor: pointer; font-weight: 600; padding: 10px 0; min-height: 44px; display: flex; align-items: center; color: var(--ink-2); }
+details.techsetup[open] > summary { border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+details.techsetup h4 { margin: 12px 0 6px; font: 600 13px/1.3 var(--sans); color: var(--ink); }
+details.techsetup .g-steps { font-size: 13px; margin-bottom: 8px; }
+details.techsetup code { overflow-wrap: anywhere; }
+/* a checkbox beside the first line of a longer label */
+.cb-top { margin-top: 3px; }
+/* past deadlines on the tax calendar read as past without fading the text below 4.5:1 */
+.tbl tr.past td { color: var(--ink-3); }
+/* the shared Table's card view (phones and tablets, 900px and narrower) */
+.tcard { padding: 10px 12px; }
+.tcard-top { display: flex; justify-content: space-between; align-items: center; color: var(--ink-3); font-size: 12px; min-height: 28px; }
+.tcard-n { display: inline-flex; gap: 8px; align-items: center; }
+.tcard-row { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; align-items: center; padding: 3px 0; }
+.tcard-l { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); }
+.tcard-v { min-width: 0; overflow-wrap: anywhere; }
+.tcard-act { margin-top: 6px; }
+.tcard input:not([type="checkbox"]):not([type="radio"]), .tcard select, .tcard textarea { width: 100%; min-height: 44px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: var(--surface); font-size: 16px; }
+.tcard .del { border: 0; background: none; color: var(--ink-3); cursor: pointer; font-size: 16px; min-width: 44px; min-height: 44px; border-radius: var(--radius); }
+.tcard .del:hover { color: var(--crit-ink); }
+/* the Help drawer keeps clear of the iPhone's status bar, Dynamic Island and home indicator */
+.helpdrawer .hd-head { padding-top: max(14px, env(safe-area-inset-top)); padding-right: max(16px, env(safe-area-inset-right)); }
+.helpdrawer .hd-tools, .helpdrawer .hd-body { padding-right: max(16px, env(safe-area-inset-right)); }
+.helpdrawer .hd-foot { padding-bottom: max(10px, env(safe-area-inset-bottom)); padding-right: max(16px, env(safe-area-inset-right)); }
+@media (max-width: 900px) {
+  /* keyboard focus never lands under the fixed top bar or the tab bar */
+  html { scroll-padding-top: calc(64px + env(safe-area-inset-top)); scroll-padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  .helpcenter .hc-search .inp { font-size: 16px; }
+}
+/* phones: every tap target at least 44 × 44 */
+@media screen and (max-width: 700px) {
+  .btn, .btn.sm, a.btn { min-height: 44px; min-width: 44px; justify-content: center; }
+  .opts button, .seg button { min-width: 44px; }
+  .skip { min-height: 44px; display: inline-flex; align-items: center; top: calc(8px + env(safe-area-inset-top)); }
+  summary { min-height: 44px; padding-top: 12px; padding-bottom: 12px; box-sizing: border-box; }
+  label:has(> input[type="checkbox"]) { min-height: 44px; }
+  /* links that stand on their own (a list of bills, a table row's title) get a taller hit area without moving anything */
+  .alist a, table.tbl[data-cards] a, a[href*="focus="], .note > a:only-child { display: inline-block; padding: 13px 0; margin: -13px 0; }
+  .seg button, .opts button, .navtools button, .hn-btn, .schip .go, .schip .mini, .viewchip .viewx { min-height: 44px; }
+  .schip .mini, .viewchip .viewx { min-width: 44px; }
+  .tbl .del, .tbl .mv, .del { min-width: 44px; min-height: 44px; }
+  .ch-x { width: 44px; height: 44px; }
+  .toast-act { min-height: 44px; padding: 4px 12px; }
+  .pwtoggle { height: 44px; }
+  .cardhelp { width: 44px; height: 44px; margin: -12px -12px -12px -16px; }
+  .cardhelp > span { width: 24px; height: 24px; line-height: 22px; font-size: 13px; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, textarea { min-height: 44px; }
+  input[type="range"] { height: 44px; }
+  .auth .links button { min-height: 44px; padding: 0 4px; }
+  .g-letters a { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; }
+  .hc-list button, .g-hits button { min-height: 44px; }
+  .g-card > summary { min-height: 44px; align-items: center; }
+  label.gm-ign { min-height: 44px; display: inline-flex; align-items: center; }
+  .tabbar button, .tabbar a { min-height: 52px; }
+  /* checkboxes: a 22px box inside a 44px tap area */
+  input[type="checkbox"] { appearance: none; -webkit-appearance: none; display: inline-grid; place-items: center; width: 44px; height: 44px; margin: -11px; padding: 0; border: 0; background: none; cursor: pointer; flex: none; vertical-align: middle; color: inherit; }
+  input[type="checkbox"]::before { content: ''; grid-area: 1 / 1; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid var(--line-strong); border-radius: 4px; background: var(--surface); }
+  input[type="checkbox"]::after { content: ''; grid-area: 1 / 1; width: 6px; height: 11px; box-sizing: border-box; border: solid var(--on-accent); border-width: 0 2.5px 2.5px 0; transform: translateY(-1px) rotate(45deg); opacity: 0; }
+  input[type="checkbox"]:checked::before { background: var(--accent); border-color: var(--accent); }
+  input[type="checkbox"]:checked::after { opacity: 1; }
+  input[type="checkbox"]:focus-visible { outline: none; } input[type="checkbox"]:focus-visible::before { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type="checkbox"]:disabled { cursor: default; } input[type="checkbox"]:disabled::before { opacity: .5; }
+  label > input[type="checkbox"] { margin-right: -3px; }
+}
+/* phones: the tables written on the pages become one card per row — every value and button on screen, no sideways scrolling.
+   components/tableCards.ts labels each cell with its column heading (data-label) and marks fields (data-ctl) and group headings (data-head).
+   A card is a small grid: the first column across the top, then the values side by side (label above value), buttons across the bottom. */
+@media screen and (max-width: 700px) {
+  .tblwrap[data-cards-wrap] { overflow: visible; border: 0; border-radius: 0; max-height: none !important; }
+  table.tbl[data-cards], table.tbl[data-cards] > tbody, table.tbl[data-cards] > tfoot { display: block; width: 100%; }
+  table.tbl[data-cards] > thead { display: none; }
+  table.tbl[data-cards] > tbody > tr, table.tbl[data-cards] > tfoot > tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px 12px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 10px 12px 12px; margin: 0 0 8px; }
+  table.tbl[data-cards] > tfoot > tr { background: var(--surface-2); }
+  table.tbl[data-cards] > * > tr > td, table.tbl[data-cards] > tbody > tr > th { display: block; min-width: 0; padding: 0; border: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; background: none; font-size: 14px; font-weight: 400; max-width: none !important; }
+  table.tbl[data-cards] > * > tr > *::before { content: attr(data-label); display: block; margin: 0 0 2px; font: 600 10.5px/1.3 var(--sans); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); }
+  table.tbl[data-cards] > * > tr > [data-label=""]::before, table.tbl[data-cards] > * > tr > :not([data-label])::before, table.tbl[data-cards] > tbody > tr > [data-title]::before { content: none; }
+  table.tbl[data-cards] > * > tr > :first-child, table.tbl[data-cards] > * > tr > [data-label=""], table.tbl[data-cards] > * > tr > :not([data-label]) { grid-column: 1 / -1; }
+  table.tbl[data-cards] > * > tr > [data-ctl="wide"] { grid-column: span 2; }
+  table.tbl[data-cards] > * > tr > :empty { display: none; }
+  table.tbl[data-cards] > tbody > tr > :first-child { font-weight: 600; font-size: 15px; }
+  table.tbl[data-cards] > tfoot > tr > :first-child { font-weight: 700; } table.tbl[data-cards] > tfoot > tr > :first-child::before { content: none; }
+  table.tbl[data-cards] > * > tr[data-head] { display: block; background: none; border: 0; padding: 10px 2px 2px; margin: 4px 0 4px; }
+  table.tbl[data-cards] > * > tr[data-head] > td { padding: 0; background: none !important; }
+  table.tbl[data-cards] tr[class] > td:first-child { box-shadow: none; }
+  table.tbl[data-cards] tr.st-good { box-shadow: inset 3px 0 0 var(--good); } table.tbl[data-cards] tr.st-warn { box-shadow: inset 3px 0 0 var(--warn); } table.tbl[data-cards] tr.st-crit { box-shadow: inset 3px 0 0 var(--crit); }
+  table.tbl[data-cards] tr.st-idle { box-shadow: inset 3px 0 0 var(--idle); } table.tbl[data-cards] tr.st-wait { box-shadow: inset 3px 0 0 var(--wait); } table.tbl[data-cards] tr.st-info { box-shadow: inset 3px 0 0 var(--info); }
+  table.tbl[data-cards] input:not([type="checkbox"]):not([type="radio"]), table.tbl[data-cards] select, table.tbl[data-cards] textarea { width: 100% !important; max-width: none; border-color: var(--line); background: var(--surface); text-align: left; font-weight: 400; font-size: 16px; }
+  table.tbl[data-cards] .btnrow { gap: 8px; }
+  table.tbl[data-cards] .usebar { width: calc(100% - 48px); max-width: 140px; }   /* room for "100%" beside it */
+}

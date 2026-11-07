@@ -1,0 +1,185 @@
+# Phone app store builds (0.25.1) — run by hand: GitHub → Actions → "release apps" → Run workflow. Builds the version in package.json
+# from the main branch's web app (pointed at the production database), then:
+#   Android: a signed App Bundle (.aab), kept as a download on the run for 14 days, and — once Google Play is set up — sent to the chosen
+#            testing track as a draft you review and roll out in Play Console. Google requires the very first bundle to be uploaded by
+#            hand in Play Console; download it from this run.
+#   iOS:     archived unsigned, then signed for the App Store with Apple's cloud-managed certificate and uploaded to App Store Connect,
+#            where it appears in TestFlight after Apple's processing (usually 10–30 minutes). Submitting for review stays a manual step.
+# Each platform skips itself, with a note on the run, while its secrets are missing. Secrets (Settings → Secrets and variables →
+# Actions) and how to make them: docs/STORE_LAUNCH.md. Each secret reaches only the step that uses it — never npm install or the
+# other tools — and npm installs without running any package's install scripts.
+#   Android: ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD,
+#            PLAY_SERVICE_ACCOUNT_JSON (optional — without it the bundle is only kept on the run)
+#   iOS:     APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64 (an App Store Connect team API key with the Admin role)
+# Version numbers: Android versionCode and the iOS build number are both major*1000000 + minor*10000 + patch*100 + "rebuild" (0.25.1 →
+# 250100). Each store needs a new number for every upload: raise the version in package.json, or use "rebuild" 1, 2, … for the same one.
+name: release apps
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Which app to build
+        type: choice
+        options: [both, android, ios]
+        default: both
+      rebuild:
+        description: Rebuild number for the same version (0 the first time; 1, 2 … to upload the same version again)
+        type: number
+        default: 0
+      play_track:
+        description: Google Play track for the draft release (none = only keep the bundle on this run)
+        type: choice
+        options: [internal, alpha, beta, production, none]
+        default: internal
+concurrency:
+  group: release-apps
+  cancel-in-progress: false
+permissions: { contents: read }
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.v.outputs.name }}
+      code: ${{ steps.v.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        env: { REBUILD: "${{ inputs.rebuild }}" }
+        run: |
+          node -e '
+            const v = require("./package.json").version, b = Number(process.env.REBUILD || 0), [M, m, p] = v.split(".").map(Number)
+            if (!Number.isInteger(b) || b < 0 || b > 99) { console.error("rebuild must be 0 to 99"); process.exit(1) }
+            if (m > 99 || p > 99) { console.error("minor and patch must be below 100"); process.exit(1) }
+            const code = M * 1000000 + m * 10000 + p * 100 + b
+            require("fs").appendFileSync(process.env.GITHUB_OUTPUT, `name=${v}\ncode=${code}\n`)
+            console.log(`WealthPilot ${v} — build ${code}`)'
+
+  android:
+    needs: version
+    if: inputs.platform != 'ios'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Skip when the upload key is not set
+        id: gate
+        env:
+          HAS_KEY: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 != '' && secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD != '' && secrets.ANDROID_UPLOAD_KEY_ALIAS != '' && secrets.ANDROID_UPLOAD_KEY_PASSWORD != '' }}
+          HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        run: |
+          echo "play=$HAS_PLAY" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_KEY" != true ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::the Android upload key secrets are not all set — no Android store build (docs/STORE_LAUNCH.md, step A3)"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
+      - uses: actions/setup-node@v7
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - run: npm ci --ignore-scripts
+        if: steps.gate.outputs.run == 'true'
+      - run: cp .env.example .env && npm run native:sync -- android
+        if: steps.gate.outputs.run == 'true'
+      - name: Build the signed App Bundle
+        if: steps.gate.outputs.run == 'true'
+        working-directory: android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          WP_BUILD_NUMBER: ${{ inputs.rebuild }}
+          WP_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          WP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          WP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/upload.jks"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          WP_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.jks" ./gradlew --no-daemon --stacktrace bundleRelease
+      - name: Check the bundle is signed and numbered
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          aab=android/app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify "$aab" | grep -q "jar verified" || { echo "::error::the bundle is not signed"; exit 1; }
+          mv "$aab" "wealthpilot-${{ needs.version.outputs.name }}-${{ needs.version.outputs.code }}.aab"
+          ls -l *.aab
+      - uses: actions/upload-artifact@v7
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: wealthpilot-android-${{ needs.version.outputs.name }}-${{ needs.version.outputs.code }}
+          path: wealthpilot-*.aab
+          retention-days: 14
+      - name: Send to Google Play as a draft
+        if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && steps.gate.outputs.play == 'true'
+        env: { PLAY_SERVICE_ACCOUNT_JSON: "${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}" }
+        run: node scripts/play-upload.mjs --aab wealthpilot-*.aab --track "${{ inputs.play_track }}" --status draft --notes store/listing/google/release_notes.txt
+      - name: Note when Google Play is not connected yet
+        if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && steps.gate.outputs.play != 'true'
+        run: echo "::notice::PLAY_SERVICE_ACCOUNT_JSON is not set — download the .aab from this run and upload it in Play Console (docs/STORE_LAUNCH.md, step A5)"
+
+  ios:
+    needs: version
+    if: inputs.platform != 'android'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - name: Skip when the App Store Connect key is not set
+        id: gate
+        env: { HAS: "${{ secrets.APPLE_TEAM_ID != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.ASC_KEY_P8_BASE64 != '' }}" }
+        run: if [ "$HAS" != true ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::App Store Connect secrets are not set — no iOS store build (docs/STORE_LAUNCH.md, step B4)"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
+      - uses: actions/setup-node@v7
+        if: steps.gate.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+        if: steps.gate.outputs.run == 'true'
+      - run: cp .env.example .env && npm run native:sync -- ios
+        if: steps.gate.outputs.run == 'true'
+      - name: Use the newest Xcode 26
+        if: steps.gate.outputs.run == 'true'
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)" && xcodebuild -version
+      # Archive without signing: App Store Connect keys can only sign an export, and signing the archive would make Xcode create a new
+      # development certificate on every run until the team's limit is reached.
+      - name: Archive (unsigned)
+        if: steps.gate.outputs.run == 'true'
+        env: { TEAM: "${{ secrets.APPLE_TEAM_ID }}" }
+        run: |
+          set -o pipefail
+          xcodebuild archive -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/WealthPilot.xcarchive" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="$TEAM" \
+            MARKETING_VERSION="${{ needs.version.outputs.name }}" CURRENT_PROJECT_VERSION="${{ needs.version.outputs.code }}" | tail -40
+      - name: Sign for the App Store and upload to App Store Connect
+        if: steps.gate.outputs.run == 'true'
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+          KEY_B64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -o pipefail
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/AuthKey.p8"' EXIT
+          printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/WealthPilot.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" | tail -60
+          echo "::notice::WealthPilot ${{ needs.version.outputs.name }} (${{ needs.version.outputs.code }}) was uploaded to App Store Connect — it shows in TestFlight once Apple has processed it"

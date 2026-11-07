@@ -1,4 +1,5 @@
-import type { Collection, Data, Household, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult, Reconciliation, ReconciliationInput, AuditEvent, AuditKind } from './types'
+import type { RestoreSummary } from '../../lib/restore'
+import type { Collection, Data, Household, MemberNotify, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult, Reconciliation, ReconciliationInput, AuditEvent, AuditKind } from './types'
 
 /** Every read and write goes through a Repo. Two implementations: Supabase (real) and Memory (offline demo + tests). */
 export interface Repo {
@@ -9,6 +10,9 @@ export interface Repo {
   update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>): Promise<RowOf<C>>
   remove(coll: Collection, id: string): Promise<void>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
+  /** 0.25.1: one member's alert choices (null = back to the household default), written onto the household's stored alert settings and
+   *  nothing else — so an editor can save their own row (the database lets anyone but an owner change only their own entry) */
+  saveMemberNotify(userId: string, patch: Partial<MemberNotify> | null): Promise<Settings>
   renameHousehold(name: string): Promise<void>
   startPeriod(type: string, start: string, end: string, label?: string): Promise<string>
   ledger(rows: Omit<EmailLedgerRow, 'household_id'>[]): Promise<void>
@@ -33,7 +37,8 @@ export interface Repo {
   /** 0.25.0: schedule the household's permanent deletion in 7 days (owner; `confirm` must be its name) — returns the date — or cancel it. */
   requestDeletion(confirm: string): Promise<string>
   cancelDeletion(): Promise<void>
-  importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<number>
+  /** Restore a JSON backup (lib/restore.ts): merge matches what is already here instead of adding copies; replace clears the household's data first. */
+  importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<RestoreSummary>
   /** Called with a change notification (realtime); returns an unsubscribe. */
   subscribe(onChange: () => void): () => void
 }

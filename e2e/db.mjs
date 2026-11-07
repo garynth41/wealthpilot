@@ -38,6 +38,67 @@ const { data: other } = await viewer.from('accounts').select('id').neq('househol
 const { error: se } = await owner.from('credit_scores').insert({ household_id: hh, person: 'Me', date: '2026-10-01', score: 731, bureau: 'Experian', model: 'FICO 8' }); ok(!se, 'credit scores save ' + (se?.message || ''))
 const { data: log } = await owner.from('activity_log').select('action, table_name').eq('household_id', hh); ok((log || []).some(l => l.table_name === 'credit_scores'), 'changes are written to the activity log (audit trigger)')
 
+// --- 0.25.1: membership is the owner's call, limited access, invitations, deleting an account ---
+const { data: { user: viewerUser } } = await viewer.auth.getUser(); const VID = viewerUser.id
+await viewer.from('household_members').update({ role: 'owner', read_only: false }).eq('household_id', hh).eq('user_id', VID)
+const { data: vm } = await owner.from('household_members').select('role, read_only').eq('household_id', hh).eq('user_id', VID).single()
+ok(vm?.role === 'viewer' && vm?.read_only === true, 'a member cannot make themselves an owner (membership guard)')
+await owner.from('household_members').update({ modules: ['transactions'] }).eq('household_id', hh).eq('user_id', VID)
+ok(((await viewer.from('activity_log').select('id').eq('household_id', hh)).data || []).length === 0, 'a member limited to some sections cannot read the activity log')
+ok(((await viewer.from('accounts').select('id').eq('household_id', hh)).data || []).length === 0, '…nor a section they were not given')
+await owner.from('household_members').update({ modules: null }).eq('household_id', hh).eq('user_id', VID)
+ok(((await viewer.from('activity_log').select('id').eq('household_id', hh)).data || []).length > 0, 'given full view again, they can read it')
+const inv = await owner.functions.invoke('invite-member', { body: { household_id: hh, email: 'e2e-invitee@wealthpilot.test', role: 'viewer' } })
+ok(!inv.error && inv.data?.pending === true && !inv.data?.temp_password && !inv.data?.user_id, 'an invitation creates no account and no password — it waits ' + (inv.error?.message || ''))
+const { data: pend } = await owner.from('household_invites').select('accepted_at').eq('household_id', hh).eq('email', 'e2e-invitee@wealthpilot.test')
+ok(pend?.length === 1 && !pend[0].accepted_at, '…as a pending invitation until that person signs in')
+ok(!!(await viewer.functions.invoke('invite-member', { body: { household_id: hh, email: 'e2e-someone@wealthpilot.test', role: 'owner' } })).error, 'only an owner can invite')
+const op = await owner.functions.invoke('delete-account', { body: { action: 'preview' } })
+ok(!op.error && (op.data?.blocked || []).some(h => h.id === hh), 'the only owner of a shared household must hand it over before deleting their account')
+// a throwaway user: an editor here, with a household of its own, then deleted
+// (inside try: if the throwaway user cannot be made — e.g. the staging helper is missing — the rest of the run still finishes and cleans up)
+const FILE = `${hh}/e2e-${stamp}-receipt.png`, PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+const notifyOf = async () => (await owner.from('households').select('settings').eq('id', hh).single()).data?.settings?.notify || {}
+// what the app does (lib/memberNotify.ts): read the stored settings, change one member's alert row, write them back
+const saveRow = async (c, uid, row) => { const { data: cur } = await c.from('households').select('settings').eq('id', hh).single(); const s = cur?.settings || {}; const nt = s.notify || {}
+  return c.from('households').update({ settings: { ...s, notify: { ...nt, members: { ...(nt.members || {}), [uid]: row } } } }).eq('id', hh).select('id') }
+try {
+  const TMP = 'e2e-tmp-delete@wealthpilot.test'; const { error: mue } = await owner.rpc('e2e_make_user', { p_email: TMP }); ok(!mue, 'a throwaway test user ' + (mue?.message || ''))
+  await owner.from('household_invites').insert({ household_id: hh, email: TMP, role: 'editor', read_only: false })
+  const tmp = await client(TMP); await tmp.rpc('accept_invites'); const { data: { user: tmpUser } } = await tmp.auth.getUser()
+  const { data: solo } = await tmp.rpc('create_household', { p_name: `E2E solo ${stamp}` })
+  const { error: tue } = await tmp.from('accounts').update({ balance: 777 }).eq('id', acct.id); ok(!tue, 'an editor changes a balance (an audit-trail row in their name)')
+  const { data: txn } = await owner.from('transactions').insert({ household_id: hh, date: '2026-01-03', kind: 'expense', amount: 7, account_id: acct.id, status: 'cleared', source: 'manual', payee: 'E2E' }).select('id').single()
+  const { error: tce } = await tmp.from('transaction_comments').insert({ household_id: hh, transaction_id: txn.id, body: 'e2e comment', author_email: TMP }); ok(!tce, '…and comments on a transaction ' + (tce?.message || ''))
+  const { error: upe } = await tmp.storage.from('attachments').upload(FILE, PNG, { contentType: 'image/png' }); ok(!upe, '…and attaches a receipt (a file in their name) ' + (upe?.message || ''))
+  // alert settings (0.25.1): an editor saves their own row; an address an owner typed for them stays when they change something else
+  const T = tmpUser.id, OTHER = 'e2e-tmp-elsewhere@wealthpilot.test'
+  const { error: own } = await saveRow(tmp, T, { email: true }); ok(!own, 'an editor saves their own alert choices ' + (own?.message || ''))
+  await saveRow(owner, T, { email: true, email_to: OTHER })
+  const { error: keep } = await saveRow(tmp, T, { email: true, email_to: OTHER, digest: false }); ok(!keep, '…and changes one while keeping the address an owner typed for them ' + (keep?.message || ''))
+  ok(await refused(saveRow(tmp, T, { email: true, email_to: 'e2e-someone-else@wealthpilot.test' })), '…but cannot send their alerts to someone else\'s address')
+  ok(await refused(saveRow(tmp, ownerUser.user.id, { email: false })), '…nor change another member\'s')
+  { const { data: cur } = await tmp.from('households').select('settings').eq('id', hh).single(); ok(await refused(tmp.from('households').update({ settings: { ...cur.settings, notify: { ...(cur.settings.notify || {}), large: 1 } } }).eq('id', hh).select('id')), '…nor the household\'s alert switches') }
+  const tp = await tmp.functions.invoke('delete-account', { body: { action: 'preview' } })
+  ok(!tp.error && tp.data?.solo?.some(h => h.id === solo) && tp.data?.shared?.some(h => h.id === hh), 'the preview lists the household deleted with the account and the one left behind')
+  ok(!!(await tmp.functions.invoke('delete-account', { body: { action: 'delete', password: 'not the password' } })).error, 'a wrong password deletes nothing')
+  const del = await tmp.functions.invoke('delete-account', { body: { action: 'delete', password: PW } })
+  ok(!del.error && del.data?.ok === true && del.data.households_deleted === 1, 'deleting the account works ' + (del.error ? await del.error.context?.text?.() : ''))
+  const relog = createClient(URL_, KEY, { auth: { persistSession: false, autoRefreshToken: false } }); ok(!!(await relog.auth.signInWithPassword({ email: TMP, password: PW })).error, '…its sign-in is gone')
+  const { data: trail } = await owner.from('audit_events').select('user_id, user_email').eq('account_id', acct.id).eq('user_email', 'a former member')
+  ok((trail || []).length >= 1 && trail.every(t => t.user_id === null), 'the shared household keeps its history, with "a former member" in place of the person')
+  const { data: cm } = await owner.from('transaction_comments').select('author_email, created_by').eq('transaction_id', txn.id)
+  ok(cm?.length === 1 && cm[0].author_email === 'a former member' && cm[0].created_by === null, '…and their comment stays, unsigned')
+  ok(((await owner.from('household_members').select('user_id').eq('household_id', hh)).data || []).every(m => m.user_id !== tmpUser.id), '…and they are no longer a member')
+  const { data: kept, error: ke } = await owner.storage.from('attachments').download(FILE); ok(!ke && kept?.size > 0, '…the receipt they attached stays with the household ' + (ke?.message || ''))
+  const nt = await notifyOf(); ok(!(T in (nt.members || {})), '…and their alert choices are gone')
+} catch (e) { ok(false, 'account deletion checks stopped: ' + (e?.message || e)) }
+await owner.storage.from('attachments').remove([FILE]).catch(() => { /* nothing was uploaded */ })
+// an account with balance history (and audit rows) can be deleted (before 0019 the immutable audit trail refused)
+const { data: acct2 } = await owner.from('accounts').insert({ household_id: hh, name: 'E2E Old card', kind: 'credit_card', balance: 10, balance_as_of: new Date().toISOString().slice(0, 10), include_in_cash: false, include_in_net_worth: true, status: 'Active' }).select().single()
+await owner.from('accounts').update({ balance: 20 }).eq('id', acct2.id)
+const { error: dae } = await owner.from('accounts').delete().eq('id', acct2.id); ok(!dae, 'an account with balance history can be deleted ' + (dae?.message || ''))
+
 // --- deleting a household ---
 ok(!!(await owner.rpc('request_household_deletion', { p_household: hh, p_confirm: 'not the name' })).error, 'deletion needs the household\'s exact name')
 const { data: when, error: de } = await owner.rpc('request_household_deletion', { p_household: hh, p_confirm: NAME.toLowerCase() })

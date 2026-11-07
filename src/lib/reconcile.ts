@@ -94,31 +94,38 @@ export function suggestMatches(txns: RTxn[], a: RAccount): MatchCandidate[] {
 }
 
 // ---------- statement reconciliation ----------
-export interface ReconcileInput { account: RAccount; txns: RTxn[]; statementDate: string; statementBalance: number; clearedIds: string[]; previous?: { statement_date: string; statement_balance: number } | null }
+/** openingBalance: the statement's own beginning (previous) balance, typed by the user — used only when there is no previous reconciliation. */
+export interface ReconcileInput { account: RAccount; txns: RTxn[]; statementDate: string; statementBalance: number; clearedIds: string[]; previous?: { statement_date: string; statement_balance: number } | null; openingBalance?: number | null }
 export interface ReconcileResult {
-  openingBalance: number; firstTime: boolean; clearedDeposits: number; clearedPayments: number; clearedCount: number
-  computedEnding: number; statementBalance: number; variance: number
+  /** null when it is not known: the first reconciliation without the statement's beginning balance */
+  openingBalance: number | null; openingKnown: boolean; firstTime: boolean; clearedDeposits: number; clearedPayments: number; clearedCount: number
+  computedEnding: number | null; statementBalance: number; variance: number | null
   outstandingChecks: number; outstandingChecksCount: number; depositsInTransit: number; depositsInTransitCount: number; uncleared: number
-  bookBalance: number; reconciledBalance: number; balanced: boolean
+  bookBalance: number | null; reconciledBalance: number; balanced: boolean
 }
 /** Classic bank reconciliation. opening + cleared deposits − cleared payments must equal the statement's ending balance; whatever is still
- *  outstanding explains the difference between the statement and the household's own book. */
+ *  outstanding explains the difference between the statement and the household's own book. The opening is the previous reconciliation's
+ *  statement balance, or — the first time — the beginning balance printed on this statement. Without either the statement cannot be checked:
+ *  the opening, cleared balance, difference and book balance are null and the result never claims to balance (working the opening backward from
+ *  this statement's own ending balance would make every first reconciliation balance by construction). */
 export function reconcileStatement(i: ReconcileInput): ReconcileResult {
   const { account: a, txns } = i; const pool = txns.filter(t => live(t) && touches(t, a.id) && t.date <= i.statementDate)
   const cleared = pool.filter(t => i.clearedIds.includes(t.id))
   const eff = (t: RTxn) => effectOn(t, a.id, a.kind)
   const clearedDeposits = r2(cleared.reduce((s, t) => s + Math.max(0, eff(t)), 0)), clearedPayments = r2(cleared.reduce((s, t) => s + Math.max(0, -eff(t)), 0))
   const firstTime = !i.previous
-  const opening = i.previous ? Number(i.previous.statement_balance) : r2(i.statementBalance - clearedDeposits + clearedPayments)
-  const computedEnding = r2(opening + clearedDeposits - clearedPayments)
-  const variance = r2(computedEnding - i.statementBalance)
+  const typed = i.openingBalance != null && Number.isFinite(Number(i.openingBalance)) ? Number(i.openingBalance) : null
+  const opening = i.previous ? Number(i.previous.statement_balance) : typed
+  const openingKnown = opening != null && Number.isFinite(opening)
+  const computedEnding = openingKnown ? r2(opening! + clearedDeposits - clearedPayments) : null
+  const variance = computedEnding == null ? null : r2(computedEnding - i.statementBalance)
   const out = pool.filter(t => !i.clearedIds.includes(t.id) && origin(t) === 'typed' && t.status === 'pending')
   const checks = out.filter(t => eff(t) < 0), deps = out.filter(t => eff(t) > 0)
   const outstandingChecks = r2(checks.reduce((s, t) => s - eff(t), 0)), depositsInTransit = r2(deps.reduce((s, t) => s + eff(t), 0))
   const reconciledBalance = r2(i.statementBalance + depositsInTransit - outstandingChecks)
-  const bookBalance = r2(computedEnding + depositsInTransit - outstandingChecks)
-  return { openingBalance: opening, firstTime, clearedDeposits, clearedPayments, clearedCount: cleared.length, computedEnding, statementBalance: i.statementBalance, variance,
-    outstandingChecks, outstandingChecksCount: checks.length, depositsInTransit, depositsInTransitCount: deps.length, uncleared: out.length, bookBalance, reconciledBalance, balanced: Math.abs(variance) < 0.005 }
+  const bookBalance = computedEnding == null ? null : r2(computedEnding + depositsInTransit - outstandingChecks)
+  return { openingBalance: openingKnown ? opening : null, openingKnown, firstTime, clearedDeposits, clearedPayments, clearedCount: cleared.length, computedEnding, statementBalance: i.statementBalance, variance,
+    outstandingChecks, outstandingChecksCount: checks.length, depositsInTransit, depositsInTransitCount: deps.length, uncleared: out.length, bookBalance, reconciledBalance, balanced: variance != null && Math.abs(variance) < 0.005 }
 }
 /** Items to tick by default: bank rows and hand-cleared entries dated on or before the statement, not yet in a completed reconciliation. */
 export const defaultCleared = (txns: RTxn[], a: RAccount, statementDate: string) => unreconciled(txns, a).filter(t => t.date <= statementDate).map(t => t.id)

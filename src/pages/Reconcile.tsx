@@ -12,6 +12,7 @@ import { fm2, fmtMoney, parseNum } from '../lib/money'
 import { acctLabel, isLiability } from '../lib/accounts'
 import { post } from '../lib/ledger'
 import { linkTo } from '../lib/focus'
+import { amountProblem } from '../lib/validate'
 
 const KIND_LABEL: Record<string, string> = { check: 'Check', payment: 'Payment', deposit: 'Deposit', transfer: 'Transfer' }
 const AUDIT_PILL: Record<string, string> = { sync: 'good', import: 'info', sync_failure: 'crit', override: 'warn', adjustment: 'warn', reconciliation: 'good', match: 'info', unmatch: 'warn', balance_change: 'idle', correction: 'warn', register: 'idle' }
@@ -46,24 +47,26 @@ export function ReconcilePage() {
 
   // --- statement ---
   const prev = useMemo(() => a ? data.reconciliations.filter(r => r.account_id === a.id).sort((x, y) => y.statement_date.localeCompare(x.statement_date))[0] || null : null, [a, data.reconciliations])
-  const [stmtDate, setStmtDate] = useState(today()); const [stmtBal, setStmtBal] = useState(''); const [cleared, setCleared] = useState<Set<string> | null>(null); const [adjReason, setAdjReason] = useState(''); const [notes, setNotes] = useState('')
+  const [stmtDate, setStmtDate] = useState(today()); const [stmtBal, setStmtBal] = useState(''); const [openBal, setOpenBal] = useState(''); const [cleared, setCleared] = useState<Set<string> | null>(null); const [adjReason, setAdjReason] = useState(''); const [notes, setNotes] = useState('')
   const stmtBalance: number | null = stmtBal === '' ? (a?.bank_balance ?? null) : parseNum(stmtBal)
+  const openingBalance: number | null = prev || openBal.trim() === '' ? null : parseNum(openBal)   // first reconciliation only: the beginning balance printed on the statement
   const candidates = useMemo(() => a ? mine.filter(t => !t.duplicate_of && t.status !== 'void' && !t.reconciliation_id && t.date <= stmtDate) : [], [a, mine, stmtDate])
   const clearedIds = cleared ?? new Set(a ? defaultCleared(mine, a, stmtDate) : [])
-  const result = useMemo(() => a && stmtBalance != null ? reconcileStatement({ account: a, txns: mine, statementDate: stmtDate, statementBalance: stmtBalance, clearedIds: [...clearedIds], previous: prev ? { statement_date: prev.statement_date, statement_balance: prev.statement_balance } : null }) : null, [a, mine, stmtDate, stmtBalance, clearedIds, prev])
+  const result = useMemo(() => a && stmtBalance != null ? reconcileStatement({ account: a, txns: mine, statementDate: stmtDate, statementBalance: stmtBalance, clearedIds: [...clearedIds], previous: prev ? { statement_date: prev.statement_date, statement_balance: prev.statement_balance } : null, openingBalance }) : null, [a, mine, stmtDate, stmtBalance, clearedIds, prev, openingBalance])
   const toggle = (id: string) => setCleared(s => { const n = new Set(s ?? clearedIds); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const complete = () => guarded(async () => {
     if (!a || !result || stmtBalance == null) return
+    if (!result.openingKnown || result.openingBalance == null || result.variance == null || result.bookBalance == null) throw new Error('Type the beginning balance shown on this statement first — without it the statement cannot be checked')
     if (!result.balanced && !adjReason.trim()) throw new Error('The difference is not zero — tick the missing items, fix an amount, or give a reason to accept it as an adjustment')
     const rec = await repo!.completeReconciliation({ account_id: a.id, statement_date: stmtDate, statement_balance: stmtBalance, opening_balance: result.openingBalance, cleared_ids: [...clearedIds], book_balance: result.bookBalance, cleared_deposits: result.clearedDeposits, cleared_payments: result.clearedPayments, outstanding_checks: result.outstandingChecks, deposits_in_transit: result.depositsInTransit, reconciled_balance: result.reconciledBalance, variance: result.variance, adjustment: result.balanced ? 0 : -result.variance, adjustment_reason: result.balanced ? null : adjReason.trim(), notes: notes.trim() || null })
-    await st().refresh(); setCleared(null); setStmtBal(''); setAdjReason(''); setNotes(''); setTab('history'); return rec
+    await st().refresh(); setCleared(null); setStmtBal(''); setOpenBal(''); setAdjReason(''); setNotes(''); setTab('history'); return rec
   }, 'Reconciliation completed')
 
   if (!a) return <Card span={12} title="Checkbook Reconciliation"><Empty>Add a checking, savings, cash or card account first.</Empty></Card>
   const S = state!
   return <>
     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-      <Field label="Account"><select className="inp" value={acctId} onChange={e => { setAcctId(e.target.value); setCleared(null); setStmtBal('') }}>{cashAccts.map(x => <option key={x.id} value={x.id}>{acctLabel(x, data.accounts)}{x.bank_balance != null ? ' · bank feed' : ''}</option>)}</select></Field>
+      <Field label="Account"><select className="inp" value={acctId} onChange={e => { setAcctId(e.target.value); setCleared(null); setStmtBal(''); setOpenBal('') }}>{cashAccts.map(x => <option key={x.id} value={x.id}>{acctLabel(x, data.accounts)}{x.bank_balance != null ? ' · bank feed' : ''}</option>)}</select></Field>
       <span style={{ flex: 1 }} />
       {S.verified ? <Pill cls="good">Verified · bank figure {S.bankAsOf ? ago(S.bankAsOf) : ''}</Pill> : <Pill cls="warn">No bank figure yet — book balance only</Pill>}
     </div>
@@ -102,28 +105,30 @@ export function ReconcilePage() {
     </Card>}
 
     {tab === 'statement' && <div className="grid g12">
-      <Card span={4} title="Statement" hint={prev ? `previous: ${fmtDY(prev.statement_date)} ending ${fmtMoney(prev.statement_balance)}` : 'first reconciliation — the opening balance is taken from this statement'}>
+      <Card span={4} title="Statement" hint={prev ? `previous: ${fmtDY(prev.statement_date)} ending ${fmtMoney(prev.statement_balance)}` : 'first reconciliation — type the beginning balance from this statement'}>
         <Field label="Statement date"><input className="inp" type="date" value={stmtDate} onChange={e => { setStmtDate(e.target.value); setCleared(null) }} /></Field>
         <Field label="Ending balance on the statement" hint={a.bank_balance != null ? `bank feed says ${fmtMoney(a.bank_balance)} as of ${a.bank_balance_as_of ? fmtDY(a.bank_balance_as_of) : '—'}` : undefined}><input className="inp" inputMode="decimal" value={stmtBal} placeholder={a.bank_balance != null ? String(a.bank_balance) : '0.00'} onChange={e => setStmtBal(e.target.value)} /></Field>
+        {!prev && <Field label="Beginning balance on this statement" hint="the opening or previous balance printed on it"><input className="inp" inputMode="decimal" value={openBal} placeholder="0.00" onChange={e => setOpenBal(e.target.value)} /></Field>}
+        {result && !result.openingKnown && <Note>Type the beginning balance printed on this statement. Without it the app cannot check that the statement adds up, so the difference stays blank.</Note>}
         {result && <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><tbody>
-          <tr><td>Opening balance{result.firstTime ? ' (derived)' : ''}</td><td className="num">{fm2(result.openingBalance)}</td></tr>
+          <tr><td>Opening balance{result.firstTime ? ' (from this statement)' : ''}</td><td className="num">{result.openingBalance == null ? '—' : fm2(result.openingBalance)}</td></tr>
           <tr><td>+ Cleared deposits ({result.clearedCount} items ticked)</td><td className="num">{fm2(result.clearedDeposits)}</td></tr>
           <tr><td>− Cleared payments</td><td className="num">{fm2(result.clearedPayments)}</td></tr>
-          <tr><td><b>= Cleared balance</b></td><td className="num"><b>{fm2(result.computedEnding)}</b></td></tr>
+          <tr><td><b>= Cleared balance</b></td><td className="num"><b>{result.computedEnding == null ? '—' : fm2(result.computedEnding)}</b></td></tr>
           <tr><td>Statement ending balance</td><td className="num">{fm2(result.statementBalance)}</td></tr>
-          <tr><td><b>Difference</b></td><td className="num" style={{ color: result.balanced ? 'var(--good-ink)' : 'var(--crit-ink)', fontWeight: 700 }}>{fm2(result.variance)}</td></tr>
+          <tr><td><b>Difference</b></td><td className="num" style={{ color: result.variance == null ? 'var(--ink-3)' : result.balanced ? 'var(--good-ink)' : 'var(--crit-ink)', fontWeight: 700 }}>{result.variance == null ? 'not checked' : fm2(result.variance)}</td></tr>
           <tr><td>Outstanding checks ({result.outstandingChecksCount})</td><td className="num">−{fm2(result.outstandingChecks)}</td></tr>
           <tr><td>Deposits in transit ({result.depositsInTransitCount})</td><td className="num">+{fm2(result.depositsInTransit)}</td></tr>
           <tr><td><b>Reconciled balance</b></td><td className="num"><b>{fm2(result.reconciledBalance)}</b></td></tr>
         </tbody></table></div>}
-        {result && !result.balanced && <Field label="Accept the difference as an adjustment — reason (recorded as an override)"><input className="inp" value={adjReason} onChange={e => setAdjReason(e.target.value)} placeholder="e.g. bank fee not recorded; interest posted" /></Field>}
+        {result && result.openingKnown && !result.balanced && <Field label="Accept the difference as an adjustment — reason (recorded as an override)"><input className="inp" value={adjReason} onChange={e => setAdjReason(e.target.value)} placeholder="e.g. bank fee not recorded; interest posted" /></Field>}
         <Field label="Notes"><input className="inp" value={notes} onChange={e => setNotes(e.target.value)} /></Field>
-        {canEdit && <Btn primary disabled={!result || stmtBalance == null} onClick={complete}>{result?.balanced ? 'Complete reconciliation' : 'Complete with adjustment'}</Btn>}
+        {canEdit && <Btn primary disabled={!result || stmtBalance == null || !result.openingKnown} onClick={complete}>{result?.balanced || !result?.openingKnown ? 'Complete reconciliation' : 'Complete with adjustment'}</Btn>}
         <Note>Completing ticks the items, sets the bank balance to the statement figure, updates the verified balance every module uses, and writes an immutable audit record. Completed reconciliations cannot be edited.</Note>
       </Card>
       <Card span={8} title="Tick what appears on the statement" hint="bank rows are ticked for you; untick anything the statement does not show">
-        {candidates.length === 0 ? <Empty>No unreconciled items on or before {fmtDY(stmtDate)}.</Empty> : <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th /><th>Date</th><th>Chk #</th><th>Payee</th><th>Type</th><th className="num">Amount</th><th>From</th></tr></thead><tbody>
-          {candidates.sort((x, y) => x.date.localeCompare(y.date)).map(t => <tr key={t.id} style={{ opacity: clearedIds.has(t.id) ? 1 : .6 }}><td><input type="checkbox" checked={clearedIds.has(t.id)} onChange={() => toggle(t.id)} /></td><td>{fmtD(t.date)}</td><td>{t.check_number ? '#' + +t.check_number : ''}</td><td>{t.payee}</td><td>{KIND_LABEL[itemType(t, a.id, a.kind)]}</td><td className="num" style={{ color: eff(t) < 0 ? 'var(--crit-ink)' : 'var(--good-ink)' }}>{eff(t) < 0 ? '−' : '+'}{fm2(Math.abs(eff(t)))}</td><td><Pill cls={t.external_id ? 'good' : t.status === 'pending' ? 'warn' : 'idle'}>{t.external_id ? 'bank' : t.status === 'pending' ? 'outstanding' : 'by hand'}</Pill></td></tr>)}
+        {candidates.length === 0 ? <Empty>No unreconciled items on or before {fmtDY(stmtDate)}.</Empty> : <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th><span className="sr-only">On the statement</span></th><th>Date</th><th>Chk #</th><th>Payee</th><th>Type</th><th className="num">Amount</th><th>From</th></tr></thead><tbody>
+          {candidates.sort((x, y) => x.date.localeCompare(y.date)).map(t => <tr key={t.id} style={{ opacity: clearedIds.has(t.id) ? 1 : .6 }}><td><input type="checkbox" checked={clearedIds.has(t.id)} onChange={() => toggle(t.id)} aria-label={`On the statement: ${t.payee || KIND_LABEL[itemType(t, a.id, a.kind)]} ${fm2(Math.abs(eff(t)))} on ${fmtD(t.date)}`} /></td><td>{fmtD(t.date)}</td><td>{t.check_number ? '#' + +t.check_number : ''}</td><td>{t.payee}</td><td>{KIND_LABEL[itemType(t, a.id, a.kind)]}</td><td className="num" style={{ color: eff(t) < 0 ? 'var(--crit-ink)' : 'var(--good-ink)' }}>{eff(t) < 0 ? '−' : '+'}{fm2(Math.abs(eff(t)))}</td><td><Pill cls={t.external_id ? 'good' : t.status === 'pending' ? 'warn' : 'idle'}>{t.external_id ? 'bank' : t.status === 'pending' ? 'outstanding' : 'by hand'}</Pill></td></tr>)}
         </tbody></table></div>}
       </Card>
     </div>}
@@ -152,20 +157,24 @@ function RegisterForm({ account, onDone }: { account: Account; onDone: () => voi
   const { data, insert, guarded, repo, acctLabels, accts, cats } = useData(); const st = useStore.getState; const catOpts = cats.filter(c => !c.archived).map(c => [c.id, c.name] as [string, string])
   const nextCheck = useMemo(() => { const nums = data.transactions.filter(t => t.account_id === account.id && t.check_number).map(t => +t.check_number!).filter(n => n > 0); return nums.length ? String(Math.max(...nums) + 1) : '' }, [data.transactions, account.id])
   const [f, setF] = useState({ type: 'check' as 'check' | 'payment' | 'deposit' | 'transfer', check: nextCheck, date: today(), payee: '', memo: '', amount: '', category_id: '', to: '' })
-  const submit = (e: FormEvent) => { e.preventDefault(); guarded(async () => {
-    const amount = parseNum(f.amount); if (amount == null || !(amount > 0)) throw new Error('Enter an amount')
+  const [err, setErr] = useState<{ amount?: string; to?: string }>({})
+  const submit = (e: FormEvent) => { e.preventDefault()
+    const problems = { amount: amountProblem(f.amount) || undefined, to: f.type === 'transfer' && !f.to ? 'Choose the account the money goes to — a transfer needs both accounts.' : undefined }
+    if (problems.amount || problems.to) { setErr(problems); const form = e.currentTarget as HTMLFormElement; requestAnimationFrame(() => form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return }
+    setErr({}); guarded(async () => {
+    const amount = parseNum(f.amount)!
     const row: Partial<Transaction> = { date: f.date, amount, payee: f.payee || null, memo: f.memo || null, category_id: f.category_id || null, status: 'pending', source: 'manual', check_number: f.type === 'check' ? (f.check ? String(+f.check) : null) : null, tags: [], exclude_from_budget: false,
       kind: f.type === 'deposit' ? 'income' : f.type === 'transfer' ? 'transfer' : 'expense', account_id: account.id, to_account_id: f.type === 'transfer' ? f.to || null : null }
     const t = await insert('transactions', row); await post(data, (id, p) => st().update('accounts', id, p), t, 1, f.date)
     await repo!.logAudit('register', `Recorded ${f.type}${row.check_number ? ' #' + +row.check_number : ''}: ${f.payee || ''} ${fm2(amount)}`, { txn: t.id }, account.id)
     setF(x => ({ ...x, check: x.type === 'check' && x.check ? String(+x.check + 1) : x.check, payee: '', memo: '', amount: '' })); onDone()
   }, 'Recorded — outstanding until the bank shows it') }
-  return <form onSubmit={submit}>
+  return <form onSubmit={submit} noValidate>
     <Field label="Type"><Seg value={f.type} options={[['check', 'Check'], ['payment', 'Payment'], ['deposit', 'Deposit'], ['transfer', 'Transfer']]} onChange={v => setF(x => ({ ...x, type: v }))} /></Field>
     <div className="grid2">{f.type === 'check' && <Field label="Check number"><input className="inp" inputMode="numeric" value={f.check} onChange={e => setF(x => ({ ...x, check: e.target.value }))} /></Field>}<Field label="Date"><input className="inp" type="date" value={f.date} onChange={e => setF(x => ({ ...x, date: e.target.value }))} /></Field></div>
     <Field label={f.type === 'deposit' ? 'From (payer)' : 'Payee'}><input className="inp" value={f.payee} onChange={e => setF(x => ({ ...x, payee: e.target.value }))} /></Field>
-    <div className="grid2"><Field label="Amount"><input className="inp" inputMode="decimal" value={f.amount} onChange={e => setF(x => ({ ...x, amount: e.target.value }))} /></Field>
-      {f.type === 'transfer' ? <Field label="To account"><select className="inp" value={f.to} onChange={e => setF(x => ({ ...x, to: e.target.value }))}><option value="">—</option>{accts.filter(x => x.id !== account.id).map(x => <option key={x.id} value={x.id}>{acctLabels[x.id]}</option>)}</select></Field>
+    <div className="grid2"><Field label="Amount" error={err.amount}><input className="inp" inputMode="decimal" value={f.amount} onChange={e => { setF(x => ({ ...x, amount: e.target.value })); if (err.amount) setErr(x => ({ ...x, amount: undefined })) }} /></Field>
+      {f.type === 'transfer' ? <Field label="To account" error={err.to}><select className="inp" value={f.to} onChange={e => { setF(x => ({ ...x, to: e.target.value })); if (err.to) setErr(x => ({ ...x, to: undefined })) }}><option value="">—</option>{accts.filter(x => x.id !== account.id).map(x => <option key={x.id} value={x.id}>{acctLabels[x.id]}</option>)}</select></Field>
         : <Field label="Category"><select className="inp" value={f.category_id} onChange={e => setF(x => ({ ...x, category_id: e.target.value }))}><option value="">—</option>{catOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>}</div>
     <Field label="Memo"><input className="inp" value={f.memo} onChange={e => setF(x => ({ ...x, memo: e.target.value }))} /></Field>
     <Btn primary type="submit">Record</Btn>

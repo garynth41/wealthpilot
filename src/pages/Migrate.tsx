@@ -2,6 +2,7 @@
 // pairing and de-duplication are lib/migrate.ts; this card picks the file, lets you confirm the matches and writes through the store.
 // History is history: imported rows do not move today's balances (you type those, or the bank feed sets them).
 import { useMemo, useState, type ChangeEvent } from 'react'
+import { maskDigits } from '../lib/email/extract'
 import { Link } from 'react-router-dom'
 import { useData } from '../app/hooks'
 import type { Account, AccountKind, ImportLog } from '../app/data/types'
@@ -40,7 +41,7 @@ export function MigrateCard() {
       let order = data.accounts.length
       for (const a of newAccts) { if (!plan.add.some(t => t.account_id === 'new:acct:' + a.name || t.to_account_id === 'new:acct:' + a.name)) continue
         setBusy(`Creating account ${a.name}…`); const kind = amap[a.name].kind; const liab = isLiability({ kind } as Account)
-        const row = await insert('accounts', { name: a.name.slice(0, 80), kind, balance: 0, balance_as_of: today(), apr: 0, minimum_payment: 0, autopay: false, include_in_cash: !liab && kind !== 'retirement' && kind !== 'investment', include_in_net_worth: true, status: 'Active', sort_order: ++order, notes: `Created by the ${SOURCE_LABEL[p.source]} import — type today's balance` })
+        const row = await insert('accounts', { name: maskDigits(a.name).slice(0, 80), kind, balance: 0, balance_as_of: today(), apr: 0, minimum_payment: 0, autopay: false, include_in_cash: !liab && kind !== 'retirement' && kind !== 'investment', include_in_net_worth: true, status: 'Active', sort_order: ++order, notes: `Created by the ${SOURCE_LABEL[p.source]} import — type today's balance` })
         ids['new:acct:' + a.name] = row.id }
       // 2. categories to create, in the export's own group
       let corder = data.categories.length

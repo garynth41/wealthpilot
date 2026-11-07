@@ -87,7 +87,7 @@ export function proposal(d: Data, s: Settings, f: FactG): Proposal {
   const a = P.account; const t = today()
   if (f.kind === 'paid' || f.kind === 'income') {
     if (a) { const dup = d.transactions.find(x => x.kind === 'transfer' && x.to_account_id === a.id && close(x.amount, f.amount) && Math.abs(diffDays(x.date, when(f))) <= 3); if (dup) { P.dup = true; P.changes.push(`already recorded (${dup.ref || 'payment'} ${fmtD(dup.date)})`) }
-      else { P.changes.push(`payment ${fm2(f.amount)} on ${fmtD(when(f))} → ${acctLabel(a, d.accounts)}`); P.changes.push(`balance ${fm2(debtBal(a))} → ${fm2(Math.max(0, debtBal(a) - (+f.amount! || 0)))}`) }
+      else { P.changes.push(`payment ${fm2(f.amount)} on ${fmtD(when(f))} → ${acctLabel(a, d.accounts)}`); P.changes.push(`balance ${fm2(debtBal(a, d))} → ${fm2(Math.max(0, debtBal(a, d) - (+f.amount! || 0)))}`) }
       if (f.nextDate && f.nextDate !== (a.due_date || '').slice(0, 10)) P.changes.push(`next due ${fmtD(f.nextDate)}${f.nextAmt != null ? ' · ' + fm2(f.nextAmt) : ''}`) }
     else { const dup = d.transactions.find(x => x.kind === (f.kind === 'income' ? 'income' : 'expense') && close(x.amount, f.amount) && Math.abs(diffDays(x.date, when(f))) <= 4 && (nameHit(x.payee, f.payee) || x.category_id === P.category?.id))
       if (dup) { P.dup = true; P.changes.push(`already logged (${fmtD(dup.date)}${dup.payee ? ' · ' + dup.payee : ''})`) }

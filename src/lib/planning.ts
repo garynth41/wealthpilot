@@ -8,9 +8,9 @@ import { goalProgress } from './goals'
 
 // ---------------- account balances: available credit ----------------
 /** Assets: the balance; revolving debt: limit − owed; instalment debt: nothing to draw. */
-export function availableBalance(a: Account): number | null {
+export function availableBalance(a: Account, d?: Pick<Data, 'transactions'>): number | null {
   if (!isLiability(a)) return +a.balance || 0
-  if (isRevolving(a) && +(a.credit_limit || 0) > 0) return round2(Math.max(0, +a.credit_limit! - debtBal(a)))
+  if (isRevolving(a) && +(a.credit_limit || 0) > 0) return round2(Math.max(0, +a.credit_limit! - debtBal(a, d)))
   return null
 }
 

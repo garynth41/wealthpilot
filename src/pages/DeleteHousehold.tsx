@@ -1,6 +1,7 @@
 // Delete this household (0.25.0): an owner schedules it by typing the household's name; for 7 days it is read-only and any owner
 // can cancel; then it is gone for good — every account, transaction, file and backup. The sign-in and other households stay.
 import { useState } from 'react'
+import { saveFile, isNative } from '../app/native'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import { Card, Btn, Note, Field, MHead, MBody, MFoot, useModal } from '../components/ui'
@@ -9,7 +10,7 @@ import { fmtDY, today } from '../lib/dates'
 export function DeleteHouseholdCard() {
   const { household, isOwner, repo, guarded, mode } = useData(); const { open, close } = useModal()
   const when = household?.deletion_scheduled_for
-  const download = () => guarded(async () => { const j = await repo!.exportJson(); const blob = new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `wealthpilot-backup-${today()}.json`; a.click() }, 'Backup downloaded')
+  const download = () => guarded(async () => { const j = await repo!.exportJson(); await saveFile(`wealthpilot-backup-${today()}.json`, JSON.stringify(j, null, 2), 'application/json') }, isNative() ? 'Backup ready' : 'Backup downloaded')
   return <Card span={12} title="Delete this household" hint="permanent after a 7-day grace period">
     {when ? <>
       <div className="msg crit" role="status">Scheduled for permanent deletion on <b>{fmtDY(when.slice(0, 10))}</b>. The household is read-only until then.</div>

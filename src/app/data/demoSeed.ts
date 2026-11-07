@@ -1,5 +1,5 @@
 // Offline demo data — a believable household, dated relative to today. Also used by the test suites.
-import { addDays, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
+import { addDays, addMonthsClamp, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
 import { plannedForPeriod } from '../../lib/sinking'
 import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType, type Holding } from './types'
 
@@ -25,7 +25,7 @@ export function demoSeed(): { household: Household; data: Data } {
   const d = emptyData()
   const cat = (group: string, name: string) => { const c = d.categories.find(x => x.group === group && x.name === name); if (!c) throw new Error('no category ' + name); return c }
   STARTER_CATEGORIES.forEach(([group, name, kind, priority, cost_type, sort_order]) => d.categories.push({ id: demoId(), household_id: hh, ref: 'C-' + String(sort_order).padStart(3, '0'), name, group, kind, priority, cost_type, default_budget: 0, budget_cadence: 'period', rollover: false, sort_order, archived: false } as Category))
-  const DEF: Record<string, number> = { 'Rent / mortgage': 1850, Electric: 140, Gas: 60, 'Water / sewer / trash': 75, Internet: 80, 'Car payment': 312, Fuel: 180, 'Car insurance': 128, Groceries: 650, 'Dining out': 160, 'Coffee & snacks': 40, 'Health insurance': 420, Pharmacy: 35, 'Gym & fitness': 40, Phone: 95, 'Subscriptions & streaming': 48, 'Credit card payments': 400, Shopping: 150, 'Personal care': 60, Entertainment: 80, 'Gifts & giving': 600, 'Home maintenance': 1800, Travel: 2400, 'Medical & dental': 900, 'Kids & family': 120, 'Emergency fund': 300, 'Savings goals': 200, Miscellaneous: 100, Paycheck: 4610, 'Side income': 400 }
+  const DEF: Record<string, number> = { 'Rent / mortgage': 1850, Electric: 140, Gas: 60, 'Water / sewer / trash': 75, Internet: 80, 'Car payment': 312, Fuel: 180, 'Car insurance': 128, Groceries: 650, 'Dining out': 160, 'Coffee & snacks': 40, 'Health insurance': 420, Pharmacy: 35, 'Gym & fitness': 40, Phone: 95, 'Subscriptions & streaming': 48, Shopping: 150, 'Personal care': 60, Entertainment: 80, 'Gifts & giving': 600, 'Home maintenance': 1800, Travel: 2400, 'Medical & dental': 900, 'Kids & family': 120, 'Emergency fund': 300, 'Savings goals': 200, Miscellaneous: 100, Paycheck: 4610, 'Side income': 400 }
   d.categories.forEach(c => { c.default_budget = DEF[c.name] || 0; if (['Dining out', 'Shopping', 'Entertainment', 'Gifts & giving'].includes(c.name)) c.rollover = true })
   d.categories.forEach(c => { if (['Gifts & giving', 'Home maintenance', 'Travel', 'Medical & dental'].includes(c.name)) { c.budget_cadence = 'yearly'; c.rollover = true } })   // sinking funds: yearly amounts spread per period
 
@@ -77,6 +77,13 @@ export function demoSeed(): { household: Household; data: Data } {
   // paychecks
   for (let x = lastFri; x >= from; x = addDays(x, -14)) tx(x, 'income', 2305, { payee: 'Meridian Aviation Group', category_id: cat('Income', 'Paycheck').id, pay_schedule_id: ps.id, memo: 'Direct deposit', source: 'recurring' })
   months.forEach(m => { const dd = m + '-15'; if (dd <= t) tx(dd, 'income', 400, { payee: 'Freelance client', category_id: cat('Income', 'Side income').id }) })
+  // card and loan payments on their own due days (0.25.1): these three bills fall due on a day counted from today (t+4, t+13, t+19), so
+  // their history is paid on each earlier due date — never on fixed days that line up only some days of the month and leave the sample
+  // household looking late the rest of the time
+  for (const [ri, to, payee, line] of [[9, auto, 'Huntington auto loan', 'Loan payments'], [10, amex, 'American Express', 'Credit card payments'], [11, chase, 'Chase', 'Credit card payments']] as const) {
+    const r = d.recurring[ri]
+    for (let k = 1; k <= 4; k++) { const due = addMonthsClamp(r.next_due!, -k, r.day_of_month || undefined); if (due < t && due >= from) tx(due, 'transfer', r.amount, { payee, to_account_id: to.id, category_id: cat('Debt', line).id, recurring_id: r.id }) }
+  }
   // bills each month
   months.forEach(m => {
     const on = (day: number) => `${m}-${String(day).padStart(2, '0')}`
@@ -91,7 +98,6 @@ export function demoSeed(): { household: Household; data: Data } {
     paidIf(21, () => tx(on(21), 'expense', 11.99, { payee: 'Spotify', category_id: cat('Bills', 'Subscriptions & streaming').id, account_id: chase.id, recurring_id: d.recurring[7].id }))
     paidIf(17, () => tx(on(17), 'expense', 24.99, { payee: 'Planet Fitness', category_id: cat('Health', 'Gym & fitness').id, recurring_id: d.recurring[8].id }))
     paidIf(2, () => tx(on(2), 'transfer', 300, { payee: 'Ally', to_account_id: sav.id, category_id: cat('Savings', 'Emergency fund').id, recurring_id: d.recurring[12].id, goal_id: undefined }))
-    if (m < cm) { tx(on(6), 'transfer', 312, { payee: 'Huntington auto loan', to_account_id: auto.id, category_id: cat('Debt', 'Loan payments').id, recurring_id: d.recurring[9].id }); tx(on(14), 'transfer', 300, { payee: 'American Express', to_account_id: amex.id, category_id: cat('Debt', 'Credit card payments').id, recurring_id: d.recurring[10].id }); tx(on(20), 'transfer', 250, { payee: 'Chase', to_account_id: chase.id, category_id: cat('Debt', 'Credit card payments').id, recurring_id: d.recurring[11].id }) }
     // variable spend: groceries weekly, fuel, dining, shopping
     const groceries = [142.18, 96.4, 131.07, 118.5, 88.2]; let gi = 0
     for (let w = weekStart(on(1)); w <= monthEnd(m); w = addDays(w, 7)) { const dd = addDays(w, 5); if (dd >= on(1) && dd <= t && dd.slice(0, 7) === m) tx(dd, 'expense', groceries[gi++ % groceries.length], { payee: ['Kroger', 'Aldi', 'Costco'][gi % 3], category_id: cat('Food', 'Groceries').id, account_id: amex.id }) }
@@ -126,7 +132,7 @@ export function demoSeed(): { household: Household; data: Data } {
   { const vti = d.holdings.find(h => h.symbol === 'VTI'); if (vti) d.lots.push({ id: demoId(), household_id: hh, holding_id: vti.id, acquired_on: addDays(t, -800), quantity: 15, cost: 3000 }, { id: demoId(), household_id: hh, holding_id: vti.id, acquired_on: addDays(t, -120), quantity: 7, cost: 2100, notes: 'bought near the high' }) }
   // insurance register (0.22.0): employer health, a term life policy, auto — no renters or disability yet, so the gaps card has something to say
   d.insurance.push({ id: demoId(), household_id: hh, ref: 'Y-001', kind: 'health', name: 'Medical (employer PPO)', carrier: 'Anthem', insured: 'Household', premium: 186, premium_frequency: 'monthly', deductible: 1500, through_employer: true, status: 'Active', sort_order: 1 },
-    { id: demoId(), household_id: hh, ref: 'Y-002', kind: 'term_life', name: '20-year term life', carrier: 'Haven Life', insured: 'Gary', policy_last4: '4471', coverage: 250000, premium: 28.5, premium_frequency: 'monthly', renews_on: addDays(t, 40), beneficiary: 'Spouse (primary); children equally (contingent)', through_employer: false, status: 'Active', sort_order: 2 },
+    { id: demoId(), household_id: hh, ref: 'Y-002', kind: 'term_life', name: '20-year term life', carrier: 'Haven Life', insured: 'Alex', policy_last4: '4471', coverage: 250000, premium: 28.5, premium_frequency: 'monthly', renews_on: addDays(t, 40), beneficiary: 'Spouse (primary); children equally (contingent)', through_employer: false, status: 'Active', sort_order: 2 },
     { id: demoId(), household_id: hh, ref: 'Y-003', kind: 'auto', name: 'Auto — Honda CR-V', carrier: 'Progressive', insured: 'Household', coverage: 100000, deductible: 500, premium: 612, premium_frequency: 'semiannual', renews_on: addDays(t, 75), through_employer: false, status: 'Active', sort_order: 3 })
   { const k = d.accounts.find(a => a.name === 'Fidelity 401(k)'); if (k) Object.assign(k, { beneficiary: 'Spouse (primary)', beneficiary_reviewed_on: addDays(t, -1400) }) }
   // planned items, snapshots, hardship
@@ -170,7 +176,7 @@ export function demoSeed(): { household: Household; data: Data } {
     const A = live.filter(a => !LIAB.includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0), L = live.filter(a => LIAB.includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0), CASH = live.filter(a => a.include_in_cash && !LIAB.includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0)
     ;([[-60, 1830, 1030, 930], [-30, 1030, 400, 410], [0, 0, 0, 0]] as const).forEach(([k, da, dl, dc]) => d.snapshots.push({ id: demoId(), household_id: hh, date: addDays(t, k), cash: Math.round(CASH - dc), assets: Math.round(A - da), liabilities: Math.round(L + dl), by_account: {} }))
   }
-  const household: Household = { id: hh, name: 'Thomas household (demo)', currency: 'USD', settings: { ...SETTINGS_DEFAULTS, periodType: 'month', reserveFloor: 3000, runwayGreen: 6, runwayYellow: 3,
+  const household: Household = { id: hh, name: 'Sample household (demo)', currency: 'USD', settings: { ...SETTINGS_DEFAULTS, periodType: 'month', reserveFloor: 3000, runwayGreen: 6, runwayYellow: 3,
     // sample tax data (demo only): year-to-date federal withholding from the W-2 pay stubs, last year's return, Lewis Center-style local rates
     tax: { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, priorYearTax: 10200, priorYearAgi: 84000, autoAggregate: true, paychecksLeft: null, extraWithholdingPerCheck: 0, plannedEstimates: 0, seSetAsidePct: 25,
       items: [{ id: 'dt1', kind: 'withholding', label: 'Federal withholding to date (pay stub, Oct 31)', amount: 8560, source: 'manual' }, { id: 'dt2', kind: 'pretax_deduction', label: '401(k) deferrals + health premiums', amount: 7800, source: 'manual' }, { id: 'dt3', kind: 'estimated_payment', label: 'Q2 estimated payment (consulting)', amount: 600, source: 'manual' }] } } }

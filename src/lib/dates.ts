@@ -35,7 +35,12 @@ export const fmtDY = (s?: string | null) => (s ? parse(s).toLocaleDateString(res
 export const fmtDow = (s: string) => parse(s).toLocaleDateString(resolvedLocale(), { weekday: 'short' })
 export const mLabel = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(resolvedLocale(), { month: 'long', year: 'numeric' }) }
 export const mShort = (m: string) => { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(resolvedLocale(), { month: 'short', year: 'numeric' }) }
-export const ago = (ts: string | number | Date) => { const s = (Date.now() - new Date(ts).getTime()) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago' }
+/** How long ago, in words. A date-only value ('2026-11-07') is a local calendar day — today, yesterday, 3d ago — counted like every other
+ *  date in the app; reading it as UTC midnight made a balance dated today say "16h ago" and a value from 104 days ago say "105d ago" (0.25.1).
+ *  A timestamp keeps minutes and hours. */
+export const ago = (ts: string | number | Date) => {
+  if (typeof ts === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ts.trim())) { const d = diffDays(today(), ts.trim()); return d === 0 ? 'today' : d === 1 ? 'yesterday' : d < 0 ? `in ${-d}d` : d + 'd ago' }
+  const s = (Date.now() - new Date(ts).getTime()) / 1000; if (s < 60) return 'just now'; if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago' }
 /** Next date on or after today that falls on `day` of the month. */
 export const nextMonthDay = (day: number, from = today()) => { const t = parse(from); let y = t.getFullYear(), m = t.getMonth(); if (day < t.getDate()) { m++; if (m > 11) { m = 0; y++ } } const last = new Date(y, m + 1, 0).getDate(); return iso(new Date(y, m, Math.min(day, last))) }
 /** Every `day`-of-month date in [from, to]. */
