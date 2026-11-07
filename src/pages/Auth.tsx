@@ -6,6 +6,7 @@ import { hasSupabase } from '../app/supabase'
 import { Btn, PasswordInput } from '../components/ui'
 import { Logo } from '../components/Logo'
 import { passwordProblems } from '../lib/access'
+import { LegalLinks } from './About'
 
 type Mode = 'signin' | 'signup' | 'forgot' | 'recover' | 'mfa'
 export function AuthPage({ recover }: { recover?: boolean }) {
@@ -31,7 +32,8 @@ export function AuthPage({ recover }: { recover?: boolean }) {
       <div className="links">{mode === 'signin' ? <><button type="button" onClick={() => setMode('signup')}>Create an account</button><button type="button" onClick={() => setMode('forgot')}>Forgot password?</button></> : <button type="button" onClick={() => setMode('signin')}>← Back to sign in</button>}</div>
     </form> : <div className="msg crit">Supabase is not configured — copy <code>.env.example</code> to <code>.env</code>.</div>}
     <div style={{ borderTop: '1px solid var(--line)', marginTop: 18, paddingTop: 14, textAlign: 'center' }}><div className="note" style={{ marginTop: 0, marginBottom: 8 }}>No account? Try everything with sample data first.</div><Btn onClick={() => enterDemo()} block>Open the offline demo</Btn></div>
-    <div className="note" style={{ textAlign: 'center', marginTop: 14, fontFamily: 'var(--mono)', fontSize: 11 }}>v{APP_VERSION}</div>
+    <LegalLinks short />
+    <div className="note" style={{ textAlign: 'center', marginTop: 6, fontFamily: 'var(--mono)', fontSize: 11 }}>v{APP_VERSION}</div>
   </div></div>
 }
 export function Onboarding() {

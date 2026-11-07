@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- WealthPilot's privacy manifest (0.25.1). It matches the App Privacy answers in docs/MOBILE.md: no tracking, no tracking domains;
-     the data the app keeps is linked to the person's account and used only to run the app. Capacitor and its plugins ship their own
-     manifests for the system APIs they use. -->
+<!-- WealthPilot's privacy manifest (0.25.1). It matches the App Privacy answers in docs/STORE_LAUNCH.md and the privacy policy
+     (public/privacy.html): no tracking, no tracking domains; everything the app keeps is linked to the person's account and used only to
+     run the app. File timestamps: the file plugin (used to save exports before the share sheet opens) reads them for files inside the
+     app's own container only (reason C617.1). -->
 <plist version="1.0">
 <dict>
 	<key>NSPrivacyTracking</key>
@@ -47,8 +48,37 @@
 			<key>NSPrivacyCollectedDataTypeTracking</key><false/>
 			<key>NSPrivacyCollectedDataTypePurposes</key><array><string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string></array>
 		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key><string>NSPrivacyCollectedDataTypeName</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key><true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key><false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key><array><string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string></array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key><string>NSPrivacyCollectedDataTypeCreditInfo</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key><true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key><false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key><array><string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string></array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key><string>NSPrivacyCollectedDataTypeProductInteraction</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key><true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key><false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key><array><string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string></array>
+		</dict>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key><string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key><true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key><false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key><array><string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string></array>
+		</dict>
 	</array>
 	<key>NSPrivacyAccessedAPITypes</key>
-	<array/>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key><string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key><array><string>C617.1</string></array>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect } from 'react'
 import { DeleteAccountCard } from './DeleteAccount'
 import { remindersOn, setReminders, rescheduleReminders } from '../app/nativeReminders'
-import { isNative, passkeysAvailable, webPushAvailable, saveFile } from '../app/native'
+import { isNative, passkeysAvailable, webPushAvailable, saveFile, publicUrl } from '../app/native'
 import { DeleteHouseholdCard } from './DeleteHousehold'
+import { AboutCard } from './About'
 import { offlineCopyOn, setOfflineCopy } from '../lib/offlineCache'
 import { passwordProblems } from '../lib/access'
 import { useData } from '../app/hooks'
@@ -53,6 +54,7 @@ export function SettingsPage() {
       <DeviceDisplay />
       <Card span={6} title="Save"><Btn primary onClick={saveGeneral} disabled={!canEdit}>Save settings</Btn><Note>Settings are shared by everyone in the household.</Note></Card>
       <DeleteHouseholdCard />
+      <AboutCard />
     </div>}
     {tab === 'categories' && <Card title="Categories" hint="group · priority (Essential / Important / Discretionary) · fixed or variable · default budget copied into each new period · rollover carries unspent money forward" right={canEdit ? <Btn primary sm onClick={() => guarded(() => insert('categories', { name: 'New category', group: 'Other', kind: 'expense', priority: 'Important', cost_type: 'Variable', default_budget: 0, budget_cadence: 'period', rollover: false, sort_order: data.categories.length + 1, archived: false }), 'Added')}>+ Add category</Btn> : undefined}>
       <Table rows={data.categories.slice().sort((a, b) => a.sort_order - b.sort_order)} cols={catCols} editable={canEdit} onChange={(c, k, v) => guarded(() => update('categories', c.id, { [k]: v } as Partial<Category>))} onDelete={async c => { if (await confirm(`Delete ${c.name}? Transactions in it become uncategorized. Archive instead to keep history.`)) guarded(() => remove('categories', c.id), 'Deleted') }} rowCls={c => c.archived ? 'st-idle ex-off' : c.kind === 'income' ? 'st-good' : ''} />
@@ -183,7 +185,7 @@ function AccessPicker({ v, onChange, allowOwner }: { v: AccessPick; onChange: (p
 function MembersTab() {
   const { data, household, guarded, isOwner, repo, refresh, mode, user } = useData(); const confirm = useConfirm(); const { open, close } = useModal()
   const [email, setEmail] = useState(''); const [dname, setDname] = useState(''); const [note, setNote] = useState(''); const [pick, setPick] = useState<AccessPick>({ level: 'readonly', modules: [], editWithin: false }); const [busy, setBusy] = useState(false)
-  const siteUrl = (import.meta.env.VITE_SITE_URL as string | undefined) || (location.origin + location.pathname)
+  const siteUrl = (import.meta.env.VITE_SITE_URL as string | undefined) || publicUrl()
   const inviter = mode === 'demo' ? 'The demo household' : (user?.email || 'A household owner')
   const access = accessToMember(pick.level, pick.modules, pick.editWithin)
   const draft = inviteEmailDraft({ appName: APP_NAME, household: household?.name || 'Household', inviter, email: email.trim().toLowerCase(), displayName: dname, access, siteUrl, note })

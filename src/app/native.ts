@@ -7,6 +7,7 @@
 //   • Face ID / Touch ID / fingerprint can unlock the idle lock on the device
 // Store links (STORE) are filled in once each listing exists; until then the update prompts simply say where to update.
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core'
+import { SITE_URL } from './config'
 
 export const isNative = () => Capacitor.isNativePlatform()
 export const platform = () => Capacitor.getPlatform() as 'ios' | 'android' | 'web'
@@ -18,6 +19,10 @@ export const webPushAvailable = () => !isNative() && typeof window !== 'undefine
 export const emailCaptureAvailable = () => !isNative()
 /** Printing to PDF is a browser feature; the apps offer Excel and CSV (and the website still prints). */
 export const printAvailable = () => !isNative()
+
+/** A page of the app's website: the page you are on in a browser (so a staging copy links to itself), the published site inside the apps.
+ *  publicUrl() is the app itself; publicUrl('privacy.html') the privacy policy. */
+export function publicUrl(path = '') { const base = isNative() ? SITE_URL : location.origin + location.pathname.replace(/[^/]*$/, ''); return base + path.replace(/^\/+/, '') }
 
 export const STORE = {
   ios: '',       // e.g. https://apps.apple.com/app/id1234567890 once App Store Connect has created the app

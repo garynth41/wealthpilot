@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { isNative } from './native'
+import { isNative, publicUrl } from './native'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Repo } from './data/repo'
 import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type Role, type RowOf, type Settings } from './data/types'
@@ -114,7 +114,7 @@ export const useStore = create<State>((set, get) => ({
   async verifyMfa(code) { const { data: f, error: e1 } = await sb().auth.mfa.listFactors(); if (e1) throw e1; const factor = f.totp.find(x => x.status === 'verified') || f.totp[0]; if (!factor) throw new Error('No authenticator is enrolled'); const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s+/g, '') }); if (error) throw error; set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async verifyRecoveryCode(code) { const { error } = await sb().auth.mfa.recoveryCodes.verify({ code: code.trim() }); if (error) throw new Error(authMessage(error)); set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signInWithPasskey() { const { data, error } = await sb().auth.signInWithPasskey(); if (error) throw new Error(authMessage(error)); const user = data?.user || (await sb().auth.getUser()).data.user; if (!user) throw new Error('The passkey was accepted but no session came back — try again'); set({ mfaPending: false }); await loadHouseholds(user) },
-  async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
+  async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: publicUrl() } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
   // stop live updates first, so a refresh already on its way cannot write the offline copy back after it is cleared (0.25.1)
   async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); try { await sb().auth.signOut() } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }); await clearOffline() } finally { signingOut = false } },
   async finishRecovery(pw) {
@@ -122,7 +122,7 @@ export const useStore = create<State>((set, get) => ({
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
     const { data: { user } } = await sb().auth.getUser(); if (user) { if (await needsMfa()) set({ mfaPending: true }); else await loadHouseholds(user) }
   },
-  async resetPassword(email) { const { error } = await sb().auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname }); if (error) throw error },
+  async resetPassword(email) { const { error } = await sb().auth.resetPasswordForEmail(email, { redirectTo: publicUrl() }); if (error) throw error },
   async updatePassword(pw) { const { data, error } = await sb().auth.updateUser({ password: pw, data: { must_change_password: false } }); if (error) throw error; if (data.user) set({ user: data.user }) },
   async openHousehold(id) {
     unsub?.(); const repo = new SupabaseRepo(id); localStorage.setItem(LS('household'), id)

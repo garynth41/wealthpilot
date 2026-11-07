@@ -484,6 +484,16 @@ export const settings: GuidePage = {
       ],
       tips: ['Your sign-in and any other households you belong to are not affected.', 'Every member is sent an alert when the deletion is scheduled and again the day before (when push or email alerts are set up).', 'In the offline demo this only shows how it works; Reset sample data starts over.'],
     },
+    {
+      title: 'About this app',
+      what: 'At the bottom of the General tab: which version of WealthPilot this is, and links to the privacy policy, the terms of use, support and how to delete an account.',
+      how: ['Tap a link to read that page; in the iPhone and Android apps it opens in the phone\'s browser.'],
+      fields: [
+        { term: 'Version and build', text: 'Say these when you ask for help, so the answer matches the app you have.' },
+        { term: 'Website / iPhone app / Android app', text: 'Where you are using WealthPilot right now. All three use the same account and the same household.' },
+      ],
+      tips: ['The same links are on the sign-in screen, so they can be read before creating an account.'],
+    },
   ],
   tasks: [
     { q: 'How do I delete my account?', steps: ['Open Settings → Security and scroll to Delete my account.', 'Click Delete my account… and read what will be deleted and what you will leave.', 'If a household is listed under First, make another member its owner (Members tab) or delete it.', 'Type your password and delete my account, then click Delete my account permanently.'] },

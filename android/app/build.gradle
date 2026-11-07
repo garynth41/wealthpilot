@@ -1,11 +1,15 @@
 apply plugin: 'com.android.application'
 
-// WealthPilot (0.25.1): the version comes from package.json — 0.25.1 → versionName "0.25.1", versionCode 250100 (+ WP_BUILD_NUMBER for a
-// rebuild of the same version, since Google Play needs a higher code for every upload). Release signing reads the upload key from
-// environment variables (CI secrets) and never from the repo; without them a release build is simply unsigned. See docs/MOBILE.md.
+// WealthPilot (0.25.1): the version comes from package.json — 0.25.1 → versionName "0.25.1", versionCode 250100 (+ WP_BUILD_NUMBER, 0–99,
+// for a rebuild of the same version, since Google Play needs a higher code for every upload; the iOS build number is the same figure).
+// Release signing reads the upload key from environment variables (CI secrets) and never from the repo; without them a release build
+// is simply unsigned. See docs/MOBILE.md.
 def wpPkg = new groovy.json.JsonSlurper().parse(file('../../package.json'))
 def wpParts = wpPkg.version.tokenize('.').collect { it.replaceAll('[^0-9]', '').toInteger() }
-def wpCode = wpParts[0] * 1000000 + wpParts[1] * 10000 + wpParts[2] * 100 + (System.getenv('WP_BUILD_NUMBER') ?: '0').toInteger() % 100
+def wpBuild = (System.getenv('WP_BUILD_NUMBER') ?: '0').trim().toInteger()
+if (wpBuild < 0 || wpBuild > 99) throw new GradleException("WP_BUILD_NUMBER must be 0 to 99 (a rebuild of the same version) — raise the version in package.json instead")
+if (wpParts.size() != 3 || wpParts[1] > 99 || wpParts[2] > 99) throw new GradleException("package.json version must look like 1.2.3 with minor and patch below 100")
+def wpCode = wpParts[0] * 1000000 + wpParts[1] * 10000 + wpParts[2] * 100 + wpBuild
 def wpKeystore = System.getenv('WP_UPLOAD_KEYSTORE')
 
 android {
