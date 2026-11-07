@@ -1,7 +1,6 @@
 // Tax tables by year. Keep every figure here (never inline in the engine) so a new year is a data change.
 // Sources (checked 2026-11-01): 2026 federal brackets, standard deduction, LTCG thresholds, CTC $2,200, 65+ add-on, SS wage base $184,500, NIIT thresholds — IRS Rev. Proc. 2025-32
-//   as reported by CPA Practice Advisor / Accounting Today (Oct 9, 2025) and Everwise 2026 tax tables. Ohio — HB 96 (2025): flat 2.75% above $26,050 from TY2026 (EY Tax News, Aug 25, 2025);
-//   personal exemptions per ORC 5747.025 (not indexed for 2025–26 under HB 96; no exemption above $500,000 MAGI from 2026).
+//   as reported by CPA Practice Advisor / Accounting Today (Oct 9, 2025) and Everwise 2026 tax tables. Ohio — see the source note above OHIO below (ORC 5747.02 / 5747.025 as amended by HB 96).
 export type FilingStatus = 'single' | 'mfj' | 'mfs' | 'hoh'
 export const FILING_LABEL: Record<FilingStatus, string> = { single: 'Single', mfj: 'Married filing jointly', mfs: 'Married filing separately', hoh: 'Head of household' }
 export interface Bracket { upTo: number | null; rate: number }   // upTo = taxable income ceiling for this rate (null = no ceiling)
@@ -36,11 +35,28 @@ export const LATEST_TAX_YEAR = TAX_YEARS[TAX_YEARS.length - 1]
 
 // ---------------- states ----------------
 export interface StateRule { code: string; name: string; kind: 'none' | 'flat' | 'ohio'; rate?: number; note: string }
-/** Ohio TY2026 (HB 96): no tax on the first $26,050 of Ohio taxable income, 2.75% above (no base amount); personal exemption per person by Ohio MAGI — the TY2024 indexed amounts, frozen for 2025–26 —
- *  and none above $500,000. The joint-filing credit, senior / retirement-income credits and the $20 exemption credit are not modelled. */
-export const OHIO_2026 = { exemptionThreshold: 26050, rate: 0.0275, exemptionCap: 500000, exemption: (oagi: number) => (oagi > 500000 ? 0 : oagi <= 40000 ? 2400 : oagi <= 80000 ? 2150 : 1900) }
+/** One Ohio rate-schedule row: on Ohio taxable (nonbusiness) income above `over`, the tax is `base` + `rate` × (income − over). */
+export interface OhioBracket { over: number; base: number; rate: number }
+/** An Ohio tax year: no tax at all while Ohio taxable income is at or below `threshold`; above it, the highest bracket whose `over` is passed applies.
+ *  The base amount is the tax on the first $26,050 (1.31287% in 2025, 1.27448% in 2026 — ORC 5747.02(A)(2)), so the tax jumps from $0 to the base just above the threshold.
+ *  Personal exemption per person by Ohio MAGI: the TY2024 indexed amounts ($2,400 / $2,150 / $1,900), not indexed for 2025–26 under HB 96, and none at or above `exemptionMagiCap`. */
+export interface OhioYear { year: number; threshold: number; brackets: OhioBracket[]; exemptionMagiCap: number; exemption: (magi: number) => number }
+const ohioExemption = (cap: number) => (magi: number) => (magi >= cap ? 0 : magi <= 40000 ? 2400 : magi <= 80000 ? 2150 : 1900)
+// Source (checked 2026-11-06): Ohio Revised Code 5747.02(A)(3) as amended by HB 96 (136th GA), effective 2025-09-30 —
+//   https://codes.ohio.gov/assets/laws/revised-code/authenticated/57/5747/5747.02/9-30-2025/5747.02-9-30-2025.pdf
+//   TY2025: ≤ $26,050 no tax; $26,050–$100,000 $342.00 + 2.75% of the excess over $26,050; > $100,000 $2,394.32 + 3.125% of the excess over $100,000
+//   (the same figures as the Ohio Department of Taxation's "Annual Tax Rates" page, https://tax.ohio.gov/individual/file-now/annual-tax-rates).
+//   TY2026 and after: ≤ $26,050 no tax; above, $332.00 + 2.75% of the excess over $26,050.
+//   Exemption MAGI limits: ORC 5747.025(A) — under $750,000 for 2025, under $500,000 from 2026.
+// Not modelled: the joint-filing credit, senior / retirement-income credits, the $20 exemption credit and the 3% rate on taxable business income.
+export const OHIO: Record<number, OhioYear> = {
+  2025: { year: 2025, threshold: 26050, brackets: [{ over: 26050, base: 342, rate: 0.0275 }, { over: 100000, base: 2394.32, rate: 0.03125 }], exemptionMagiCap: 750000, exemption: ohioExemption(750000) },
+  2026: { year: 2026, threshold: 26050, brackets: [{ over: 26050, base: 332, rate: 0.0275 }], exemptionMagiCap: 500000, exemption: ohioExemption(500000) },
+}
+/** The Ohio table for a tax year: that year, else the latest earlier one ("2026 and thereafter"), else the earliest. */
+export const ohioYear = (year: number): OhioYear => { const ys = Object.keys(OHIO).map(Number).sort((a, b) => a - b); const y = [...ys].reverse().find(x => x <= year) ?? ys[0]; return OHIO[y] }
 export const STATES: StateRule[] = [
-  { code: 'OH', name: 'Ohio', kind: 'ohio', note: 'flat 2.75% above $26,050 of Ohio taxable income (2026); personal exemptions by income' },
+  { code: 'OH', name: 'Ohio', kind: 'ohio', note: 'no tax up to $26,050 of Ohio taxable income; above that, $332 plus 2.75% of the amount over $26,050 (2026); personal exemptions by income' },
   { code: 'NONE', name: 'No state income tax (AK, FL, NV, NH, SD, TN, TX, WA, WY)', kind: 'none', note: '' },
   { code: 'FLAT', name: 'Other state — flat rate (enter %)', kind: 'flat', note: 'approximation: one rate on federal taxable income' },
 ]

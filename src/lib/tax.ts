@@ -1,7 +1,7 @@
 // Tax engine (0.7.0): income aggregation, federal / state / local / self-employment estimate, underpayment monitor, provisioning and filing projection.
 // Pure functions; every rate and threshold comes from taxTables.ts. This is a planning estimate, not a return.
 import type { Data, Settings } from '../app/data/types'
-import { FEDERAL, OHIO_2026, STATES, LATEST_TAX_YEAR, type FilingStatus, type FederalYear } from './taxTables'
+import { FEDERAL, STATES, LATEST_TAX_YEAR, ohioYear, type FilingStatus, type FederalYear } from './taxTables'
 import { round2, sum } from './money'
 import { REC_PER_YEAR } from './recurring'
 import { holdingValue } from './portfolio'
@@ -42,6 +42,17 @@ export function autoItems(d: Data, year: number): TaxItem[] {
   return out
 }
 export const mergedItems = (d: Data, p: TaxProfile) => [...(p.autoAggregate ? autoItems(d, p.year) : []), ...p.items]
+
+// ---------------- Ohio ----------------
+/** Ohio income tax on Ohio taxable (nonbusiness) income for a tax year: nothing at or below the threshold; above it, the base amount of the
+ *  highest bracket passed plus its rate on the excess (ORC 5747.02(A)(3)). */
+export function ohioTax(taxable: number, year: number): number {
+  const O = ohioYear(year); if (!(taxable > O.threshold)) return 0
+  const b = [...O.brackets].reverse().find(x => taxable > x.over) || O.brackets[0]
+  return round2(b.base + (taxable - b.over) * b.rate)
+}
+/** The Ohio rate on the next dollar: 0 at or below the threshold, else the bracket's rate. */
+export function ohioMarginal(taxable: number, year: number): number { const O = ohioYear(year); if (!(taxable > O.threshold)) return 0; return ([...O.brackets].reverse().find(x => taxable > x.over) || O.brackets[0]).rate }
 
 // ---------------- federal ----------------
 const bracketTax = (taxable: number, brs: { upTo: number | null; rate: number }[]) => { let tax = 0, lo = 0; for (const b of brs) { const hi = b.upTo ?? Infinity; if (taxable > lo) tax += (Math.min(taxable, hi) - lo) * b.rate; lo = hi; if (taxable <= hi) break } return tax }
@@ -90,7 +101,7 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const marginal = marginalRate(ordinaryTaxable, T.brackets[st])
   // state
   const rule = STATES.find(x => x.code === p.state) || STATES[0]; let stTaxable = 0, stTax = 0, stRate = 0
-  if (rule.kind === 'ohio') { const oagi = agi; const exemptions = (1 + (st === 'mfj' ? 1 : 0) + p.dependentsUnder17 + p.otherDependents) * OHIO_2026.exemption(oagi); stTaxable = Math.max(0, round2(oagi - exemptions)); stTax = round2(Math.max(0, stTaxable - OHIO_2026.exemptionThreshold) * OHIO_2026.rate); stRate = OHIO_2026.rate }
+  if (rule.kind === 'ohio') { const O = ohioYear(p.year); const oagi = agi; const exemptions = (1 + (st === 'mfj' ? 1 : 0) + p.dependentsUnder17 + p.otherDependents) * O.exemption(oagi); stTaxable = Math.max(0, round2(oagi - exemptions)); stTax = ohioTax(stTaxable, p.year); stRate = ohioMarginal(stTaxable, p.year) }
   else if (rule.kind === 'flat') { stTaxable = taxableIncome; stRate = (p.stateRate || 0) / 100; stTax = round2(stTaxable * stRate) }
   // local: Ohio municipal tax is on earned income (wages + SE); school-district income tax (traditional base) on Ohio taxable income
   const municipal = round2(Math.max(0, w2 + se) * (p.localRate || 0) / 100), schoolDistrict = round2(Math.max(0, rule.kind === 'ohio' ? stTaxable : taxableIncome) * (p.schoolDistrictRate || 0) / 100)

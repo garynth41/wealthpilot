@@ -2,6 +2,7 @@
 import type { Account, Category, Collection, Data, EmailItem, Recurring, RowOf, Settings } from '../../app/data/types'
 import { addDays, today } from '../dates'
 import { debtDueState } from '../accounts'
+import { statementUpdate } from '../statements'
 import { post } from '../ledger'
 import { maskDigits, when, type Fact } from './extract'
 import { key, NEW_CAT, sortForApply, type Evidence, type FactG, type Proposal, type Target } from './propose'
@@ -61,7 +62,11 @@ export async function applyOne(ctx: Ctx, p: Proposal, inp: ApplyInput = {}): Pro
     rec.status = f.kind === 'income' ? 'Received' : 'Paid'
   } else if ((f.kind === 'bill' || f.kind === 'balance') && account && tgt !== 'new-account') {
     const sd = f.stmtDate || (f.stmtBal != null || f.minDue != null ? f.date : null); const patch: Partial<Account> = {}
-    if (f.stmtBal != null && sd && sd !== (account.statement_date || '').slice(0, 10)) { const st = await ctx.insert('statements', { account_id: account.id, statement_date: sd, statement_balance: f.stmtBal, minimum_payment: f.minDue ?? (+account.minimum_payment || 0), due_date: f.dueDate || null, source: 'email' }); rec.statement_id = st.id; await filePdf(ctx, f, { statement_id: st.id }); patch.statement_date = sd; patch.statement_balance = f.stmtBal; patch.balance = f.balance ?? f.stmtBal; patch.balance_as_of = sd; patch.last_paid_due = null }
+    if (f.stmtBal != null && sd && sd !== (account.statement_date || '').slice(0, 10)) { const st = await ctx.insert('statements', { account_id: account.id, statement_date: sd, statement_balance: f.stmtBal, minimum_payment: f.minDue ?? (+account.minimum_payment || 0), due_date: f.dueDate || null, source: 'email' }); rec.statement_id = st.id; await filePdf(ctx, f, { statement_id: st.id })
+      // a statement is a snapshot as of its date: it moves the current balance only when nothing newer (a later balance or the bank feed) is on file
+      const su = statementUpdate(account, { statement_date: sd, statement_balance: f.stmtBal, minimum_payment: f.minDue ?? (+account.minimum_payment || 0), due_date: f.dueDate || null })
+      if (su.newest) { patch.statement_date = sd; patch.statement_balance = f.stmtBal; patch.last_paid_due = null }
+      if (su.balanceMoved) { patch.balance = f.balance ?? f.stmtBal; patch.balance_as_of = sd } }
     if (f.minDue != null) patch.minimum_payment = f.minDue; if (f.dueDate && f.dueDate !== (account.due_date || '').slice(0, 10)) { patch.due_date = f.dueDate; if (!patch.statement_date && f.dueDate > (account.due_date || '').slice(0, 10)) patch.last_paid_due = null }
     if (f.balance != null && f.kind === 'balance') { patch.balance = f.balance; patch.balance_as_of = f.date } if (f.autopay && !account.autopay && f.kind === 'bill') patch.autopay = true
     if (Object.keys(patch).length) await ctx.update('accounts', account.id, patch); rec.status = f.kind === 'balance' ? 'Updated' : f.paidBy ? 'Paid' : 'Due'

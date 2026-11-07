@@ -24,7 +24,7 @@ a pair the duplicate engine calls *certain* scores 95, *likely* 85. **Automatic*
 and is undoable in Transactions → Duplicates. Matching by hand below 85, "Not a match", voiding and marking cleared are all audit events.
 
 ## Statement reconciliation
-opening (previous statement balance, or derived on the first run) + cleared deposits − cleared payments = cleared balance; it must equal the
+opening (previous statement balance, or on the first run the beginning balance typed from the statement — without it the run is "not checked" and cannot be completed) + cleared deposits − cleared payments = cleared balance; it must equal the
 statement's ending balance. Outstanding checks and deposits in transit explain the difference between the statement and the book.
 `complete_reconciliation(jsonb)` does everything in one transaction: writes the record, ticks the items (`reconciliation_id`, `cleared_on`,
 pending → cleared), sets the account's bank and book balances, and writes `reconciliation` (+ `override` when an adjustment with a reason

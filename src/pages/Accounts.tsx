@@ -10,6 +10,7 @@ import { assets, liabilities, isLiability, debtBal, utilization, debtDueState, c
 import { fmtMoney, fm2, parseNum, sum } from '../lib/money'
 import { addDays, fmtD, fmtDY, today, ago } from '../lib/dates'
 import { post } from '../lib/ledger'
+import { statementUpdate } from '../lib/statements'
 import { Chart, C } from '../components/Chart'
 import { netWorthSeries } from '../lib/forecast'
 import { openAttachment, statementFiles } from './Attachments'
@@ -95,9 +96,12 @@ export function StatementModal({ a, onDone }: { a: Account; onDone: () => void }
   const [sd, setSd] = useState(today()); const [bal, setBal] = useState(debtBal(a).toFixed(2)); const [min, setMin] = useState((+a.minimum_payment || 0).toFixed(2)); const [due, setDue] = useState(addDays(today(), 25))
   const save = () => guarded(async () => { const b = parseNum(bal) || 0, m = parseNum(min) || 0
     await insert('statements', { account_id: a.id, statement_date: sd, statement_balance: b, minimum_payment: m, due_date: due || null, source: 'manual' })
-    await update('accounts', a.id, { statement_date: sd, statement_balance: b, balance: b, balance_as_of: sd, minimum_payment: m, due_date: due || null, last_paid_due: null, planned_payment: Math.max(+(a.planned_payment || 0), m) }); onDone() }, 'Statement saved')
+    const { patch } = statementUpdate(a, { statement_date: sd, statement_balance: b, minimum_payment: m, due_date: due || null })
+    if (Object.keys(patch).length) await update('accounts', a.id, patch); onDone() }, 'Statement saved')
+  const preview = statementUpdate(a, { statement_date: sd, statement_balance: parseNum(bal) || 0, minimum_payment: parseNum(min) || 0, due_date: due || null })
   const hist = data.statements.filter(s => s.account_id === a.id).sort((x, y) => y.statement_date.localeCompare(x.statement_date)).slice(0, 6)
   return <><MHead title={`New statement — ${a.name}`} /><MBody><Note>Current: statement {a.statement_date ? fmtDY(a.statement_date) : '—'} · balance {fmtMoney(a.statement_balance)} · minimum {fmtMoney(a.minimum_payment)} · due {a.due_date ? fmtDY(a.due_date) : '—'}. Saving moves these into the history and re-arms the due date.</Note>
+    {preview.kept && <Note>{preview.kept === 'older_statement' ? `This statement is older than the one on file (${fmtDY(a.statement_date)}), so it is saved to the history only.` : preview.kept === 'bank_feed' ? 'The current balance comes from the bank feed, so it stays as it is. The statement balance, minimum and due date are still saved.' : `The current balance was updated ${fmtDY(a.balance_as_of)}, after this statement date, so it stays as it is. The statement balance, minimum and due date are still saved.`}</Note>}
     <div className="grid2" style={{ marginTop: 10 }}><Field label="Statement date"><input className="inp" type="date" value={sd} onChange={e => setSd(e.target.value)} /></Field><Field label="Statement balance"><input className="inp" inputMode="decimal" value={bal} onChange={e => setBal(e.target.value)} /></Field><Field label="Minimum payment" hint="copy it from the statement"><input className="inp" inputMode="decimal" value={min} onChange={e => setMin(e.target.value)} /></Field><Field label="Payment due date"><input className="inp" type="date" value={due} onChange={e => setDue(e.target.value)} /></Field></div>
     {hist.length > 0 && <Note>History: {hist.map(h => `${fmtD(h.statement_date)}: ${fmtMoney(h.statement_balance)} (min ${fmtMoney(h.minimum_payment)}${h.paid_on ? ', paid' : ''})`).join(' · ')}</Note>}
   </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn primary onClick={save}>Save statement</Btn></MFoot></>

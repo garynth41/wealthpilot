@@ -314,11 +314,11 @@ describe('tax: federal brackets & deduction (2026)', () => {
   })
 })
 describe('tax: self-employment, Ohio, local, credits', () => {
-  it('SE tax on 92.35 % of net profit, half deductible; Ohio flat 2.75 % above $26,050 after exemptions; municipal on earned income', () => {
+  it('SE tax on 92.35 % of net profit, half deductible; Ohio $332 + 2.75 % above $26,050 after exemptions; municipal on earned income', () => {
     const e = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, autoAggregate: false, items: [TI('business', 80000)] })
     const seTax = 80000 * 0.9235 * 0.153; expect(e.federal.se).toBeCloseTo(seTax, 2); expect(e.seDeduction).toBeCloseTo(seTax / 2, 2); expect(e.agi).toBeCloseTo(80000 - seTax / 2, 2)
     const oagi = e.agi; const exempt = 2150   // Ohio MAGI ≈ $74k → $40,001–$80,000 tier
-    expect(e.state.taxable).toBeCloseTo(oagi - exempt, 2); expect(e.state.tax).toBeCloseTo((oagi - exempt - 26050) * 0.0275, 2)
+    expect(e.state.taxable).toBeCloseTo(oagi - exempt, 2); expect(e.state.tax).toBeCloseTo(332 + (oagi - exempt - 26050) * 0.0275, 2)   // ORC 5747.02(A)(3)(c)
     expect(e.local.municipal).toBeCloseTo(80000 * 0.025, 2); expect(e.seSetAside).toBe(80000 * 0.25)
   })
   it('child tax credit reduces federal tax; SS wage base caps the 12.4 % part', () => {
@@ -331,7 +331,7 @@ describe('tax: self-employment, Ohio, local, credits', () => {
   it('head of household brackets (24 % tops out at $201,750) and the Ohio exemption cap above $500k', () => {
     const h = FEDERAL[2026].brackets.hoh; expect(h.map(b => b.upTo)).toEqual([17700, 67450, 105700, 201750, 256200, 640600, null])
     const rich = estimateTax(blank(), SETTINGS_DEFAULTS, { year: 2026, filingStatus: 'single', state: 'OH', autoAggregate: false, items: [TI('w2', 600000)] })
-    expect(rich.state.taxable).toBe(600000); expect(rich.state.tax).toBeCloseTo((600000 - 26050) * 0.0275, 2)
+    expect(rich.state.taxable).toBe(600000); expect(rich.state.tax).toBeCloseTo(332 + (600000 - 26050) * 0.0275, 2)
   })
 })
 describe('tax: payments, safe harbor, provisioning', () => {

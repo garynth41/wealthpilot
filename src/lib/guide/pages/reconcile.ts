@@ -87,15 +87,17 @@ export const reconcile: GuidePage = {
       what: 'Where you enter the statement and watch the reconciliation add up. The line under the heading shows the previous statement, or says this is the first reconciliation.',
       how: [
         'Type the Statement date and the Ending balance on the statement. Leave the balance blank to use the bank feed\'s figure shown under the box.',
+        'The first time you reconcile an account, also type the Beginning balance on this statement (the opening or previous balance printed on it). After that, the previous reconciliation\'s ending balance is used.',
         'Tick and untick items in Tick what appears on the statement until Difference is 0.00.',
         'Click Complete reconciliation. If you cannot find the difference, type a reason and click Complete with adjustment.',
       ],
       fields: [
-        { term: 'Opening balance', text: 'The previous statement\'s ending balance. On the first reconciliation it is worked out backward from this statement ("derived"), so the first one always balances.' },
+        { term: 'Beginning balance on this statement', text: 'Shown only on an account\'s first reconciliation. Type the opening (previous) balance printed on the statement. Until you do, the app cannot check the statement: Difference says "not checked" and Complete reconciliation stays greyed out.' },
+        { term: 'Opening balance', text: 'The previous reconciliation\'s ending balance. On the first reconciliation it is the beginning balance you typed from this statement ("from this statement"), or — until you type it — a dash.' },
         { term: '+ Cleared deposits / − Cleared payments', text: 'The money in and the money out across the items you ticked, and how many are ticked.' },
         { term: '= Cleared balance', text: 'Opening balance + cleared deposits − cleared payments.' },
         { term: 'Statement ending balance', text: 'The figure you typed, or the bank feed\'s figure when the box is blank.' },
-        { term: 'Difference', text: 'Cleared balance minus statement ending balance. Green at zero.' },
+        { term: 'Difference', text: 'Cleared balance minus statement ending balance. Green at zero; "not checked" while the opening balance is unknown.' },
         { term: 'Outstanding checks / Deposits in transit', text: 'Your register entries dated on or before the statement that are still outstanding and not ticked, money out and money in, with how many.' },
         { term: 'Reconciled balance', text: 'Statement ending balance + deposits in transit − outstanding checks.' },
         { term: 'Adjustment reason', text: 'Shown when Difference is not zero. Type why (for example a bank fee you did not record, or interest posted) to complete anyway; it is recorded as an override.' },
@@ -153,7 +155,7 @@ export const reconcile: GuidePage = {
   ],
   tasks: [
     { q: 'How do I record a check I wrote?', steps: ['Open the Register tab and pick Check as the Type.', 'Check the Check number, then fill in the Date, Payee, Amount and Category.', 'Click Record. It stays outstanding until the bank shows the check.'] },
-    { q: 'How do I reconcile my account against the statement?', steps: ['Open Reconcile a statement.', 'Type the Statement date and the Ending balance on the statement.', 'Tick each item the statement shows and untick any it does not, until Difference is 0.00.', 'Click Complete reconciliation.'] },
+    { q: 'How do I reconcile my account against the statement?', steps: ['Open Reconcile a statement.', 'Type the Statement date and the Ending balance on the statement. The first time, also type the Beginning balance on this statement.', 'Tick each item the statement shows and untick any it does not, until Difference is 0.00.', 'Click Complete reconciliation.'] },
     { q: 'Why is my book balance different from the bank?', steps: ['Look at Variance, Outstanding checks and Deposits in transit across the top.', 'Open Issues for missing, returned or duplicate items.', 'Reconcile against the latest statement to find the exact entries.'] },
     { q: 'How do I get rid of a check that was never cashed?', steps: ['On the Register tab, find it under Outstanding — not yet at the bank.', 'Click Void and confirm. Its amount goes back into the balance and it stops counting.'] },
     { q: 'How do I undo a wrong match?', steps: ['Open Transactions and click Duplicates.', 'Under Merged — hidden from every total, find your entry and click Undo. It comes back as its own transaction and will not be merged again.'] },

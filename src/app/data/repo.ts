@@ -1,3 +1,4 @@
+import type { RestoreSummary } from '../../lib/restore'
 import type { Collection, Data, Household, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult, Reconciliation, ReconciliationInput, AuditEvent, AuditKind } from './types'
 
 /** Every read and write goes through a Repo. Two implementations: Supabase (real) and Memory (offline demo + tests). */
@@ -33,7 +34,8 @@ export interface Repo {
   /** 0.25.0: schedule the household's permanent deletion in 7 days (owner; `confirm` must be its name) — returns the date — or cancel it. */
   requestDeletion(confirm: string): Promise<string>
   cancelDeletion(): Promise<void>
-  importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<number>
+  /** Restore a JSON backup (lib/restore.ts): merge matches what is already here instead of adding copies; replace clears the household's data first. */
+  importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<RestoreSummary>
   /** Called with a change notification (realtime); returns an unsubscribe. */
   subscribe(onChange: () => void): () => void
 }
