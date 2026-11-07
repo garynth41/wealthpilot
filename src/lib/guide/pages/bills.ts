@@ -37,7 +37,8 @@ export const bills: GuidePage = {
       ],
       tips: [
         'Mark paid records an expense from the From account against the Budget line. When Pays is set to a card or loan, it records a transfer that lowers what you owe instead, and when the amount covers the minimum and is paid no later than three days after the card\'s due date, that statement shows as Paid. When Pays is a savings account, the money moves into it. Recurring income records a deposit into the Into account.',
-        'You often do not need Mark paid: a due date counts as paid by itself when a transaction from the item\'s Payee lands between 12 days before and 10 days after it, at a similar amount (within about 25%, or any amount when Varies is ticked).',
+        'You often do not need Mark paid: a due date counts as paid by itself when a transaction from the item\'s Payee lands between 12 days before and 10 days after it, at a similar amount (within about 25%, or any amount when Varies is ticked). For items that come more often — weekly, every 2 weeks, twice a month — that window stops halfway to the due date before and after (3 days either side for a weekly bill).',
+        'One payment pays one due date: the nearest one still unpaid whose window it falls in. A weekly bill paid once is paid for that week only, and a payment you recorded with Mark paid stays with the date you recorded it for. A payment linked to another bill never counts for this one.',
         'Paid and skipped dates do not come back on this list.',
       ],
     },

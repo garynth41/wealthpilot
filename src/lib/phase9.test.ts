@@ -78,6 +78,6 @@ describe('deleting a household', () => {
     expect(computeAlerts(base).map(a => a.kind)).toEqual(expect.arrayContaining(['low_cash', 'sync']))
     const a = computeAlerts({ ...base, deletionScheduledFor: '2026-11-13T15:00:00Z' }); expect(a).toHaveLength(1); expect(a[0]).toMatchObject({ kind: 'deletion', key: 'deletion:2026-11-13:scheduled', severity: 'crit', url: '/settings' })
     expect(computeAlerts({ ...base, today: '2026-11-12', deletionScheduledFor: '2026-11-13T15:00:00Z' })[0]).toMatchObject({ key: 'deletion:2026-11-13:final', title: 'This household is permanently deleted tomorrow' })
-    expect(recipientsFor({ members: { u2: { kinds: ['bill_due'] } } }, [{ user_id: 'u1' }, { user_id: 'u2' }], 'deletion').push).toEqual(['u1', 'u2'])
+    expect(recipientsFor({ members: { u2: { kinds: ['bill_due'] } } }, [{ user_id: 'u1', role: 'owner', modules: null }, { user_id: 'u2', role: 'editor', modules: null }], 'deletion').push).toEqual(['u1', 'u2'])
   })
 })

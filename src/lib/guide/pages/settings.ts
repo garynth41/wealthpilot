@@ -32,15 +32,16 @@ export const settings: GuidePage = {
       title: 'Budget cadence',
       what: 'On the General tab: how the Budget page slices time into periods, and the pay frequency a new income source starts with.',
       fields: [
-        { term: 'Budget by', text: 'Calendar month; Pay period (from your primary income source); Every 2 weeks (from an anchor date); Twice a month; or Week (Mon–Sun).' },
-        { term: 'A period start date (anchor)', text: 'Every 2 weeks only: any date a period starts on. Every other period is counted from it.' },
-        { term: 'Period start days', text: 'Twice a month only: the two days of the month each period starts on, for example 1 and 15.' },
+        { term: 'Budget by', text: 'Calendar month; Pay period (from your primary income source); Every 2 weeks (from an anchor date); Twice a month; or Week (Mon–Sun). Every day falls in exactly one period, so ‹ and › on the Budget page always move to the next or previous one.' },
+        { term: 'A period start date (anchor)', text: 'Every 2 weeks only: any date a period starts on. Every other period is counted from it. Left blank, periods are counted from the latest two-week budget you have started, or fall on alternate Mondays if you have not started one yet.' },
+        { term: 'Period start days', text: 'Twice a month only: the two days of the month each period starts on, for example 1 and 15. A day a month does not have moves to its last day, so 31 starts a period on November 30 and February 28.' },
         { term: 'Default pay frequency for new income sources', text: 'Weekly, Every 2 weeks, Twice a month, Monthly, Quarterly, Yearly or Irregular — picked for you when you add an income source.' },
       ],
       tips: [
         'Changing the cadence does not touch existing periods; the Budget page simply starts offering the new slices.',
         'Click Save settings to keep a change.',
         'Trends shows planned spending only for months budgeted by calendar month.',
+        'By pay period: a pay period runs from one payday to the day before the next. Before your primary income source\'s first payday, or after its last one (when it has a start or end date), periods keep the length of the nearest real one. Irregular income has no pay periods, so the budget uses calendar months.',
       ],
     },
     {
@@ -168,7 +169,7 @@ export const settings: GuidePage = {
       what: 'On the Members tab: everyone in the household, what each person can see and change, and when they last used the app.',
       fields: [
         { term: 'Who', text: 'Name and email; (you) marks you.' },
-        { term: 'Access', text: 'Owner (full control, including members and settings), Full access (can add and change everything), Read-only (can see everything, change nothing) or Limited (only the sections listed underneath, read-only or able to change things there).' },
+        { term: 'Access', text: 'Owner (full control, including members and settings), Full access (can add and change everything), Read-only (can see everything, change nothing) or Limited (only the sections listed underneath, read-only or able to change things there). Limited members get no alerts and no Monday digest, only the notice if the household is scheduled for deletion.' },
         { term: 'Last seen', text: 'The last day they used the app, and the version they had.' },
         { term: 'Change', text: 'Owners only. Opens "Access for …", where you pick Full, Read-only, Limited or Owner and click Save. Limited needs at least one section ticked.' },
         { term: '✕', text: 'Owners only. Removes the person from this household after you confirm. Their sign-in stays; they just lose access here. You cannot remove yourself.' },
@@ -211,7 +212,7 @@ export const settings: GuidePage = {
       fields: [
         { term: 'on here / off here / blocked / not supported', text: 'Whether this device gets push. Blocked means the browser has notifications switched off for this site — allow them in the browser\'s settings, then try again.' },
         { term: 'Enable on this device / Turn off on this device', text: 'Starts or stops push to this device only.' },
-        { term: 'Send a test', text: 'Sends a test push to your devices that have push on and a test email to your address, then reports what happened. It works when push is on here or Email me is on.' },
+        { term: 'Send a test', text: 'Sends a test push to your devices that have push on and a test email to your address, then reports what happened. It works when push is on here or Email me is on. Not available with Limited access, which gets only the notice that the household is being deleted.' },
         { term: 'iPhone', text: 'Install the app first (Share → Add to Home Screen) and open it from the home screen; push works from the installed app on iOS 16.4 and later.' },
       ],
       tips: ['Alerts are checked every morning at 7:30 am Eastern (8:30 am during daylight saving time).', 'Push and email need a signed-in household; the offline demo only shows the rules.'],
@@ -233,7 +234,7 @@ export const settings: GuidePage = {
       what: 'On the Notifications tab: which alerts exist at all for the household. Each alert is sent only once for the same thing.',
       fields: [
         { term: 'Bills due today or tomorrow, and anything overdue', text: 'An unpaid bill, subscription or debt payment due today or tomorrow, and anything up to 30 days overdue. Overdue items repeat every 3 days until paid; autopay items are informational and never show as overdue.' },
-        { term: 'Cash below the reserve floor, or bills this week exceed cash', text: 'When cash on hand is under your reserve floor, or what is due in the next 7 days is more than your cash. The floor is set on the General tab.' },
+        { term: 'Cash below the reserve floor, or bills this week exceed cash', text: 'When cash on hand is under your reserve floor, or what is due in the next 7 days plus anything from the last 30 days still unpaid (an autopay that never went through included) is more than your cash — the same overdue amounts Safe to spend and the Monday digest take off. The floor is set on the General tab.' },
         { term: 'Large charges at or above', text: 'Any expense at or above the amount in the box that arrived in the last day. Ticking it starts at $500; type another amount and click away to change it. Untick to stop.' },
         { term: 'A paycheck that did not arrive on its pay date', text: 'Sent the day after a pay date when no matching income was recorded.' },
         { term: 'Bank sync failed, or no sync for 3 days', text: 'When the bank feed reports an error or has not updated for three days.' },
@@ -269,7 +270,7 @@ export const settings: GuidePage = {
         { term: 'Alerts', text: 'All, or "N of 10". Open it to tick which kinds this member gets: Bills due, Overdue bills, Low cash, Large charges, Missed paychecks, Bank sync, Price rises, New repeating charges, Reconcile reminders, and Property & vehicle values.' },
         { term: 'Reset', text: 'Puts a changed row back to the household default.' },
       ],
-      tips: ['The switches under What to alert on still decide which alerts exist at all.', 'The household Email me address is used only when no member has Email ticked.'],
+      tips: ['The switches under What to alert on still decide which alerts exist at all.', 'The household Email me address is used only when no member has Email ticked.', 'A member with Limited access gets only the notice that the household is scheduled for deletion — no other alerts and no Monday digest, whatever their row says, because alerts and the digest show money from sections they cannot open.'],
     },
     {
       title: 'Security',
@@ -513,7 +514,7 @@ export const settings: GuidePage = {
     { term: 'Recovery code', def: 'A single-use code that stands in for the authenticator code when your phone is lost.' },
     { term: 'Idle lock', def: 'Hides every figure after a set time without activity on this device, until you unlock it.' },
     { term: 'Temporary password', def: 'A one-time password made when you invite someone new. They replace it with their own at first sign-in.' },
-    { term: 'Limited access', def: 'Member access to only some sections of the app, either read-only or able to change things there.' },
+    { term: 'Limited access', def: 'Member access to only some sections of the app, either read-only or able to change things there. Alerts and the Monday digest show money from every section, so a Limited member gets only the notice that the household is scheduled for deletion.' },
     { term: 'Learned rule', def: 'A payee rule made for you when you set a transaction\'s category by hand.' },
     { term: 'Match type', def: 'How a payee rule compares its pattern with the payee: contains, starts with, is exactly or regex.' },
     { term: 'Monday digest', def: 'A weekly email, plus a short push, each Monday: the week ahead, last week\'s spending and anything overdue.' },

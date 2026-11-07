@@ -112,7 +112,7 @@ export const dashboard: GuidePage = {
         { term: 'Status', text: 'Overdue (the date has passed), Due today, Due soon (within the item\'s reminder window, 3 days unless you set another), Autopay (the lender takes it automatically), Due (later) or Scheduled (a payment is already set up, for example from an autopay notice read from email).' },
         { term: 'All bills & subscriptions →', text: 'Opens Bills & Subscriptions.' },
       ],
-      tips: ['A payment drops off the list once it is paid or skipped. It counts as paid when you mark it paid, or when a transaction with the same payee and a similar amount is dated close to the due date.'],
+      tips: ['A payment drops off the list once it is paid or skipped. It counts as paid when you mark it paid, or when a transaction with the same payee and a similar amount is dated close to the due date — each transaction pays one due date only, so last week\'s payment does not clear this week\'s bill.'],
     },
     {
       title: 'Budget',

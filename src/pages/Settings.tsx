@@ -265,7 +265,8 @@ function NightlyBackups() {
 const b64ToBytes = (b64: string) => { const pad = '='.repeat((4 - (b64.length % 4)) % 4); const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, c => c.charCodeAt(0)) }
 /** Settings → Notifications (0.19.0): push on this device, email, which rules fire, the weekly digest, a test button, what was sent. */
 function NotificationsTab() {
-  const { data, settings, mode, household, user, guarded, saveSettings, isOwner } = useData(); const canEdit = isOwner /* 0.25.1: the household alert settings are the owners' (the database enforces it) */; const toast = useStore.getState().toast
+  const { data, settings, mode, household, user, guarded, saveSettings, isOwner, modules } = useData(); const canEdit = isOwner /* 0.25.1: the household alert settings are the owners' (the database enforces it) */; const toast = useStore.getState().toast
+  const limited = !isOwner && modules != null   // 0.25.1: Limited access gets only the deletion notice, and the notify function refuses its test
   const prefs: NotifyPrefs = { push: true, email: false, digest: true, ...NOTIFY_DEFAULTS, ...(settings.notify || {}) }
   const set = (patch: Partial<NotifyPrefs>) => guarded(() => saveSettings({ notify: { ...prefs, ...patch } }), 'Saved')
   const [sub, setSub] = useState<'checking' | 'on' | 'off' | 'unsupported' | 'denied'>('checking'); const [recent, setRecent] = useState<Array<{ id: string; at: string; kind: string; title: string; channel: string; status: string; detail: string | null }> | null>(null)
@@ -289,7 +290,8 @@ function NotificationsTab() {
   return <div className="grid g12">
     {isNative() ? <PhoneReminders /> : <Card span={6} title="Push notifications" hint="to this phone or computer, even when the app is closed" right={<Pill cls={sub === 'on' ? 'good' : sub === 'denied' ? 'crit' : 'idle'}>{sub === 'checking' ? '…' : sub === 'on' ? 'on here' : sub === 'denied' ? 'blocked' : sub === 'unsupported' ? 'not supported' : 'off here'}</Pill>}>
       {mode !== 'db' ? <Note>Push and email alerts work for a signed-in household; the offline demo only shows the rules below.</Note> : <>
-        <div className="btnrow">{sub === 'on' ? <Btn onClick={disablePush}>Turn off on this device</Btn> : <Btn primary onClick={enablePush} disabled={sub === 'unsupported' || sub === 'denied'}>Enable on this device</Btn>}<Btn onClick={test} disabled={sub !== 'on' && !prefs.email}>Send a test</Btn></div>
+        <div className="btnrow">{sub === 'on' ? <Btn onClick={disablePush}>Turn off on this device</Btn> : <Btn primary onClick={enablePush} disabled={sub === 'unsupported' || sub === 'denied'}>Enable on this device</Btn>}<Btn onClick={test} disabled={limited || (sub !== 'on' && !prefs.email)}>Send a test</Btn></div>
+        {limited && <Note>With Limited access you get only the notice if the household is scheduled for deletion: other alerts and the Monday digest show money from sections you cannot open, so there is no test to send.</Note>}
         {sub === 'denied' && <div className="msg warn" style={{ marginTop: 8 }}>Notifications are blocked for this site in the browser settings — allow them there, then try again.</div>}
         {sub === 'unsupported' && <div className="msg warn" style={{ marginTop: 8 }}>On iPhone, install the app first (Share → Add to Home Screen) and open it from the home screen; push works from the installed app on iOS 16.4 and later.</div>}
         <Note>Alerts are checked every morning at 7:30 am Eastern (8:30 am during daylight saving time). Each device opts in separately; turn one off here or in the browser.</Note></>}

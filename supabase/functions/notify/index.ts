@@ -3,12 +3,14 @@
 //   POST { action: "digest" }      x-cron-secret: the Monday digest (email + a short push)
 //   POST { action: "test", household_id }   signed-in member: a test push to the caller's devices and a test email to the household address
 //   POST { action: "preview", household_id } signed-in member: the alerts the rules would send right now, without sending
+// Limited access (0.25.1): a member whose modules list only some sections gets only the deletion notice (recipientsFor), and may not use
+// preview or test — both answer 403 "Alerts need full access", since alerts carry money from every section.
 // Delivery: Web Push via VAPID (secrets VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT); email via Resend (RESEND_API_KEY, EMAIL_FROM) —
 // without a Resend key, email rows are logged as 'skipped' and everything else still works. Quiet hours: the cron runs at 07:30 Eastern.
 // Never sent: transaction memos, account numbers, anything beyond the alert's own title/body (amounts, payees, dates).
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import webpush from 'npm:web-push@3.6.7'
-import { computeAlerts, computeDigest, recipientsFor, DIGEST_NOTICES, type Alert, type NInput, type NRouting } from './notify.ts'
+import { computeAlerts, computeDigest, recipientsFor, isLimitedMember, DIGEST_NOTICES, type Alert, type NInput, type NMember, type NRouting } from './notify.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -35,15 +37,15 @@ async function loadHousehold(hh: string) {
     admin.from('households').select('*').eq('id', hh).single(),
     admin.from('accounts').select('id, name, kind, status, balance, bank_balance, include_in_cash, balance_as_of, last_reconciled_on, created_at').eq('household_id', hh),
     admin.from('recurring').select('id, name, payee, kind, amount, amount_varies, frequency, day_of_month, next_due, starts_on, ends_on, status, autopay').eq('household_id', hh),
-    admin.from('bill_occurrences').select('recurring_id, due_date, status').eq('household_id', hh).gte('due_date', new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10)),
+    admin.from('bill_occurrences').select('recurring_id, due_date, status, transaction_id').eq('household_id', hh).gte('due_date', new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10)),
     admin.from('transactions').select('id, date, kind, amount, payee, recurring_id, pay_schedule_id, created_at, status, duplicate_of, category_id').eq('household_id', hh).gte('date', new Date(Date.now() - 105 * 86400000).toISOString().slice(0, 10)),
     admin.from('pay_schedules').select('id, name, frequency, anchor_date, semimonthly_days, net_amount, starts_on, ends_on, status').eq('household_id', hh),
     admin.from('sync_connections').select('status, last_sync_at, last_error').eq('household_id', hh).maybeSingle(),
-    admin.from('household_members').select('user_id, email, role').eq('household_id', hh)])
+    admin.from('household_members').select('user_id, email, role, modules').eq('household_id', hh)])
   if (h.error) throw h.error
   const settings = (h.data.settings || {}) as Record<string, unknown>; const prefs = (settings.notify || {}) as Prefs
   const num = <T extends Record<string, unknown>>(r: T) => { const o = { ...r } as Record<string, unknown>; for (const k of ['balance', 'bank_balance', 'amount', 'net_amount']) if (k in o && o[k] != null) o[k] = Number(o[k]); return o as T }
-  return { household: h.data, settings, prefs, members: members.data || [], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: occ.data || [], transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
+  return { household: h.data, settings, prefs, members: (members.data || []) as NMember[], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: occ.data || [], transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
 }
 
 async function sendPush(hh: string, userIds: string[] | null, title: string, body: string, path: string, tag: string): Promise<{ sent: number; failed: number; detail: string }> {
@@ -145,7 +147,9 @@ Deno.serve(async (req) => {
   const user = createClient(url, anon, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } })
   const { data: me } = await user.auth.getUser(); if (!me?.user) return json(401, { error: 'sign in first' })
   const hh = String(b.household_id || ''); if (!hh) return json(400, { error: 'household_id required' })
-  const { data: m } = await admin.from('household_members').select('role, email').eq('household_id', hh).eq('user_id', me.user.id).maybeSingle(); if (!m) return json(403, { error: 'not a member' })
+  const { data: m } = await admin.from('household_members').select('role, email, modules').eq('household_id', hh).eq('user_id', me.user.id).maybeSingle(); if (!m) return json(403, { error: 'not a member' })
+  // 0.25.1: the preview lists every alert (cash, bills, payees, income, charges) and a test speaks for alerts a Limited member never gets
+  if ((b.action === 'preview' || b.action === 'test') && isLimitedMember(m)) return json(403, { error: 'Alerts need full access' })
   if (b.action === 'preview') { try { const { input } = await loadHousehold(hh); return json(200, { today: input.today, alerts: computeAlerts(input), push: await vapid(), email: !!resendKey() }) } catch (e) { return json(500, { error: (e as Error).message }) } }
   if (b.action === 'test') {
     const push = await sendPush(hh, [me.user.id], 'WealthPilot test', 'Push notifications are working on this device.', '/settings', 'test')
