@@ -32,6 +32,17 @@ the Android app can go public (Google's 14-day testing rule, below). Apple usual
 4. **Where to sell it.** Recommended: **United States only** at first. The app's taxes, Social Security and examples are American, and
    selling only in the US also means you don't need to file EU "trader" details (the EU Digital Services Act). You can add countries later.
 5. **Price:** free, no in-app purchases (that is what the listing text and these answers assume).
+6. **Email that reaches everyone — required before strangers can sign up.** Supabase's built-in email service only delivers to members
+   of your Supabase organization (since September 2024); anyone else gets "Email address not authorized", so their sign-up confirmation
+   and password-reset emails never arrive — including the App Review team's. Check Supabase → Authentication → **Emails → SMTP Settings**:
+   if custom SMTP is off, turn it on with a real email provider. Two ways:
+   - *Best:* buy a domain for the app's name (about $10–15 a year), verify it in **Resend** (already used for the alert emails), and use
+     Resend's SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = a Resend API key, sender `no-reply@<your domain>`. Then set
+     the edge-function secrets `EMAIL_FROM` and `INVITE_FROM` to `WealthPilot <alerts@<your domain>>` too — Resend's test sender
+     (`onboarding@resend.dev`) only delivers to your own address, so today alert and invitation emails reach only you. The domain also gives
+     you a support address (`support@<your domain>` forwarded to your inbox) and a home for the website.
+   - *Quick:* a dedicated Gmail account with 2-Step Verification and an **App password**: host `smtp.gmail.com`, port `465`, user and
+     sender = that Gmail address, password = the app password. Fine for a small number of users (Gmail allows about 500 emails a day).
 
 ---
 
@@ -205,7 +216,7 @@ members of their own household, whom an owner invited; nothing is public and str
 
 ## C. The review account (both stores)
 
-Reviewers need a working sign-in. Create one account just for them on the website (https://garynth41.github.io/wealthpilot/ → **Create
+Reviewers need a working sign-in. After the email setup in 0.6 (the confirmation email has to arrive), create one account just for them on the website (https://garynth41.github.io/wealthpilot/ → **Create
 an account**) with an address you control — a plus address works, e.g. *yourname+review@gmail.com* — and a strong password you don't use
 anywhere else. Confirm the email, create a household called "Our household", and restore the sample data into it: **Settings → Backup &
 data → Restore**, choose `store/review-household.json` (sample data with generic names). Leave two-factor **off** for this account.
