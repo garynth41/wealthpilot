@@ -7,6 +7,7 @@ import { Layout, applySavedTheme } from './components/Layout'
 import { AuthPage, Onboarding, FirstSignIn, ResetPassword } from './pages/Auth'
 import { olPopupRelay } from './lib/email/mail'
 import { retryingImport } from './lib/chunks'
+import { hideSplash } from './app/native'
 // Every page is its own chunk (0.19.0): the shell loads first, a page's code arrives when it is first opened. Plotly and xlsx were already lazy.
 // retryingImport (0.20.1): a page file missing after a deploy reloads the tab once to the new version instead of showing an error.
 const Dashboard = lazy(retryingImport(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard }))))
@@ -38,6 +39,7 @@ if (olPopupRelay()) { /* this window was the Microsoft sign-in popup; it has pos
 export default function App() {
   const { booting, boot, mode, household, user, loadError, mustChangePassword, recovering } = useStore()
   useEffect(() => { boot() }, [boot])
+  useEffect(() => { if (!booting) void hideSplash() }, [booting])   // phone apps: off the launch screen as soon as any screen is ready (0.25.1)
   if (booting) return <div className="auth"><div className="note">Loading…</div></div>
   if (recovering) return <ResetPassword />
   if (user && mustChangePassword()) return <FirstSignIn />

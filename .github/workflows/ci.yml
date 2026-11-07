@@ -1,5 +1,6 @@
 # WealthPilot CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards),
-# then the same app built against the staging database and driven end to end (0.25.0). A push to main that passes both publishes
+# every migration and the SQL tests on a plain Postgres (0.25.1), then the same app built against the staging database and driven end to
+# end (0.25.0). A push to main that passes all three publishes
 # dist/ to gh-pages (the same thing `npm run deploy` does by hand). The Android and iOS apps are built from the same web build on every
 # run too (0.25.1), so a change that breaks either phone app is caught here; they do not hold up the website. Store builds are made
 # by release-apps.yml. Dependabot pull requests with passing minor/patch updates merge and deploy by themselves (only once the phone
@@ -12,7 +13,8 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-permissions: { contents: write }
+# read-only by default; only the deploy job (and Dependabot's auto-merge) get to write (0.25.1)
+permissions: { contents: read }
 env:
   MAIN_PUSH: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
 jobs:
@@ -25,7 +27,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       # the public Supabase URL / publishable key live in .env.example (the real .env is git-ignored); without them the build has no backend
       - run: cp .env.example .env
       - run: npm run engines:sync -- --check
@@ -48,19 +50,36 @@ jobs:
           name: dist
           path: dist
           retention-days: 3
+  # every migration on a plain Postgres (0.25.1): they must run in order on an empty database and the newest must run twice, then the SQL
+  # tests in supabase/tests check account deletion, the membership and alert guards and the account-number scrub (scripts/db-test.mjs).
+  # Needs no secrets and never touches staging or production — it catches a broken migration before anyone is asked to apply it.
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm run db:test
+        env: { PGHOST: localhost, PGPORT: '5432', PGUSER: postgres, PGPASSWORD: postgres }
   # the app against a real database: RLS, triggers and functions as production has them (migrations applied to staging first)
   staging:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      STAGING_URL: ${{ secrets.STAGING_URL }}
-      STAGING_KEY: ${{ secrets.STAGING_KEY }}
-      STAGING_E2E_PASSWORD: ${{ secrets.STAGING_E2E_PASSWORD }}
+    # the secrets go only to the steps that use them (not to npm install, Playwright's installer or the other tools)
     steps:
       - name: Skip when the staging secrets are not set
         id: gate
-        run: if [ -z "$STAGING_URL" ] || [ -z "$STAGING_E2E_PASSWORD" ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::staging secrets not set — database tests skipped"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+        env: { HAS: "${{ secrets.STAGING_URL != '' && secrets.STAGING_E2E_PASSWORD != '' }}" }
+        run: if [ "$HAS" != true ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::staging secrets not set — database tests skipped"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/checkout@v7
         if: steps.gate.outputs.run == 'true'
       - uses: actions/setup-node@v7
@@ -68,15 +87,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         if: steps.gate.outputs.run == 'true'
       - name: Build against staging
         if: steps.gate.outputs.run == 'true'
+        env: { STAGING_URL: "${{ secrets.STAGING_URL }}", STAGING_KEY: "${{ secrets.STAGING_KEY }}" }
         run: VITE_SUPABASE_URL="$STAGING_URL" VITE_SUPABASE_KEY="$STAGING_KEY" VITE_APP_NAME=WealthPilot npx vite build --outDir dist-staging
       - run: npx playwright install --with-deps chromium
         if: steps.gate.outputs.run == 'true'
       - run: npm run e2e:db
         if: steps.gate.outputs.run == 'true'
+        env: { STAGING_URL: "${{ secrets.STAGING_URL }}", STAGING_KEY: "${{ secrets.STAGING_KEY }}", STAGING_E2E_PASSWORD: "${{ secrets.STAGING_E2E_PASSWORD }}" }
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -99,7 +120,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: cp .env.example .env
       - run: npm run native:sync -- android
       - name: Build the Android app (debug)
@@ -119,7 +140,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: cp .env.example .env
       - run: npm run native:sync -- ios
       - name: Use the newest Xcode 26
@@ -130,10 +151,11 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -40
   deploy:
-    needs: [check, staging]
+    needs: [check, database, staging]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions: { contents: write }   # pushes to gh-pages
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
@@ -147,7 +169,7 @@ jobs:
   # Dependabot: a passing minor or patch update merges itself, then deploys (a merge made with GITHUB_TOKEN does not start a push run,
   # so this job starts the main run itself). Majors are left for a person to review.
   automerge:
-    needs: [check, staging, android, ios]
+    needs: [check, database, staging, android, ios]
     if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions: { contents: write, pull-requests: write, actions: write }

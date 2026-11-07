@@ -362,10 +362,11 @@ const ALERT_KINDS: Array<[string, string]> = [['bill_due', 'Bills due'], ['bill_
 /** Who gets what (0.21.0): per member, push to their devices, email to their own address, the Monday digest, and which alerts.
  *  Unset rows follow the household switches above; when nobody picks email for themselves, the household address gets it. */
 function MemberRouting({ prefs }: { prefs: NotifyPrefs }) {
-  const { data, guarded, saveSettings, canEdit, isOwner, user } = useData(); const members = data.members
+  const { data, guarded, saveMemberNotify, canEdit, isOwner, user } = useData(); const members = data.members
   const mm = prefs.members || {}
-  const setM = (uid: string, patch: Partial<MemberNotify>) => guarded(() => saveSettings({ notify: { ...prefs, members: { ...mm, [uid]: { ...(mm[uid] || {}), ...patch } } } }), 'Saved')
-  const reset = (uid: string) => { const next = { ...mm }; delete next[uid]; guarded(() => saveSettings({ notify: { ...prefs, members: next } }), 'Back to the household default') }
+  // one member's row onto the stored settings, nothing else (0.25.1): an editor may save their own row, and the screen's defaults stay unsaved
+  const setM = (uid: string, patch: Partial<MemberNotify>) => guarded(() => saveMemberNotify(uid, patch), 'Saved')
+  const reset = (uid: string) => guarded(() => saveMemberNotify(uid, null), 'Back to the household default')
   return <Card span={12} title="Who gets what" hint="each member's own channels · unset rows follow the household switches">
     {!members.length ? <div className="empty">Members appear here once the household has them (Settings → Members).</div> : <div className="tblwrap"><table className="tbl"><caption className="sr-only">Notification routing by member</caption><thead><tr><th scope="col">Member</th><th scope="col">Push</th><th scope="col">Email</th><th scope="col">Email to</th><th scope="col">Monday digest</th><th scope="col">Alerts</th><th scope="col" /></tr></thead><tbody>
       {members.map(m => { const p = mm[m.user_id] || {}; const custom = !!mm[m.user_id]; const kinds = p.kinds || null; const who = m.display_name || m.email; const rowEdit = isOwner || (canEdit && m.user_id === user?.id)   // owners set anyone's; others only their own (0.25.1)

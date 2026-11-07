@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { isNative } from './app/native'
+import { isNative, markNative, hideSplash } from './app/native'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './fonts.css'
@@ -8,7 +8,9 @@ import { installErrorCapture } from './lib/errors'
 import { RootBoundary } from './components/RootBoundary'
 import { reloadForNewVersion } from './lib/chunks'
 import { initDisplay } from './lib/display'
-installErrorCapture(); initDisplay()
+installErrorCapture(); initDisplay(); markNative()
+// the phone apps' launch screen: App hides it once the first screen is ready; this is only a safety net if start-up stalls
+if (isNative()) setTimeout(() => { void hideSplash() }, 8000)
 // Vite fires this when a page's code or CSS cannot be preloaded — after a deploy, the old file names are gone. Reload once to the new version.
 window.addEventListener('vite:preloadError', e => { if (reloadForNewVersion()) e.preventDefault() })
 createRoot(document.getElementById('root')!).render(<StrictMode><RootBoundary><App /></RootBoundary></StrictMode>)

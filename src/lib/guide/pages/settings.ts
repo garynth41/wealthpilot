@@ -206,6 +206,7 @@ export const settings: GuidePage = {
         'Until they do, they are listed under Waiting to sign up on the Members card.',
         'The email carries nothing from your household\'s data.',
         'In the demo nobody is emailed.',
+        'Limits, over any 24 hours: 20 invitations per household, 30 from any one person and 3 to any one address. The message says when a limit is reached.',
       ],
     },
     {
@@ -268,7 +269,7 @@ export const settings: GuidePage = {
         { term: 'Member', text: 'Name, (you) for you, their role, and "household default" until their row is changed.' },
         { term: 'Push', text: 'Send alerts to every device this member turned on in Push notifications.' },
         { term: 'Email', text: 'Send alerts to this member\'s own address.' },
-        { term: 'Email to', text: 'The address for that member. Blank uses their sign-in email. Open only when Email is ticked; saves when you click away.' },
+        { term: 'Email to', text: 'The address for that member. Blank uses their sign-in email. Open only when Email is ticked; saves when you click away. Owners can type any address; everyone else can point their own row only at their own sign-in email (an address an owner typed for them stays when they change something else).' },
         { term: 'Monday digest', text: 'Whether this member gets the weekly digest.' },
         { term: 'Alerts', text: 'All, or "N of 10". Open it to tick which kinds this member gets: Bills due, Overdue bills, Low cash, Large charges, Missed paychecks, Bank sync, Price rises, New repeating charges, Reconcile reminders, and Property & vehicle values.' },
         { term: 'Reset', text: 'Puts a changed row back to the household default.' },
@@ -471,10 +472,10 @@ export const settings: GuidePage = {
       how: ['Click Delete my account… to see exactly what will happen.', 'Save a backup first if you might want anything.', 'Type your password and the words delete my account, then click Delete my account permanently.'],
       fields: [
         { term: 'Deleted with your account', text: 'Households where you are the only member — every account, transaction, bill, goal, file and nightly backup in them.' },
-        { term: 'You leave', text: 'Households you share: the other members keep everything, and where your name appears in history it becomes “a former member”.' },
+        { term: 'You leave', text: 'Households you share: the other members keep everything, including files you attached; where your name or email address appears in their history it becomes “a former member”, and your alert choices there are removed.' },
         { term: 'First', text: 'A household where you are the only owner and other people are members. Make one of them an owner on the Members tab, or delete that household, then come back.' },
       ],
-      tips: ['With two-factor on, sign in again with your code just before deleting.', 'To leave one household but keep your account, ask an owner to remove you on the Members tab instead.'],
+      tips: ['With two-factor on, sign in again with your code just before deleting.', 'To leave one household but keep your account, ask an owner to remove you on the Members tab instead.', 'Signed in but no household yet? Delete my account is on the welcome screen too.'],
     },
     {
       title: 'Delete this household',

@@ -6,7 +6,8 @@
 #   iOS:     archived unsigned, then signed for the App Store with Apple's cloud-managed certificate and uploaded to App Store Connect,
 #            where it appears in TestFlight after Apple's processing (usually 10–30 minutes). Submitting for review stays a manual step.
 # Each platform skips itself, with a note on the run, while its secrets are missing. Secrets (Settings → Secrets and variables →
-# Actions) and how to make them: docs/STORE_LAUNCH.md.
+# Actions) and how to make them: docs/STORE_LAUNCH.md. Each secret reaches only the step that uses it — never npm install or the
+# other tools — and npm installs without running any package's install scripts.
 #   Android: ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD,
 #            PLAY_SERVICE_ACCOUNT_JSON (optional — without it the bundle is only kept on the run)
 #   iOS:     APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64 (an App Store Connect team API key with the Admin role)
@@ -58,13 +59,15 @@ jobs:
     if: inputs.platform != 'ios'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-      PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
     steps:
       - name: Skip when the upload key is not set
         id: gate
-        run: if [ -z "$KEYSTORE_B64" ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::ANDROID_UPLOAD_KEYSTORE_BASE64 is not set — no Android store build (docs/STORE_LAUNCH.md, step A3)"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+        env:
+          HAS_KEY: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 != '' && secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD != '' && secrets.ANDROID_UPLOAD_KEY_ALIAS != '' && secrets.ANDROID_UPLOAD_KEY_PASSWORD != '' }}
+          HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+        run: |
+          echo "play=$HAS_PLAY" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_KEY" != true ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::the Android upload key secrets are not all set — no Android store build (docs/STORE_LAUNCH.md, step A3)"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/checkout@v7
         if: steps.gate.outputs.run == 'true'
       - uses: actions/setup-node@v7
@@ -78,7 +81,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         if: steps.gate.outputs.run == 'true'
       - run: cp .env.example .env && npm run native:sync -- android
         if: steps.gate.outputs.run == 'true'
@@ -86,15 +89,16 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         working-directory: android
         env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
           WP_BUILD_NUMBER: ${{ inputs.rebuild }}
           WP_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
           WP_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
           WP_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           umask 077
+          trap 'rm -f "$RUNNER_TEMP/upload.jks"' EXIT
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
           WP_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.jks" ./gradlew --no-daemon --stacktrace bundleRelease
-          rm -f "$RUNNER_TEMP/upload.jks"
       - name: Check the bundle is signed and numbered
         if: steps.gate.outputs.run == 'true'
         run: |
@@ -109,11 +113,11 @@ jobs:
           path: wealthpilot-*.aab
           retention-days: 14
       - name: Send to Google Play as a draft
-        if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && env.PLAY_JSON != ''
+        if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && steps.gate.outputs.play == 'true'
         env: { PLAY_SERVICE_ACCOUNT_JSON: "${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}" }
         run: node scripts/play-upload.mjs --aab wealthpilot-*.aab --track "${{ inputs.play_track }}" --status draft --notes store/listing/google/release_notes.txt
       - name: Note when Google Play is not connected yet
-        if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && env.PLAY_JSON == ''
+        if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && steps.gate.outputs.play != 'true'
         run: echo "::notice::PLAY_SERVICE_ACCOUNT_JSON is not set — download the .aab from this run and upload it in Play Console (docs/STORE_LAUNCH.md, step A5)"
 
   ios:
@@ -121,15 +125,11 @@ jobs:
     if: inputs.platform != 'android'
     runs-on: macos-26
     timeout-minutes: 60
-    env:
-      TEAM: ${{ secrets.APPLE_TEAM_ID }}
-      KEY_ID: ${{ secrets.ASC_KEY_ID }}
-      ISSUER: ${{ secrets.ASC_ISSUER_ID }}
-      KEY_B64: ${{ secrets.ASC_KEY_P8_BASE64 }}
     steps:
       - name: Skip when the App Store Connect key is not set
         id: gate
-        run: if [ -z "$TEAM" ] || [ -z "$KEY_ID" ] || [ -z "$ISSUER" ] || [ -z "$KEY_B64" ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::App Store Connect secrets are not set — no iOS store build (docs/STORE_LAUNCH.md, step B4)"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
+        env: { HAS: "${{ secrets.APPLE_TEAM_ID != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.ASC_KEY_P8_BASE64 != '' }}" }
+        run: if [ "$HAS" != true ]; then echo "run=false" >> "$GITHUB_OUTPUT"; echo "::warning::App Store Connect secrets are not set — no iOS store build (docs/STORE_LAUNCH.md, step B4)"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/checkout@v7
         if: steps.gate.outputs.run == 'true'
       - uses: actions/setup-node@v7
@@ -137,7 +137,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         if: steps.gate.outputs.run == 'true'
       - run: cp .env.example .env && npm run native:sync -- ios
         if: steps.gate.outputs.run == 'true'
@@ -148,6 +148,7 @@ jobs:
       # development certificate on every run until the team's limit is reached.
       - name: Archive (unsigned)
         if: steps.gate.outputs.run == 'true'
+        env: { TEAM: "${{ secrets.APPLE_TEAM_ID }}" }
         run: |
           set -o pipefail
           xcodebuild archive -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' \
@@ -156,9 +157,15 @@ jobs:
             MARKETING_VERSION="${{ needs.version.outputs.name }}" CURRENT_PROJECT_VERSION="${{ needs.version.outputs.code }}" | tail -40
       - name: Sign for the App Store and upload to App Store Connect
         if: steps.gate.outputs.run == 'true'
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+          KEY_B64: ${{ secrets.ASC_KEY_P8_BASE64 }}
         run: |
           set -o pipefail
           umask 077
+          trap 'rm -f "$RUNNER_TEMP/AuthKey.p8"' EXIT
           printf '%s' "$KEY_B64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -175,5 +182,4 @@ jobs:
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/WealthPilot.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" | tail -60
-          rm -f "$RUNNER_TEMP/AuthKey.p8"
           echo "::notice::WealthPilot ${{ needs.version.outputs.name }} (${{ needs.version.outputs.code }}) was uploaded to App Store Connect — it shows in TestFlight once Apple has processed it"

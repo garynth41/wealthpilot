@@ -3,15 +3,17 @@
 // they sign up with that address and confirm it. Before 0.25.1 this function created a confirmed account for any address and returned
 // a temporary password to the inviter, so anyone could claim a stranger's email address; it no longer creates accounts at all.
 // When RESEND_API_KEY + INVITE_FROM are set it also emails the invitation: a fixed message (the inviter may add a short plain-text
-// note), at most 20 invitations per household per day, and it never says whether the address already has an account.
+// note), and it never says whether the address already has an account. Limits, over the last 24 hours: 20 invitations per household,
+// 30 per person inviting (across all their households), and 3 to any one address (from anyone) — each invitation is logged before
+// anything is sent, and nothing is sent when it cannot be logged.
 // Secrets (optional): RESEND_API_KEY, INVITE_FROM ("WealthPilot <invites@yourdomain>"), APP_URL
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 const ROLES = ['owner', 'editor', 'viewer']
-const MODULES = ['transactions', 'budget', 'bills', 'income', 'accounts', 'connections', 'investments', 'tax', 'goals', 'hardship']   // keep in step with src/lib/access.ts GRANTABLE
-const DAILY = 20
+const MODULES = ['transactions', 'budget', 'bills', 'income', 'accounts', 'connections', 'investments', 'tax', 'goals', 'protection', 'hardship']   // keep in step with src/lib/access.ts GRANTABLE (a test checks)
+const DAILY = 20, PER_INVITER = 30, PER_ADDRESS = 3
 const APP_URL = Deno.env.get('APP_URL') || 'https://garynth41.github.io/wealthpilot/'
 
 interface Body { household_id: string; email: string; role?: string; read_only?: boolean; modules?: string[] | null; display_name?: string | null; note?: string; send?: boolean }
@@ -44,11 +46,19 @@ Deno.serve(async (req) => {
   const { data: hh } = await admin.from('households').select('name, deletion_scheduled_for').eq('id', b.household_id).single()
   if (hh?.deletion_scheduled_for) return json(403, { error: 'This household is scheduled for deletion' })
   const since = new Date(Date.now() - 86400000).toISOString()
-  const { count } = await admin.from('activity_log').select('id', { count: 'exact', head: true }).eq('household_id', b.household_id).eq('action', 'invite').gte('created_at', since)
-  if ((count || 0) >= DAILY) return json(429, { error: `That is ${DAILY} invitations today — try again tomorrow` })
+  const invites = () => admin.from('activity_log').select('id', { count: 'exact', head: true }).eq('action', 'invite').gte('created_at', since)
+  const [hhN, mineN, toN] = await Promise.all([invites().eq('household_id', b.household_id), invites().eq('user_id', user.id), invites().eq('record_id', email)])
+  if (hhN.error || mineN.error || toN.error) return json(500, { error: 'Could not check the invitation limits — try again' })
+  if ((hhN.count || 0) >= DAILY) return json(429, { error: `That is ${DAILY} invitations for this household today — try again tomorrow` })
+  if ((mineN.count || 0) >= PER_INVITER) return json(429, { error: `That is ${PER_INVITER} invitations from you today — try again tomorrow` })
+  if ((toN.count || 0) >= PER_ADDRESS) return json(429, { error: 'That address has had several invitations today — try again tomorrow' })
 
   const display_name = clean(b.display_name, 80) || null
   const inviteRow = { household_id: b.household_id, email, role, read_only, modules, display_name, invited_by: user.id, invited_user_id: null, accepted_at: null, temp_password_issued_at: null, sent_at: null as string | null }
+  // logged first: the log is what the limits count, so an invitation that cannot be logged is not made (or sent)
+  const summary = `${email} · ${role}${read_only ? ' read-only' : ''}${modules ? ' · ' + modules.join(',') : ''}`
+  const { data: logRow, error: lErr } = await admin.from('activity_log').insert({ household_id: b.household_id, user_id: user.id, user_email: user.email, action: 'invite', table_name: 'household_invites', record_id: email, summary }).select('id').single()
+  if (lErr || !logRow) return json(500, { error: 'Could not record the invitation — try again' })
 
   // optional automatic email: a fixed message, so the function cannot be used to send anything else
   let sent = false, sendError: string | null = null
@@ -65,7 +75,7 @@ Deno.serve(async (req) => {
     } catch (e) { sendError = (e as Error).message }
   }
   const { error: iErr } = await admin.from('household_invites').upsert(inviteRow, { onConflict: 'household_id,email' })
-  if (iErr) return json(500, { error: iErr.message })
-  await admin.from('activity_log').insert({ household_id: b.household_id, user_id: user.id, user_email: user.email, action: 'invite', table_name: 'household_invites', record_id: email, summary: `${email} · ${role}${read_only ? ' read-only' : ''}${modules ? ' · ' + modules.join(',') : ''}${sent ? ' · emailed' : ''}` })
+  if (iErr) { if (!sent) await admin.from('activity_log').delete().eq('id', logRow.id); return json(500, { error: iErr.message }) }   // an email already sent stays counted
+  if (sent) await admin.from('activity_log').update({ summary: summary + ' · emailed' }).eq('id', logRow.id)
   return json(200, { ok: true, user_id: null, existing: false, pending: true, temp_password: null, sent, send_error: sendError, household: hh?.name || null, can_send: !!(key && from) })
 })

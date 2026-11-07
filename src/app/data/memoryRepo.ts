@@ -1,6 +1,6 @@
 // Offline demo repo: the same contract as Supabase, kept in this browser (localStorage). Also the harness for the test suites.
 import type { Repo } from './repo'
-import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type MemberNotify, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
 import { demoSeed, demoId } from './demoSeed'
 import { LS } from '../config'
 import { syncSlot, syncLimitMessage } from '../../lib/syncLimit'
@@ -8,6 +8,7 @@ import { monthKey, today } from '../../lib/dates'
 import { balanceFor, dropKnown } from '../../lib/simplefin'
 import { verifiedBalance } from '../../lib/reconcile'
 import { restoreBackup, RESTORE_ORDER, type RestoreSummary } from '../../lib/restore'
+import { withMemberNotify } from '../../lib/memberNotify'
 
 const KEY = LS('demo')
 const PREFIX: Partial<Record<Collection, string>> = { reconciliations: 'K', transactions: 'T', accounts: 'A', recurring: 'R', goals: 'G', planned: 'X', hardship: 'H', emailItems: 'E', statements: 'S', paySchedules: 'P', categories: 'C', periods: 'B', holdings: 'I', scenarios: 'N', insurance: 'Y' }
@@ -78,6 +79,7 @@ export class MemoryRepo implements Repo {
     const at = new Date(Date.now() + 7 * 86400000).toISOString(); this.household = { ...this.household, deletion_requested_at: new Date().toISOString(), deletion_requested_by: 'demo', deletion_scheduled_for: at }; this.persist(); this.emit(); return at }
   async cancelDeletion() { this.household = { ...this.household, deletion_requested_at: null, deletion_requested_by: null, deletion_scheduled_for: null }; this.persist(); this.emit() }
   async saveSettings(patch: Partial<Settings>) { this.household = { ...this.household, settings: { ...SETTINGS_DEFAULTS, ...this.household.settings, ...patch } }; this.persist(); this.emit(); return this.household.settings }
+  async saveMemberNotify(userId: string, patch: Partial<MemberNotify> | null) { return this.saveSettings({ notify: withMemberNotify(this.household.settings.notify, userId, patch) }) }
   async renameHousehold(name: string) { this.household = { ...this.household, name }; this.persist(); this.emit() }
   async startPeriod(type: string, start: string, end: string, label?: string) {
     const ex = this.data.periods.find(p => p.start_date === start && p.end_date === end); if (ex) return ex.id

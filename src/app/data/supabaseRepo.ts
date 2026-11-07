@@ -1,7 +1,8 @@
 import type { Repo } from './repo'
-import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
+import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type MemberNotify, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
 import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
+import { withMemberNotify } from '../../lib/memberNotify'
 import { restoreBackup, RESTORE_ORDER, type RestoreSummary } from '../../lib/restore'
 
 const COLLECTIONS = Object.keys(TABLE) as Collection[]
@@ -51,6 +52,11 @@ export class SupabaseRepo implements Repo {
   async saveSettings(patch: Partial<Settings>) {
     const { data: cur, error: e1 } = await sb().from('households').select('settings').eq('id', this.hh).single(); if (e1) throw e1
     const next = { ...SETTINGS_DEFAULTS, ...(cur?.settings || {}), ...patch }
+    const { error } = await sb().from('households').update({ settings: next, updated_at: new Date().toISOString() }).eq('id', this.hh); if (error) throw error; return next
+  }
+  async saveMemberNotify(userId: string, patch: Partial<MemberNotify> | null) {
+    const { data: cur, error: e1 } = await sb().from('households').select('settings').eq('id', this.hh).single(); if (e1) throw e1
+    const stored = (cur?.settings || {}) as Settings; const next = { ...SETTINGS_DEFAULTS, ...stored, notify: withMemberNotify(stored.notify, userId, patch) }
     const { error } = await sb().from('households').update({ settings: next, updated_at: new Date().toISOString() }).eq('id', this.hh); if (error) throw error; return next
   }
   async requestDeletion(confirm: string) { const { data, error } = await sb().rpc('request_household_deletion', { p_household: this.hh, p_confirm: confirm }); if (error) throw error; return String(data) }

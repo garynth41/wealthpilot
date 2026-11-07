@@ -86,3 +86,14 @@ describe('invitation email', () => {
     const l = mailtoLink('pat@example.com', 'A & B', 'line 1\nline 2'); expect(l.startsWith('mailto:pat%40example.com?subject=A%20%26%20B&body=line%201%0Aline%202')).toBe(true)
   })
 })
+
+// 0.25.1 review: the invite function keeps its own copy of the sections that can be given (an Edge Function cannot import from src/)
+const INVITE_FN = import.meta.glob<string>('../../supabase/functions/invite-member/index.ts', { query: '?raw', import: 'default', eager: true })
+describe('invite-member sections', () => {
+  it('match GRANTABLE exactly (a section missing there could not be given in an invitation)', () => {
+    const src = Object.values(INVITE_FN)[0]; const m = /const MODULES = \[([^\]]*)\]/.exec(src)
+    expect(m).toBeTruthy()
+    const fn = [...m![1].matchAll(/'([a-z_]+)'/g)].map(x => x[1]).sort()
+    expect(fn).toEqual(GRANTABLE.map(g => g.k).sort())
+  })
+})

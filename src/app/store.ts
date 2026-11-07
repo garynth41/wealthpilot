@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { isNative, publicUrl } from './native'
+import { clearReminders } from './nativeReminders'
 import type { Session, User } from '@supabase/supabase-js'
 import type { Repo } from './data/repo'
-import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type Role, type RowOf, type Settings } from './data/types'
+import { emptyData, SETTINGS_DEFAULTS, type Collection, type Data, type Household, type MemberNotify, type Role, type RowOf, type Settings } from './data/types'
 import { MemoryRepo } from './data/memoryRepo'
 import { SupabaseRepo } from './data/supabaseRepo'
 import { hasSupabase, sb } from './supabase'
@@ -56,6 +57,8 @@ interface State {
   update: <C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) => Promise<RowOf<C>>
   remove: (coll: Collection, id: string) => Promise<void>
   saveSettings: (patch: Partial<Settings>) => Promise<void>
+  /** 0.25.1: one member's alert choices only (null = household default) — see Repo.saveMemberNotify */
+  saveMemberNotify: (userId: string, patch: Partial<MemberNotify> | null) => Promise<void>
   toast: (text: string, err?: boolean, action?: { label: string; run: () => void }) => void
   /** last 10 reversible changes, newest last */
   undo: UndoEntry[]
@@ -119,7 +122,7 @@ export const useStore = create<State>((set, get) => ({
   // stop live updates first, so a refresh already on its way cannot write the offline copy back after it is cleared (0.25.1)
   // signing out here ends this device's session only (0.25.1 — the library's default also signed out every other device and the phone);
   // Settings → Security → Sign out everywhere does that on purpose
-  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }); await clearOffline() } finally { signingOut = false } },
+  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }); await clearOffline() } finally { signingOut = false } },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -222,6 +225,7 @@ export const useStore = create<State>((set, get) => ({
     return n
   },
   async saveSettings(patch) { const repo = need(get); const settings = await repo.saveSettings(patch); set(s => ({ household: s.household ? { ...s.household, settings } : s.household })) },
+  async saveMemberNotify(userId, patch) { const repo = need(get); const settings = await repo.saveMemberNotify(userId, patch); set(s => ({ household: s.household ? { ...s.household, settings } : s.household })) },
   toast(text, err, action) { const id = ++toastSeq; set(s => ({ toasts: [...s.toasts.slice(-3), { id, text, err, action }] })); setTimeout(() => set(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), err ? 6500 : action ? 5000 : 2200) },
   async guarded(fn, ok) {
     if (get().busy > 2) return undefined

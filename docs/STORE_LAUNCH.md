@@ -204,7 +204,7 @@ members of their own household, whom an owner invited; nothing is public and str
 
 > WealthPilot is a household budgeting and planning app. Sign in with the account above — it has two-factor sign-in off and a sample
 > household. You can also tap "Open the offline demo" on the sign-in screen to explore sample data without an account.
-> • Delete an account: Settings → Security → Delete my account.
+> • Delete an account: Settings → Security → Delete my account (or, signed in with no household yet, Delete my account on the welcome screen).
 > • Bill reminders (local notifications): Settings → Notifications → Reminders on this phone.
 > • Face ID unlock: appears on the idle lock (Settings → Security sets when the app locks).
 > • Bank sync uses SimpleFIN Bridge, a separate paid service the person signs up for; it is not needed to review the app.

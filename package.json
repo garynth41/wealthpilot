@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "e2e": "node e2e/smoke.mjs",
     "e2e:db": "node e2e/db.mjs",
+    "db:test": "node scripts/db-test.mjs",
     "check": "npm run engines:sync -- --check && npm run typecheck && npm run test && npm run build && npm run e2e",
     "deploy": "npm run build && gh-pages -d dist --add --dotfiles --nojekyll",
     "lint": "oxlint",

@@ -11,9 +11,9 @@ import { today } from '../lib/dates'
 
 const PHRASE = 'delete my account'
 
-export function DeleteAccountCard() {
+export function DeleteAccountCard({ startOpen = false }: { startOpen?: boolean } = {}) {
   const { user, repo, household, accountDeletionPreview, deleteAccount, toast } = useStore()
-  const [plan, setPlan] = useState<AccountDeletionPlan | null>(null); const [err, setErr] = useState(''); const [pw, setPw] = useState(''); const [typed, setTyped] = useState(''); const [busy, setBusy] = useState(false); const [open, setOpen] = useState(false)
+  const [plan, setPlan] = useState<AccountDeletionPlan | null>(null); const [err, setErr] = useState(''); const [pw, setPw] = useState(''); const [typed, setTyped] = useState(''); const [busy, setBusy] = useState(false); const [open, setOpen] = useState(startOpen)
   useEffect(() => { if (!open || plan) return; accountDeletionPreview().then(setPlan).catch(e => setErr((e as Error).message)) }, [open])   // eslint-disable-line react-hooks/exhaustive-deps
   const backup = async () => { try { const j = await repo!.exportJson(); await saveFile(`wealthpilot-backup-${today()}.json`, JSON.stringify(j, null, 2), 'application/json'); toast(isNative() ? 'Backup ready' : 'Backup downloaded') } catch (e) { toast((e as Error).message, true) } }
   const go = async () => {

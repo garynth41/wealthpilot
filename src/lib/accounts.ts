@@ -26,8 +26,8 @@ export function cashOnHand(d: Data, s: Settings) { return sum(assets(d).filter(a
 export function netWorth(d: Data) { const as = sum(assets(d).filter(a => a.include_in_net_worth).map(a => balanceOf(a, d))), li = sum(liabilities(d).filter(a => a.include_in_net_worth).map(a => debtBal(a, d))); return { assets: as, liabilities: li, net: as - li } }
 export const debtPlanned = (a: Account) => Math.max(+(a.planned_payment ?? 0) || 0, +a.minimum_payment || 0)
 export function utilization(a: Account, d?: Pick<Data, 'transactions'>) { return isRevolving(a) && +(a.credit_limit || 0) > 0 ? debtBal(a, d) / +a.credit_limit! : null }
-export function debtDueState(a: Account) {
-  if (!(+a.minimum_payment > 0) && !(+(a.statement_balance || 0) > 0) && debtBal(a) < 1) return { cls: 'good', label: 'Nothing due' }
+export function debtDueState(a: Account, d?: Pick<Data, 'transactions'>) {
+  if (!(+a.minimum_payment > 0) && !(+(a.statement_balance || 0) > 0) && debtBal(a, d) < 1) return { cls: 'good', label: 'Nothing due' }
   if (!a.due_date) return { cls: 'idle', label: 'No due date' }
   const due = a.due_date.slice(0, 10), t = today()
   if (a.last_paid_due && a.last_paid_due.slice(0, 10) >= due) return { cls: 'good', label: 'Paid' }

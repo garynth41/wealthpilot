@@ -81,11 +81,16 @@ export function syncSystemBars(dark: boolean) {
  *  and history.back() there would leave the app (a blank page in the Android app). */
 export const hasAppHistory = (): boolean => { try { return ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0 } catch { return false } }
 
+/** The apps' first screen (0.25.1): the native classes go on before anything draws, and the launch screen goes as soon as the app has
+ *  something to show — the sign-in screen included. (initNative, which also hides it, only runs once a household is open.) */
+export function markNative() { if (isNative()) document.documentElement.classList.add('native', 'native-' + platform()) }
+export async function hideSplash() { if (!isNative()) return; try { const { SplashScreen } = await import('@capacitor/splash-screen'); await SplashScreen.hide({ fadeOutDuration: 200 }) } catch { /* not there: nothing to hide */ } }
+
 let started = false
 /** Once, at start-up inside the apps. `back()` is the router's back, `home()` opens the dashboard; `atRoot()` says whether the dashboard is showing. */
 export async function initNative(opts: { back: () => void; home: () => void; atRoot: () => boolean; onResume: () => void }) {
   if (!isNative() || started) return; started = true
-  document.documentElement.classList.add('native', 'native-' + platform())
+  markNative()
   const { App } = await import('@capacitor/app')
   // Back: the newest dialog, drawer or menu closes first; then the previous page; a page opened directly goes to the dashboard; the dashboard leaves the app
   App.addListener('backButton', () => { if (closeTopDialog()) return; if (opts.atRoot()) App.minimizeApp(); else if (hasAppHistory()) opts.back(); else opts.home() })
@@ -98,7 +103,7 @@ export async function initNative(opts: { back: () => void; home: () => void; atR
     if (u.origin === location.origin) return
     e.preventDefault(); if (/^https?:/.test(u.protocol)) void openExternal(u.href); else location.href = u.href
   }, true)
-  try { const { SplashScreen } = await import('@capacitor/splash-screen'); await SplashScreen.hide({ fadeOutDuration: 200 }) } catch { /* */ }
+  await hideSplash()
 }
 
 /** Haptic tap for completed actions (no-op in browsers). */

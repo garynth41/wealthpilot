@@ -98,3 +98,26 @@ describe('Google Play upload script', () => {
     expect(called).toBe(0)
   })
 })
+
+// 0.25.1 review: secrets reach only the steps that use them — never a whole job, where npm install and every other tool could read them
+const WORKFLOWS = import.meta.glob<string>('../../.github/workflows/*.yml', { query: '?raw', import: 'default', eager: true })
+describe('GitHub workflows', () => {
+  const files = Object.entries(WORKFLOWS)
+  it('are there', () => { expect(files.map(([k]) => k.split('/').pop()).sort()).toEqual(expect.arrayContaining(['ci.yml', 'release-apps.yml'])) })
+  it.each(files.map(([k, v]) => [k.split('/').pop()!, v]))('%s: no secret in a job-wide or workflow-wide env, and installs run no package scripts', (_f, src) => {
+    const lines = src.split('\n'); let inEnv = -1
+    for (const l of lines) {
+      const indent = l.length - l.trimStart().length
+      if (/^(\s{0,4})env:\s*$/.test(l)) { inEnv = indent; continue }   // a workflow- (0) or job-level (4) env block
+      if (inEnv >= 0) { if (l.trim() && indent <= inEnv) inEnv = -1; else expect(l, 'secret in a job or workflow env').not.toMatch(/secrets\./) }
+      if (/^\s{0,4}env:\s*\{/.test(l)) expect(l).not.toMatch(/secrets\./)
+    }
+    for (const l of lines.filter(x => /\bnpm ci\b/.test(x))) expect(l).toMatch(/npm ci --ignore-scripts/)
+  })
+  it('ci.yml gives a write token only to the jobs that push', () => {
+    const ci = files.find(([k]) => k.endsWith('ci.yml'))![1]
+    expect(ci).toMatch(/^permissions: \{ contents: read \}/m)
+    const writers = [...ci.matchAll(/^ {2}([a-z-]+):\n(?:(?: {4}.*)?\n)*? {4}permissions: \{ contents: write/gm)].map(m => m[1])
+    expect(writers.sort()).toEqual(['automerge', 'deploy'])
+  })
+})

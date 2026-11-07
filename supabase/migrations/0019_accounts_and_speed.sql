@@ -19,19 +19,48 @@ end $$;
 -- (the audit trail lets forget_user blank a deleted person's id and name — see audit_immutable in section 5f)
 
 -- Removes a person from every household record before their sign-in is deleted (called by the delete-account function, service role
--- only): their email becomes "a former member" in logs and comments, every reference to their id is emptied, invitations to their
--- address go, and their error reports lose the link to them. Households they are the only member of are deleted by the function first.
+-- only): their email becomes "a former member" in logs, comments and reconciliations, every reference to their id is emptied, the
+-- invitations sent to their address go (and the log lines that named it), their alert choices and any alert address that was theirs
+-- go, files they added to households they share stay with those households, and their error reports lose the link to them.
+-- Households they are the only member of are deleted by the function first.
 create or replace function public.forget_user(p_user uuid) returns jsonb language plpgsql security definer set search_path = '' as $$
-declare r record; n int; total int := 0; em text;
+declare r record; n int; total int := 0; files int := 0; em text;
 begin
   select lower(email) into em from auth.users where id = p_user;
   perform set_config('wealthpilot.quiet_audit', 'on', true);
   perform set_config('wealthpilot.deletion_rpc', 'on', true);
   perform set_config('wealthpilot.forget_user', p_user::text, true);
-  update public.activity_log set user_email = 'a former member' where user_id = p_user;
+  -- names first: the id columns they are matched by are emptied below
+  update public.activity_log set user_email = 'a former member' where user_id = p_user or (em is not null and lower(user_email) = em);
   -- one statement for both columns: the immutable audit trail accepts exactly this change (5f), and no half-way version of it
   update public.audit_events set user_email = 'a former member', user_id = null where user_id = p_user;
-  update public.transaction_comments set author_email = 'a former member' where created_by = p_user;
+  update public.transaction_comments set author_email = 'a former member' where created_by = p_user or (em is not null and lower(author_email) = em);
+  update public.reconciliations set completed_by_email = 'a former member' where completed_by = p_user or (em is not null and lower(completed_by_email) = em);
+  if em is not null then
+    -- invitations to their address, and the log lines that named it ("<address> · editor · emailed"; before 0.25.1 the line kept
+    -- their id instead, with "(temporary password issued)")
+    delete from public.household_invites where lower(email) = em;
+    update public.activity_log set record_id = null,
+      summary = case when lower(left(summary, length(em))) = em then 'a former member' || substr(summary, length(em) + 1) else 'a former member' end
+      where action = 'invite' and (lower(record_id) = em or record_id = p_user::text);
+    update public.notifications set detail = null where strpos(lower(detail), em) > 0;
+  end if;
+  -- their own alert choices, and any alert address that was theirs (an owner may have typed it for them)
+  update public.households h set settings = jsonb_set(h.settings, '{notify,members}', coalesce((
+      select jsonb_object_agg(k, case when jsonb_typeof(v) = 'object' and em is not null and lower(v ->> 'email_to') = em then v - 'email_to' else v end)
+      from jsonb_each(h.settings -> 'notify' -> 'members') e(k, v) where k <> p_user::text), '{}'::jsonb))
+    where jsonb_typeof(h.settings -> 'notify' -> 'members') = 'object'
+      and (h.settings -> 'notify' -> 'members' ? p_user::text
+           or exists (select 1 from jsonb_each(h.settings -> 'notify' -> 'members') e(k, v) where jsonb_typeof(v) = 'object' and em is not null and lower(v ->> 'email_to') = em));
+  if em is not null then
+    update public.households set settings = jsonb_set(settings, '{notify}', (settings -> 'notify') - 'email_to')
+      where jsonb_typeof(settings -> 'notify') = 'object' and lower(settings -> 'notify' ->> 'email_to') = em;
+  end if;
+  -- files they added to households they share stay with those households. The sign-in service refuses to delete anyone who still
+  -- owns a file, and no access rule here looks at a file's owner (households' folders decide), so the owner is simply emptied.
+  update storage.objects set owner = null, owner_id = null where owner = p_user or owner_id = p_user::text;
+  get diagnostics files = row_count;
+  update public.deleted_households set requested_by = null where requested_by = p_user;
   for r in select c.conrelid::regclass as tbl, a.attname as col
     from pg_constraint c join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
     where c.contype = 'f' and c.confrelid = 'auth.users'::regclass and c.connamespace = 'public'::regnamespace
@@ -40,12 +69,11 @@ begin
     execute format('update %s set %I = null where %I = $1', r.tbl, r.col, r.col) using p_user;
     get diagnostics n = row_count; total := total + n;
   end loop;
-  if em is not null then delete from public.household_invites where lower(email) = em; end if;
   update public.app_errors set user_id = null where user_id = p_user;
   perform set_config('wealthpilot.forget_user', '', true);
   perform set_config('wealthpilot.deletion_rpc', '', true);
   perform set_config('wealthpilot.quiet_audit', 'off', true);
-  return jsonb_build_object('references_cleared', total);
+  return jsonb_build_object('references_cleared', total, 'files_kept', files);
 end $$;
 revoke all on function public.forget_user(uuid) from public, anon, authenticated;
 grant execute on function public.forget_user(uuid) to service_role;
@@ -167,11 +195,12 @@ create policy scenarios_update on public.scenarios for update to authenticated u
 drop policy if exists scenarios_delete on public.scenarios;
 create policy scenarios_delete on public.scenarios for delete to authenticated using (can_edit(household_id) and scenario_allowed(household_id, kind));
 
--- 5d. Where alerts go is the owners' decision: anyone else may change only their own alert choices, and only to their own address
---     (before, any editor — even one limited to a single section — could send the household's daily alerts and digest anywhere).
---     The rest of households_guard is unchanged from 0018.
+-- 5d. Where alerts go is the owners' decision: anyone else may change only their own alert choices, and can point their own alerts only
+--     at their own address (before, any editor — even one limited to a single section — could send the household's daily alerts and
+--     digest anywhere). An address an owner typed for them stays as it is when they change something else. The rest of households_guard
+--     is unchanged from 0018.
 create or replace function public.households_guard() returns trigger language plpgsql security definer set search_path = '' as $$
-declare me text; o jsonb; n jsonb; mine text;
+declare me text; o jsonb; n jsonb; mine text; was text;
 begin
   if coalesce(current_setting('wealthpilot.deletion_rpc', true), '') = 'on' then return new; end if;
   if new.deletion_requested_at is distinct from old.deletion_requested_at or new.deletion_requested_by is distinct from old.deletion_requested_by
@@ -186,8 +215,10 @@ begin
     me := auth.uid()::text; o := coalesce(old.settings -> 'notify', '{}'::jsonb); n := coalesce(new.settings -> 'notify', '{}'::jsonb);
     if (n - 'members') is distinct from (o - 'members') then raise exception 'only an owner can change the household''s alert settings'; end if;
     if (coalesce(n -> 'members', '{}'::jsonb) - me) is distinct from (coalesce(o -> 'members', '{}'::jsonb) - me) then raise exception 'you can change only your own alert settings'; end if;
-    mine := nullif(btrim(coalesce(n -> 'members' -> me ->> 'email_to', '')), '');
-    if mine is not null and lower(mine) <> lower(coalesce((select email from auth.users where id = auth.uid()), '')) then raise exception 'alerts can only be sent to your own email address'; end if;
+    mine := nullif(btrim(coalesce(n -> 'members' -> me ->> 'email_to', '')), ''); was := nullif(btrim(coalesce(o -> 'members' -> me ->> 'email_to', '')), '');
+    if mine is not null and mine is distinct from was and lower(mine) <> lower(coalesce((select email from auth.users where id = auth.uid()), '')) then
+      raise exception 'alerts can only be sent to your own email address';
+    end if;
   end if;
   return new;
 end $$;
@@ -244,23 +275,55 @@ revoke execute on function public.start_period(uuid, text, date, date, text) fro
 grant execute on function public.start_period(uuid, text, date, date, text) to authenticated;
 
 -- 6. Account numbers stored before 0.25.1: bank-feed descriptions (and the account names the feed reported) kept the whole number. The
---    same rule the app now applies everywhere (lib/simplefin.ts maskDigits): a run of 5 or more digits, spaces or dashes allowed inside,
---    keeps only its last four ("ACH ACCT 4400123456" → "ACH ACCT ••3456"). Quiet: no activity-log row per transaction.
+--    same rule the app now applies to everything the bank feed and email capture bring in (lib/simplefin.ts maskDigits): a run of 5 or
+--    more digits, spaces or dashes allowed inside, keeps only its last four ("ACH ACCT 4400123456" → "ACH ACCT ••3456"). Only what came
+--    from the bank feed or email is changed — nothing a person typed or imported from their own file. Quiet: no activity-log row per change.
 create or replace function public.mask_digits(s text) returns text language plpgsql immutable set search_path = '' as $$
-declare m text; outp text := s;
+declare pat constant text := '[0-9](?:[ -]*[0-9]){4,}'; m text; outp text := s; i int := 0;
 begin
   if s is null then return null; end if;
-  for m in select (regexp_matches(s, '[0-9](?:[ -]*[0-9]){4,}', 'g'))[1] loop
-    outp := replace(outp, m, '••' || right(regexp_replace(m, '[^0-9]', '', 'g'), 4));
+  -- one run at a time, left to right: a masked run keeps 4 digits, so it never matches again (and a second pass changes nothing)
+  loop
+    m := substring(outp from pat);
+    exit when m is null or i >= 200;
+    outp := regexp_replace(outp, pat, '••' || right(regexp_replace(m, '[^0-9]', '', 'g'), 4));   -- no 'g': the first run only
+    i := i + 1;
   end loop;
   return outp;
 end $$;
 revoke all on function public.mask_digits(text) from public, anon, authenticated;
-do $$
+-- the scrub itself, kept as a function so the local database tests (supabase/tests) can run it on test rows; the API roles cannot call it
+create or replace function public.mask_stored_account_numbers() returns jsonb language plpgsql set search_path = '' as $$
+declare pat constant text := '[0-9](?:[ -]*[0-9]){4,}'; n_txn int; n_items int; n_log int; n_acct int; n_lists int;
 begin
   perform set_config('wealthpilot.quiet_audit', 'on', true);
-  update public.transactions set payee = public.mask_digits(payee) where payee ~ '[0-9](?:[ -]*[0-9]){4,}';
-  update public.accounts set name = public.mask_digits(name) where name ~ '[0-9](?:[ -]*[0-9]){4,}';
-  update public.email_items set payee = public.mask_digits(payee) where payee ~ '[0-9](?:[ -]*[0-9]){4,}';
+  -- the activity log's lines for those rows read "<payee> <amount>": only the payee part is masked (an amount is not an account number)
+  update public.activity_log a set summary = public.mask_digits(regexp_replace(a.summary, ' [^ ]*$', '')) || coalesce(substring(a.summary from '( [^ ]*)$'), '')
+    from public.transactions t
+    where a.table_name = 'transactions' and a.record_id = t.id::text and (coalesce(t.external_id, '') like 'sfin:%' or t.source = 'email')
+      and regexp_replace(a.summary, ' [^ ]*$', '') ~ pat;
+  update public.activity_log set summary = public.mask_digits(regexp_replace(summary, ' [^ ]*$', '')) || coalesce(substring(summary from '( [^ ]*)$'), '')
+    where table_name = 'email_items' and regexp_replace(summary, ' [^ ]*$', '') ~ pat;
+  update public.transactions set payee = public.mask_digits(payee) where (coalesce(external_id, '') like 'sfin:%' or source = 'email') and payee ~ pat;
+  get diagnostics n_txn = row_count;
+  update public.email_items set payee = public.mask_digits(payee) where payee ~ pat;
+  get diagnostics n_items = row_count;
+  -- accounts linked to the bank feed, or made by an import from the account list another app exported
+  update public.activity_log l set summary = public.mask_digits(l.summary) from public.accounts a
+    where l.table_name = 'accounts' and l.record_id = a.id::text and l.summary ~ pat
+      and (a.id::text in (select e.v from public.sync_connections c, jsonb_each_text(c.account_map) e(k, v)) or a.notes like 'Created by the % import%');
+  get diagnostics n_log = row_count;
+  update public.accounts a set name = public.mask_digits(a.name)
+    where a.name ~ pat and (a.id::text in (select e.v from public.sync_connections c, jsonb_each_text(c.account_map) e(k, v)) or a.notes like 'Created by the % import%');
+  get diagnostics n_acct = row_count;
+  -- the account list last seen at the bank (rewritten by every sync too)
+  update public.sync_connections c set discovered = (
+      select coalesce(jsonb_agg(case when jsonb_typeof(x.e) = 'object' and x.e ? 'name' then jsonb_set(x.e, '{name}', to_jsonb(public.mask_digits(x.e ->> 'name'))) else x.e end order by x.n), '[]'::jsonb)
+      from jsonb_array_elements(c.discovered) with ordinality as x(e, n))
+    where jsonb_typeof(c.discovered) = 'array' and exists (select 1 from jsonb_array_elements(c.discovered) d where d ->> 'name' ~ pat);
+  get diagnostics n_lists = row_count;
   perform set_config('wealthpilot.quiet_audit', 'off', true);
+  return jsonb_build_object('transactions', n_txn, 'email_items', n_items, 'accounts', n_acct, 'account_log_lines', n_log, 'bank_account_lists', n_lists);
 end $$;
+revoke all on function public.mask_stored_account_numbers() from public, anon, authenticated, service_role;
+select public.mask_stored_account_numbers();

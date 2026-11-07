@@ -38,11 +38,11 @@
 <h3>Your account</h3>
 <p>Your email address and password. The password is stored only as a one-way scrambled value by the sign-in service, so nobody — including us — can read it. If you turn them on: two-factor sign-in and its recovery codes (kept by the sign-in service), and passkeys you add on the website. A display name, if you or a household owner set one.</p>
 <h3>What you and your household enter</h3>
-<p>Accounts and balances, transactions, budgets, bills and payments, income and pay dates, debts, savings goals, investments and tax lots, property and vehicles, insurance policies, credit scores you record, tax details, the estate checklist, notes and comments, and any receipts or statements you attach. Wherever an account or card number appears, only its last four digits are kept.</p>
+<p>Accounts and balances, transactions, budgets, bills and payments, income and pay dates, debts, savings goals, investments and tax lots, property and vehicles, insurance policies, credit scores you record, tax details, the estate checklist, notes and comments, and any receipts or statements you attach. When the bank connection or email capture brings in an account or card number, only its last four digits are kept.</p>
 <h3>Household membership</h3>
 <p>Who belongs to each household, their role (owner, editor or viewer), which sections they may open, and pending invitations (the invited person’s email address and the access offered).</p>
 <h3>Activity history</h3>
-<p>Which member added, changed or deleted what, and when — so a household can see its own history. Owners see it under Settings → Activity.</p>
+<p>Which member added, changed or deleted what, and when — so a household can see its own history. Owners and members with full access see it under Settings → Activity log.</p>
 <h3>If you connect a bank (optional)</h3>
 <p>Bank sync works through SimpleFIN Bridge, a separate service you sign up for and connect to your bank yourself. With the connection key you give the app, it brings in your account names, balances and transactions once a day, and when you ask. The key is kept on our servers only — it is never sent to the app or to a browser — and only the last four digits of account numbers are saved.</p>
 <h3>If you connect email (optional, website only)</h3>
@@ -83,14 +83,14 @@
   <li>The database itself checks every request: a household’s information is returned only to its members, and only the sections each member may open.</li>
   <li>Bank connection keys are stored apart from everything else and are never sent to any app or browser.</li>
   <li>Two-factor sign-in, recovery codes, passkeys on the website, signing out other devices, an idle lock (with Face ID or fingerprint on phones), and a switch that hides amounts on screen.</li>
-  <li>Nightly backups are stored privately; only the household’s members can download them.</li>
+  <li>Nightly backups are stored privately; only the household’s owners and members with full access can download them.</li>
 </ul>
 <p>No system is perfectly secure. If a breach affects your information, you will be told as the law requires.</p>
 
 <h2 id="retention">5. How long it is kept, and deleting it</h2>
 <ul>
   <li><b>Your information</b> stays until you delete it, delete your household or delete your account.</li>
-  <li><b>Delete your account</b> any time in the app or on the website: Settings → Security → Delete my account. It happens immediately. Households that only you belong to are deleted with everything in them, including attached files and backups. Households you share stay with the other members, and your name in their history becomes “a former member”. <a href="./delete-account.html">Step-by-step instructions</a>.</li>
+  <li><b>Delete your account</b> any time in the app or on the website: Settings → Security → Delete my account. It happens immediately. Households that only you belong to are deleted with everything in them, including attached files and backups. Households you share stay with the other members, with the files you added to them; your name and address in their history become “a former member”, and nightly backups of those households made before the deletion are deleted within 30 days. <a href="./delete-account.html">Step-by-step instructions</a>.</li>
   <li><b>Delete a household</b> (owners): Settings → General → Delete this household. It is read-only for 7 days, so any owner can change their mind, and is then removed for good with its files and backups.</li>
   <li><b>Nightly backups</b> are deleted after 30 days. <b>Error reports</b> are deleted after 90 days.</li>
   <li>After a household is deleted, a small record that it existed is kept — its name, when it was deleted and how many files were removed — with none of its financial information.</li>

@@ -39,11 +39,19 @@ async function listAll(bucket: string, prefix: string, depth = 0): Promise<strin
   }
   return out
 }
-async function deleteHousehold(h: H) {
-  let files = 0
-  for (const bucket of ['attachments', 'backups']) { const paths = await listAll(bucket, h.id); for (let i = 0; i < paths.length; i += 100) { const { error } = await admin.storage.from(bucket).remove(paths.slice(i, i + 100)); if (error) throw error } files += paths.length }
-  await admin.from('deleted_households').upsert({ id: h.id, name: h.name, requested_by: null, requested_at: new Date().toISOString(), files_removed: files })
+/** The household's rows go first — that is the deletion that matters, and it takes every table with it — then its files, which nobody
+ *  can open once the household is gone (the storage rules go by membership). A file that fails to go is logged in app_errors (source
+ *  'account', with the household's id) for removal by hand, instead of leaving the household half-deleted (0.25.1 review). */
+async function deleteHousehold(h: H, userId: string) {
+  const buckets = ['attachments', 'backups'], lists = await Promise.all(buckets.map(b => listAll(b, h.id)))
   const { error } = await admin.from('households').delete().eq('id', h.id); if (error) throw new Error(`Could not delete ${h.name}: ${error.message}`)
+  let removed = 0; const left: string[] = []
+  for (const [k, bucket] of buckets.entries()) for (let i = 0; i < lists[k].length; i += 100) {
+    const chunk = lists[k].slice(i, i + 100); const { error: re } = await admin.storage.from(bucket).remove(chunk)
+    if (re) left.push(`${bucket}: ${chunk.length} file(s) — ${re.message}`); else removed += chunk.length
+  }
+  await admin.from('deleted_households').upsert({ id: h.id, name: h.name, requested_by: null, requested_at: new Date().toISOString(), files_removed: removed })
+  if (left.length) await admin.from('app_errors').insert({ source: 'account', message: `delete-account: files of a deleted household were left in storage — remove the ${h.id}/ folders by hand`.slice(0, 2000), context: { user: userId, household: h.id, left } })
 }
 const claims = (jwt: string): Record<string, unknown> => { try { const p = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'); return JSON.parse(atob(p.padEnd(Math.ceil(p.length / 4) * 4, '='))) } catch { return {} } }
 
@@ -65,12 +73,14 @@ Deno.serve(async (req) => {
     if (pe) return json(403, { error: /invalid/i.test(pe.message) ? 'That password is not right' : pe.message })
     // scope local: end only the session this check opened (the default, global, would also sign the person out of the app)
     await check.auth.signOut({ scope: 'local' }).catch(() => { /* the check session is thrown away either way */ })
-    // with two-factor on, the session asking must itself have passed it
-    const { data: f } = await admin.auth.admin.mfa.listFactors({ userId: user.id })
-    if ((f?.factors || []).some(x => x.status === 'verified') && claims(jwt).aal !== 'aal2') return json(403, { error: 'Two-factor is on: sign out, sign in again with your code, then delete the account' })
+    // with two-factor on, the session asking must itself have passed it — and when the check itself fails, nothing is deleted
+    const { data: f, error: me } = await admin.auth.admin.mfa.listFactors({ userId: user.id })
+    if (me) throw new Error('Checking two-factor sign-in failed: ' + me.message)
+    const twoFactor = [...(user.factors || []), ...(f?.factors || [])].some(x => x.status === 'verified')
+    if (twoFactor && claims(jwt).aal !== 'aal2') return json(403, { error: 'Two-factor is on: sign out, sign in again with your code, then delete the account' })
     const p = await plan(user.id)
     if (p.blocked.length) return json(409, { error: `You are the only owner of ${p.blocked.map(h => h.name).join(', ')}, which other people use. Make one of them an owner in Settings → Members, or delete that household, then try again.`, blocked: p.blocked })
-    for (const h of p.solo) await deleteHousehold(h)
+    for (const h of p.solo) await deleteHousehold(h, user.id)
     const { error: fe } = await admin.rpc('forget_user', { p_user: user.id }); if (fe) throw new Error('Clearing your name from shared households failed: ' + fe.message)
     const { error: de } = await admin.auth.admin.deleteUser(user.id); if (de) throw new Error('Deleting the sign-in failed: ' + de.message)
     return json(200, { ok: true, households_deleted: p.solo.length, households_left: p.shared.length })
