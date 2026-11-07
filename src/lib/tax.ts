@@ -1,7 +1,7 @@
 // Tax engine (0.7.0): income aggregation, federal / state / local / self-employment estimate, underpayment monitor, provisioning and filing projection.
 // Pure functions; every rate and threshold comes from taxTables.ts. This is a planning estimate, not a return.
-import type { Data, Settings } from '../app/data/types'
-import { FEDERAL, STATES, LATEST_TAX_YEAR, ohioYear, type FilingStatus, type FederalYear } from './taxTables'
+import type { Data, PaySchedule, Settings } from '../app/data/types'
+import { FEDERAL, STATES, LATEST_TAX_YEAR, TAX_YEARS, ohioYear, type FilingStatus, type FederalYear } from './taxTables'
 import { round2, sum } from './money'
 import { REC_PER_YEAR } from './recurring'
 import { holdingValue } from './portfolio'
@@ -18,17 +18,31 @@ export interface TaxProfile {
   seSetAsidePct: number; plannedEstimates: number; priorYearTax: number; priorYearAgi: number; autoAggregate: boolean
 }
 export const TAX_DEFAULTS: TaxProfile = { year: LATEST_TAX_YEAR, filingStatus: 'single', age65: 0, dependentsUnder17: 0, otherDependents: 0, state: 'OH', localRate: 0, schoolDistrictRate: 0, items: [], extraWithholdingPerCheck: 0, paychecksLeft: null, seSetAsidePct: 25, plannedEstimates: 0, priorYearTax: 0, priorYearAgi: 0, autoAggregate: true }
-export const tableFor = (year: number): FederalYear => FEDERAL[year] || FEDERAL[LATEST_TAX_YEAR]
+/** The federal table for a tax year: that year's, else the nearest year that has one (the later on a tie). TaxEstimate.tableYear says which was used. */
+export const tableFor = (year: number): FederalYear => FEDERAL[year] || (Number.isFinite(year) ? FEDERAL[TAX_YEARS.reduce((best, y) => { const a = Math.abs(y - year), b = Math.abs(best - year); return a < b || (a === b && y > best) ? y : best })] : FEDERAL[LATEST_TAX_YEAR])
+
+// ---------------- pay dates in a tax year ----------------
+const yStart = (y: number) => `${y}-01-01`, yEnd = (y: number) => `${y}-12-31`
+/** Pay dates a schedule has inside a tax year (optionally only from / to a date), from the same generator as Income & Pay Periods — so a job that starts
+ *  or ends during the year counts only its own paychecks (its Starts / Ends dates bound them). */
+export const payDatesInYear = (ps: PaySchedule, year: number, from = yStart(year), to = yEnd(year)) => payDates(ps, from > yStart(year) ? from : yStart(year), to < yEnd(year) ? to : yEnd(year))
+/** Schedules whose paychecks count toward a tax year: the active ones, plus ended ones with a last payday (Ends) — what they paid before then is
+ *  still that year's income. An ended schedule without an Ends date is left out: when it stopped is unknown. */
+const taxYearSchedules = (d: Data): PaySchedule[] => d.paySchedules.filter(p => p.status === 'Active' || (p.status === 'Ended' && !!p.ends_on)).map(p => p.status === 'Active' ? p : { ...p, status: 'Active' as const })
+const isW2 = (p: PaySchedule) => p.kind === 'salary' || p.kind === 'hourly'
+/** Paydays in the tax year up to and including asOf, and after asOf. */
+const paidBy = (ps: PaySchedule, year: number, asOf: string) => asOf < yStart(year) ? 0 : payDatesInYear(ps, year, yStart(year), asOf).length
+const leftAfter = (ps: PaySchedule, year: number, asOf: string) => asOf >= yEnd(year) ? 0 : payDatesInYear(ps, year, addDays(asOf, 1)).length
 
 // ---------------- aggregation ----------------
-/** Build income items from what the app already knows: pay schedules (gross × per year, or net when gross is blank), side-income schedules → 1099, holdings' yields → dividends/interest, income transactions in investment-like categories. Manual items are kept; auto items are regenerated. */
+/** Build income items from what the app already knows: pay schedules (gross × the paychecks each pays in the tax year, or net when gross is blank), side-income schedules → 1099, holdings' yields → dividends/interest, income transactions in investment-like categories. Manual items are kept; auto items are regenerated. */
 export function autoItems(d: Data, year: number): TaxItem[] {
-  const out: TaxItem[] = []; const per = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, quarterly: 4, yearly: 1, irregular: 0 } as Record<string, number>
-  for (const p of d.paySchedules.filter(p => p.status === 'Active')) {
-    const n = per[p.frequency] || 0; if (!n) continue
+  const out: TaxItem[] = []
+  for (const p of taxYearSchedules(d)) {
+    const n = payDatesInYear(p, year).length; if (!n) continue
     const gross = p.gross_amount != null && +p.gross_amount > 0 ? +p.gross_amount : +p.net_amount
     const kind: TaxItemKind = p.kind === 'salary' || p.kind === 'hourly' || p.kind === 'severance' ? 'w2' : p.kind === 'side' ? '1099' : p.kind === 'rental' ? 'rental' : p.kind === 'investment' ? 'dividends' : p.kind === 'benefit' || p.kind === 'support' ? 'other' : 'other'
-    out.push({ id: 'auto-pay-' + p.id, kind, label: `${p.name}${p.payer ? ' · ' + p.payer : ''} (${p.gross_amount ? 'gross' : 'net'} × ${n}/yr)`, amount: round2(gross * n), source: 'auto', note: p.gross_amount ? undefined : 'gross pay not set — using net' })
+    out.push({ id: 'auto-pay-' + p.id, kind, label: `${p.name}${p.payer ? ' · ' + p.payer : ''} (${p.gross_amount ? 'gross' : 'net'} × ${n} paycheck${n === 1 ? '' : 's'} in ${year})`, amount: round2(gross * n), source: 'auto', note: p.gross_amount ? undefined : 'gross pay not set — using net' })
   }
   const divs = round2(sum(d.holdings.filter(h => h.yield_pct != null && h.asset_class !== 'bond' && h.asset_class !== 'cash').map(h => holdingValue(h) * (+h.yield_pct! || 0) / 100)))
   const ints = round2(sum(d.holdings.filter(h => h.yield_pct != null && (h.asset_class === 'bond' || h.asset_class === 'cash')).map(h => holdingValue(h) * (+h.yield_pct! || 0) / 100)))
@@ -58,9 +72,11 @@ export function ohioMarginal(taxable: number, year: number): number { const O = 
 const bracketTax = (taxable: number, brs: { upTo: number | null; rate: number }[]) => { let tax = 0, lo = 0; for (const b of brs) { const hi = b.upTo ?? Infinity; if (taxable > lo) tax += (Math.min(taxable, hi) - lo) * b.rate; lo = hi; if (taxable <= hi) break } return tax }
 export const marginalRate = (taxable: number, brs: { upTo: number | null; rate: number }[]) => { let lo = 0; for (const b of brs) { const hi = b.upTo ?? Infinity; if (taxable <= hi) return b.rate; lo = hi } return brs[brs.length - 1].rate + 0 * lo }
 export interface TaxEstimate {
-  year: number; status: FilingStatus
+  /** the tax year asked for, and the year whose federal table was used (the nearest one when that year has no table) */
+  year: number; tableYear: number; status: FilingStatus
   income: { w2: number; se: number; dividends: number; interest: number; ltcg: number; rental: number; retirement: number; socialSecurity: number; taxableSS: number; other: number; total: number }
-  pretax: number; adjustments: number; seDeduction: number; agi: number; deduction: number; itemized: number; standard: number; taxableIncome: number; ordinaryTaxable: number
+  /** `deduction` = the larger of standard and itemized; `seniorDeduction` (2025–2028, filers 65+) comes off as well, itemizing or not */
+  pretax: number; adjustments: number; seDeduction: number; agi: number; deduction: number; itemized: number; standard: number; seniorDeduction: number; taxableIncome: number; ordinaryTaxable: number
   federal: { ordinary: number; ltcg: number; se: number; additionalMedicare: number; niit: number; credits: number; total: number; marginal: number; effective: number | null }
   state: { name: string; taxable: number; tax: number; rate: number }; local: { municipal: number; schoolDistrict: number; total: number }
   totalTax: number; effectiveAll: number | null
@@ -70,8 +86,10 @@ export interface TaxEstimate {
   paychecksLeft: number
   seSetAside: number
 }
+/** The main W-2 pay schedule for a tax year: the first active salary or hourly schedule that still pays after asOf that year, else the first one. */
+export function mainW2Schedule(d: Data, year: number, asOf = today()): PaySchedule | null { const w = d.paySchedules.filter(x => x.status === 'Active' && isW2(x)); return w.find(x => leftAfter(x, year, asOf) > 0) || w[0] || null }
 /** Paydays left in the tax year on the main W-2 schedule (after asOf). */
-export function paychecksRemaining(d: Data, year: number, asOf = today()): number { const ps = d.paySchedules.find(x => x.status === 'Active' && (x.kind === 'salary' || x.kind === 'hourly')); if (!ps) return 0; const end = `${year}-12-31`; return asOf > end ? 0 : payDates(ps, addDays(asOf, 1), end).length }
+export function paychecksRemaining(d: Data, year: number, asOf = today()): number { const ps = mainW2Schedule(d, year, asOf); return ps ? leftAfter(ps, year, asOf) : 0 }
 export const resolveProfile = (d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf = today()): TaxProfile => { const p: TaxProfile = { ...TAX_DEFAULTS, ...(s.tax || {}), ...(p0 || {}) }; return { ...p, paychecksLeft: p.paychecksLeft == null ? paychecksRemaining(d, p.year, asOf) : p.paychecksLeft } }
 /** The whole estimate. Taxable Social Security uses the simplified 85% rule above the thresholds; QBI, AMT, EITC and most credits are out of scope. */
 export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf = today()): TaxEstimate {
@@ -87,7 +105,13 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const totalIncome = round2(w2 + se + dividends + interest + ltcg + rental + retirement + taxableSS + other)
   const agi = round2(Math.max(0, totalIncome - pretax - adjustments - seDeduction))
   const standard = T.standardDeduction[st] + p.age65 * T.additionalDeduction65[st]; const deduction = Math.max(standard, itemized)
-  const taxableIncome = Math.max(0, round2(agi - deduction)); const ltcgTaxable = Math.min(ltcg + dividends * 0.0, taxableIncome)   // dividends treated as ordinary unless entered as capital gains
+  // 2025–2028 senior deduction (Schedule 1-A Part V; sources on FederalYear.senior): for the filer and, on a joint return, the spouse who is 65+, each
+  // $6,000 less 6% of MAGI above $75,000 ($150,000 joint), whether or not they itemize; none married filing separately. MAGI = AGI here (the foreign
+  // income exclusions that would be added back are not modelled). Dependents never count, so at most 2 people on a joint return and 1 otherwise.
+  const S = T.senior, seniorOver = S ? S.magiOver[st] : null
+  const seniors = S && seniorOver != null ? Math.min(Math.max(0, Math.floor(+p.age65 || 0)), st === 'mfj' ? 2 : 1) : 0
+  const seniorDeduction = S && seniorOver != null && seniors ? round2(seniors * Math.max(0, S.perPerson - S.phaseoutRate * Math.max(0, agi - seniorOver))) : 0
+  const taxableIncome = Math.max(0, round2(agi - deduction - seniorDeduction)); const ltcgTaxable = Math.min(ltcg + dividends * 0.0, taxableIncome)   // dividends treated as ordinary unless entered as capital gains
   const ordinaryTaxable = Math.max(0, taxableIncome - ltcgTaxable)
   const ordinary = round2(bracketTax(ordinaryTaxable, T.brackets[st]))
   // long-term gains stack on top of ordinary income: 0% up to zeroUpTo, 15% to fifteenUpTo, 20% above
@@ -108,9 +132,12 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const totalTax = round2(fedTotal + stTax + municipal + schoolDistrict)
   // payments
   const withheld = by('withholding'), estimates = by('estimated_payment'), extra = round2(p.extraWithholdingPerCheck * p.paychecksLeft)
-  // projected remaining withholding: assume withholding so far continues at the same rate for the paychecks left (only if a W-2 schedule exists)
-  const paySched = d.paySchedules.find(x => x.status === 'Active' && (x.kind === 'salary' || x.kind === 'hourly')); const perYear = paySched ? ({ weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 } as Record<string, number>)[paySched.frequency] || 0 : 0
-  const projectedWithholding = perYear && p.paychecksLeft > 0 && withheld > 0 ? round2(withheld / Math.max(1, perYear - p.paychecksLeft) * p.paychecksLeft) : 0
+  // projected remaining withholding: the tax withheld so far ÷ the W-2 paychecks actually paid this tax year (from the pay schedules' dates — a job that
+  // started in September has not paid since January), continued for the W-2 paychecks still to come. The main schedule's count is the Paychecks left
+  // slider's, so a what-if there moves it; any other W-2 schedule keeps its own dates. Nothing is projected before a W-2 paycheck has been paid.
+  const w2Sched = taxYearSchedules(d).filter(isW2); const main = mainW2Schedule(d, p.year, asOf)
+  const paidSoFar = sum(w2Sched.map(x => paidBy(x, p.year, asOf))), othersLeft = sum(w2Sched.filter(x => x.id !== main?.id).map(x => leftAfter(x, p.year, asOf)))
+  const projectedWithholding = withheld > 0 && paidSoFar > 0 ? round2(withheld / paidSoFar * Math.max(0, p.paychecksLeft + othersLeft)) : 0
   const paidTotal = round2(withheld + estimates + projectedWithholding + extra + p.plannedEstimates)
   const balance = round2(paidTotal - fedTotal)
   // safe harbor (federal): 90% of this year's tax, or 100% (110% if prior AGI > 150k) of last year's tax, whichever is smaller
@@ -122,9 +149,9 @@ export function estimateTax(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf
   const estimatesLeft = T.calendar.filter(c => c.kind === 'estimate' && c.date >= asOf).length; const quarterlyNeeded = round2(shortfall > 0 ? shortfall / Math.max(1, estimatesLeft) : 0)   // only deadlines still ahead
   const seSetAside = round2(Math.max(0, se) * (p.seSetAsidePct || 0) / 100)
   return {
-    year: p.year, status: st,
+    year: p.year, tableYear: T.year, status: st,
     income: { w2, se, dividends, interest, ltcg, rental, retirement, socialSecurity, taxableSS, other, total: totalIncome },
-    pretax, adjustments, seDeduction, agi, deduction, itemized, standard, taxableIncome, ordinaryTaxable,
+    pretax, adjustments, seDeduction, agi, deduction, itemized, standard, seniorDeduction, taxableIncome, ordinaryTaxable,
     federal: { ordinary, ltcg: ltcgTax, se: seTax, additionalMedicare: addMed, niit, credits: fedCredits, total: fedTotal, marginal, effective: agi > 0 ? round2(fedTotal / agi) : null },
     state: { name: rule.name, taxable: stTaxable, tax: stTax, rate: stRate }, local: { municipal, schoolDistrict, total: round2(municipal + schoolDistrict) },
     totalTax, effectiveAll: totalIncome > 0 ? round2(totalTax / totalIncome) : null,

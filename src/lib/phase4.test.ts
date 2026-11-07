@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { setToday } from './dates'
 import { aprAt, hasPromo, promoMonthsLeft, payoffProjection, simulate, promoAlerts } from './debts'
-import { guaranteedIncome, ssAnnual, ssStart, steadyGuaranteed, drawdown, projectRetirement, monteCarlo, RETIREMENT_DEFAULTS } from './retirement'
+import { guaranteedIncome, ssAnnual, ssStart, ssClaimFactor, steadyGuaranteed, drawdown, projectRetirement, monteCarlo, RETIREMENT_DEFAULTS } from './retirement'
 import { buildPlan, normalizePlan, applyPlanPatches, affordableExtra, PLAN_DEFAULTS } from './plan'
 import { normalize, metrics, compare, scenariosOf, sameAssumptions } from './scenarios'
 import { normSymbol, quoteSymbol, isAutoPriced, parseYahooChart, planPriceUpdates, symbolsToFetch, priceFreshness, nyDate, yahooUrl } from './prices'
@@ -54,8 +54,11 @@ describe('guaranteed retirement income', () => {
   it('a pension without COLA loses purchasing power', () => { const i = { ...base, ssMonthly: 0, pensions: [{ id: 'p', name: 'x', monthly: 1000, startAge: 62, cola: false }] }; expect(guaranteedIncome(i, 72)).toBeLessThan(guaranteedIncome(i, 62)); expect(guaranteedIncome(i, 72)).toBeCloseTo(12000 / Math.pow(1.025, 10), 0) })
   it('legacy annual field still works', () => { const i = { ...RETIREMENT_DEFAULTS, socialSecurity: 24000 }; expect(ssAnnual(i)).toBe(24000) })
   it('bridge years before Social Security raise what the portfolio must hold', () => {
-    const early = projectRetirement(500000, base); const late = projectRetirement(500000, { ...base, ssStartAge: 62 })
-    expect(early.needed).toBeGreaterThan(late.needed); expect(early.bridgeYears).toBe(5); expect(early.guaranteed).toBe(42000)
+    // same $2,500 a month paid either way (0.25.1: the benefit entered is the age-67 amount, so claiming at 62 needs 2,500 ÷ 70% entered)
+    const early = projectRetirement(500000, base); const late = projectRetirement(500000, { ...base, ssStartAge: 62, ssMonthly: 2500 / ssClaimFactor(62) })
+    expect(early.needed).toBeGreaterThan(late.needed); expect(early.bridgeYears).toBe(5); expect(early.guaranteed).toBe(42000); expect(late.guaranteed).toBe(42000)
+    // with the same age-67 benefit, claiming at 62 pays 70% of it for life, which needs more than the five bridge years
+    expect(projectRetirement(500000, { ...base, ssStartAge: 62 }).needed).toBeGreaterThan(early.needed)
   })
   it('the haircut changes readiness materially', () => {
     const rich = { ...base, desiredIncome: 110000, annualContribution: 6000 }; const full = projectRetirement(100000, rich), cut = projectRetirement(100000, { ...rich, ssHaircut: 0.25 }); expect(cut.readiness).toBeLessThan(full.readiness)

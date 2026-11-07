@@ -258,7 +258,7 @@ export const reports: GuidePage = {
     {
       title: 'Tax estimate',
       match: '^Tax estimate',
-      what: 'A planning estimate of federal, state and local tax for the year the report ends in (the year is in the heading). It is not a return.',
+      what: 'A planning estimate of federal, state and local tax for the year the report ends in (the year is in the heading). It is not a return. Federal tables are built in for 2025 and 2026; for any other year the nearest year\'s tables are used, and the heading ("with 2026 tax rules") and the first note say so.',
       fields: [
         { term: 'Total tax', text: 'Federal, state and local tax for the year.' },
         { term: 'Projected refund / Projected due', text: 'Federal withholding and estimated payments minus federal tax: a refund when you have paid more, an amount due when less.' },
