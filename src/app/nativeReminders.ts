@@ -32,7 +32,9 @@ export async function rescheduleReminders(data: Data): Promise<number> {
   const list = billReminders({ today: today(), recurring: data.recurring as never, occurrences: data.occurrences as never, transactions: data.transactions as never }).filter(r => new Date(r.at).getTime() > now + 60000)
   const sig = list.map(r => r.key + r.at + r.title + r.body).join('|'); if (sig === last) return list.length
   const L = await ln(); await cancelAll()
-  if (list.length) await L.schedule({ notifications: list.map(r => ({ id: r.id, title: r.title, body: r.body, schedule: { at: new Date(r.at), allowWhileIdle: false }, extra: { url: r.url }, smallIcon: 'ic_stat_wealthpilot' })) })
+  // inexact on purpose: a 9 AM bill reminder may arrive a few minutes late, but asking for exact alarms would send Android 12+ users to the
+  // "Alarms & reminders" settings screen every time the list changes (the plugin's default) — and the app does not hold that permission
+  if (list.length) await L.schedule({ notifications: list.map(r => ({ id: r.id, title: r.title, body: r.body, schedule: { at: new Date(r.at), allowWhileIdle: true }, isExactNotification: false, extra: { url: r.url }, smallIcon: 'ic_stat_wealthpilot' })) })
   last = sig; return list.length
 }
 

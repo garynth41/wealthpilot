@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -35,4 +36,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- bill reminders on this phone (Android 13+ asks the person first) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- reminders use inexact alarms (src/app/nativeReminders.ts), so the exact-alarm access the notifications plugin asks for is removed -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />
 </manifest>
