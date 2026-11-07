@@ -4,7 +4,7 @@ import { parseNum, fmtMoney, fm2 } from './money'
 import { payDates, payPeriodFor, expectedIncome, monthlyIncome } from './paySchedule'
 import { spanFor } from './periods'
 import { dueDates, upcoming, monthlyCommitments } from './recurring'
-import { periodStat, rangeStat, trendSeries, insights } from './budget'
+import { periodStat, rangeStat, trendSeries, insights, commitments } from './budget'
 import { payoffProjection, simulate, debtTotals } from './debts'
 import { cashCalendar, burn, runwayProjection, netWorthSeries } from './forecast'
 import { goalProgress } from './goals'
@@ -156,7 +156,8 @@ describe('intelligence: health', () => {
   })
   it('a household with no income gets null ratios and a zero-ish cash-flow score', () => {
     const d = withTx([{ date: '2026-10-05', payee: 'Kroger', amount: 50 }]); const h = healthIndicators({ ...d, accounts: d.accounts.map(a => ({ ...a, balance: 0 })) }, SETTINGS_DEFAULTS, 3, T0)
-    expect(h.savingsRate).toBeNull(); expect(h.expenseRatio).toBeNull(); expect(h.cashFlowScore).toBe(0); expect(h.burnRate).toBeCloseTo(50 / 3, 2)
+    // 0.25.1: the average stands on the months on file — tracking began Oct 5, so it is one month (at least one), not three
+    expect(h.savingsRate).toBeNull(); expect(h.expenseRatio).toBeNull(); expect(h.cashFlowScore).toBe(0); expect(h.burnRate).toBeCloseTo(50, 2); expect(h.months).toBe(1)
   })
 })
 describe('intelligence: subscription last-charged', () => {
@@ -393,7 +394,8 @@ describe('reports (0.18.0): custom ranges, statement, income, budget, bills, tre
     expect(inc.kpis[0].value).toBeCloseTo(income, 2); expect(inc.table!.rows.reduce((a, r) => a + +r[2], 0)).toBeCloseTo(income, 1)
     const st = rep.sections.find(x => x.id === 'statement')!; const [begin, change, end] = [st.kpis[0].value, st.kpis[1].value, st.kpis[2].value]; expect(begin + change).toBeCloseTo(end, 1)
     const bud = rep.sections.find(x => x.id === 'budget')!; expect(bud.kpis[0].value).toBeGreaterThan(0); expect(bud.table!.rows.every(r => Math.abs(+r[2] - +r[3] - +r[4]) < 0.01)).toBe(true)   // variance = planned − actual
-    const bills = rep.sections.find(x => x.id === 'bills')!; expect(bills.table!.rows.length).toBeGreaterThan(0); expect(bills.kpis[0].value).toBeCloseTo(monthlyCommitments(data).total, 1)
+    // 0.25.1: monthly commitments include the cards and loans that have no recurring payment item (the Discover card's planned payment)
+    const bills = rep.sections.find(x => x.id === 'bills')!; expect(bills.table!.rows.length).toBeGreaterThan(0); expect(bills.kpis[0].value).toBeCloseTo(commitments(data).total, 1); expect(commitments(data).total - monthlyCommitments(data).total).toBeCloseTo(120, 2)
     const tr = rep.sections.find(x => x.id === 'trend')!; expect(tr.table!.rows).toHaveLength(12); expect(tr.table!.rows[11][0]).toBe('2026-10')
     const acc = rep.sections.find(x => x.id === 'accounts')!; expect(acc.table!.rows.every(r => Math.abs(+r[2] - +r[3] - +r[4]) < 0.01)).toBe(true)   // net = in − out
     const debts = rep.sections.find(x => x.id === 'debts')!; expect(debts.kpis[0].value).toBeCloseTo(debtTotals(data).balance, 1)

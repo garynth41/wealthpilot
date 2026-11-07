@@ -3,7 +3,7 @@
 import type { Data, Settings, Account, Transaction } from '../app/data/types'
 import { addDays, monthEnd, monthStart, mAdd, today, diffDays, fmtDY } from './dates'
 import { round2, sum, fmtMoney } from './money'
-import { rangeStat, inRange, spentIn } from './budget'
+import { rangeStat, inRange, spentIn, monthlyAverages, commitments, accountLookup, flowOf } from './budget'
 import { merchantAnalysis, merchantKey } from './intelligence'
 import { netWorthSeries } from './forecast'
 import { netWorth, liabilities, debtBal, debtPlanned, debtPaidInRange, utilization, balanceOf, assets, cashOnHand } from './accounts'
@@ -79,26 +79,32 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
   const r = periodRange(kind, anchor, asOf, custom); const cur = rangeStat(d, r.from, r.to), prev = rangeStat(d, r.prevFrom, r.prevTo)
   const out: ReportSection[] = []
   const period = (id: SectionId) => sections.includes(id)
-  const net = round2(cur.income - cur.spend - cur.debt), prevNet = round2(prev.income - prev.spend - prev.debt)
-  const rate = cur.income > 0 ? round2((cur.income - cur.spend - cur.debt) / cur.income) : null, prevRate = prev.income > 0 ? round2((prev.income - prev.spend - prev.debt) / prev.income) : null
+  // kept and the savings rate by the one rule every page uses (rangeStat): income − spending − loan payments; card payments are moving money
+  const net = round2(cur.net), prevNet = round2(prev.net)
+  const rate = cur.rate != null ? round2(cur.rate) : null, prevRate = prev.rate != null ? round2(prev.rate) : null
   if (sections.includes('summary')) out.push({ id: 'summary', title: 'Summary', kpis: [
     { label: 'Income', value: round2(cur.income), fmt: 'money', prev: round2(prev.income) }, { label: 'Spending', value: round2(cur.spend), fmt: 'money', prev: round2(prev.spend) },
-    { label: 'Debt payments', value: round2(cur.debt), fmt: 'money', prev: round2(prev.debt) }, { label: 'Net (kept)', value: net, fmt: 'money', prev: prevNet },
+    { label: 'Loan payments', value: round2(cur.loans), fmt: 'money', prev: round2(prev.loans) }, { label: 'Card payments', value: round2(cur.cards), fmt: 'money', prev: round2(prev.cards) }, { label: 'Net (kept)', value: net, fmt: 'money', prev: prevNet },
     ...(rate != null ? [{ label: 'Savings rate', value: rate, fmt: 'pct' as const, prev: prevRate }] : []), { label: 'Net worth today', value: round2(netWorth(d).net), fmt: 'money' as const } ],
-    notes: [`${r.label}: ${r.from} to ${r.to}; compared with ${r.prevFrom} to ${r.prevTo}.`, ...coverageNotes(d, r.from, r.to, r.prevFrom), ...(cur.income > 0 && net < 0 ? [`Spending and debt payments exceeded income by ${Math.abs(net).toFixed(2)}.`] : [])] })
+    notes: [`${r.label}: ${r.from} to ${r.to}; compared with ${r.prevFrom} to ${r.prevTo}.`, ...coverageNotes(d, r.from, r.to, r.prevFrom),
+      ...(cur.cards > 0 ? [`Net (kept) is income minus spending minus loan payments. The ${fmtMoney(cur.cards)} paid to cards is not taken off again: what was bought on the cards is already in spending.`] : []),
+      ...(cur.income > 0 && net < 0 ? [`Spending and loan payments exceeded income by ${Math.abs(net).toFixed(2)}.`] : [])] })
 
   if (period('statement')) {
     // classic cash-flow statement: where cash came from and went, with beginning and ending cash reconstructed from today's verified balances
     const cashAccts = assets(d).filter(a => a.include_in_cash || (s.includeRetirementInCash && a.kind === 'retirement'))
     const flows = cashAccts.map(a => accountFlows(d, a, r.from, r.to)); const after = cashAccts.map(a => accountFlows(d, a, addDays(r.to, 1), '9999-12-31'))
     const endCash = round2(cashOnHand(d, s) - sum(after.map(f => f.net))), change = round2(sum(flows.map(f => f.net))), beginCash = round2(endCash - change)
-    const toSav = cur.saved, debt = cur.debt, other = round2(change - (cur.income - cur.spend - debt - toSav))
-    out.push({ id: 'statement', title: 'Cash flow statement', kpis: [{ label: 'Beginning cash', value: beginCash, fmt: 'money' }, { label: 'Net change in cash', value: change, fmt: 'money', prev: round2(prev.income - prev.spend - prev.debt - prev.saved) }, { label: 'Ending cash', value: endCash, fmt: 'money' }, { label: 'Operating cash flow', value: round2(cur.income - cur.spend), fmt: 'money', prev: round2(prev.income - prev.spend) }],
-      table: { headers: ['Line', 'This period', 'Previous'], rows: [['Income received', round2(cur.income), round2(prev.income)], ['Spending', round2(-cur.spend), round2(-prev.spend)], ['= Operating cash flow', round2(cur.income - cur.spend), round2(prev.income - prev.spend)], ['Debt payments', round2(-debt), round2(-prev.debt)], ['Moved to savings & investments', round2(-toSav), round2(-prev.saved)], ['Other transfers & adjustments', other, ''], ['= Net change in cash', change, ''], ['Beginning cash', beginCash, ''], ['Ending cash', endCash, '']] },
-      notes: [`Cash = the ${cashAccts.length} account${cashAccts.length === 1 ? '' : 's'} counted as cash on hand. Ending cash is today's verified balance less any activity after ${r.to}; "other" covers transfers between cash accounts, refunds and balance adjustments.`] })
+    // what is bought on a card or loan is spending when it is bought but leaves cash only when the card is paid: add it back, then take the
+    // card and loan payments off (0.25.1)
+    const toSav = cur.saved, cash = (x: typeof cur) => round2(x.income - x.spend + x.onDebt - x.cards - x.loans - x.saved), other = round2(change - cash(cur))
+    out.push({ id: 'statement', title: 'Cash flow statement', kpis: [{ label: 'Beginning cash', value: beginCash, fmt: 'money' }, { label: 'Net change in cash', value: change, fmt: 'money', prev: cash(prev) }, { label: 'Ending cash', value: endCash, fmt: 'money' }, { label: 'Operating cash flow', value: round2(cur.income - cur.spend), fmt: 'money', prev: round2(prev.income - prev.spend) }],
+      table: { headers: ['Line', 'This period', 'Previous'], rows: [['Income received', round2(cur.income), round2(prev.income)], ['Spending', round2(-cur.spend), round2(-prev.spend)], ['= Operating cash flow', round2(cur.income - cur.spend), round2(prev.income - prev.spend)], ['Spending on cards, paid later', round2(cur.onDebt), round2(prev.onDebt)], ['Card payments', round2(-cur.cards), round2(-prev.cards)], ['Loan payments', round2(-cur.loans), round2(-prev.loans)], ['Moved to savings & investments', round2(-toSav), round2(-prev.saved)], ['Other transfers & adjustments', other, ''], ['= Net change in cash', change, ''], ['Beginning cash', beginCash, ''], ['Ending cash', endCash, '']] },
+      notes: [`Cash = the ${cashAccts.length} account${cashAccts.length === 1 ? '' : 's'} counted as cash on hand. Ending cash is today's verified balance less any activity after ${r.to}. What is bought on a card counts as spending when it is bought but leaves cash only when the card is paid — so it is added back, and the card payments come off; "other" covers transfers between cash accounts and balance adjustments.`] })
   }
   if (period('income')) {
-    const inc = (from: string, to: string) => d.transactions.filter(t => live(t) && t.kind === 'income' && inRange(t, from, to))
+    const acctOf = accountLookup(d)   // a credit on a card or loan is a refund, not income (0.25.1)
+    const inc = (from: string, to: string) => d.transactions.filter(t => live(t) && !t.exclude_from_budget && flowOf(t, acctOf) === 'income' && inRange(t, from, to))
     const curI = inc(r.from, r.to), prevI = inc(r.prevFrom, r.prevTo); const key = (t: Transaction) => { const ps = t.pay_schedule_id && d.paySchedules.find(p => p.id === t.pay_schedule_id); return ps ? ps.name : (t.payee || '').trim() ? merchantKey(t.payee) : 'Other income' }
     const name = new Map<string, string>(); curI.concat(prevI).forEach(t => { const k = key(t); if (!name.has(k)) { const ps = t.pay_schedule_id && d.paySchedules.find(p => p.id === t.pay_schedule_id); name.set(k, ps ? ps.name : (t.payee || '').trim() || 'Other income') } })
     const tot = (xs: Transaction[]) => { const m: Record<string, { n: number; v: number }> = {}; xs.forEach(t => { const k = key(t); m[k] = { n: (m[k]?.n || 0) + 1, v: round2((m[k]?.v || 0) + t.amount) } }); return m }
@@ -135,22 +141,24 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
     const paidFor = (id: string) => round2(sum(ups.filter(u => u.r.id === id && u.status === 'paid').map(u => u.amount)))
     const rows = act.map(x => [x.name, x.kind === 'subscription' ? 'Subscription' : x.kind === 'debt_payment' ? 'Debt payment' : x.kind === 'savings' ? 'Savings' : x.kind === 'transfer' ? 'Transfer' : 'Bill', x.frequency.replace(/_/g, ' '), +x.amount || 0, round2(recMonthly(x)), round2((+x.amount || 0) * REC_PER_YEAR[x.frequency]), paidFor(x.id), nextDue(x, addDays(asOf, 1)) || '', x.autopay ? 'autopay' : ''] as Array<string | number>).sort((a, b) => +b[4] - +a[4])
     const subs = act.filter(x => x.kind === 'subscription')
-    out.push({ id: 'bills', title: 'Bills & subscriptions', kpis: [{ label: 'Monthly commitments', value: round2(sum(act.map(recMonthly))), fmt: 'money' }, { label: 'Subscriptions / month', value: round2(sum(subs.map(recMonthly))), fmt: 'money' }, { label: 'Subscriptions / year', value: round2(sum(subs.map(recMonthly)) * 12), fmt: 'money' }, { label: 'Paid this period', value: round2(sum(rows.map(x => +x[6]))), fmt: 'money' }, { label: 'Active items', value: act.length, fmt: 'num' }],
-      table: { headers: ['Item', 'Kind', 'Frequency', 'Amount', 'Per month', 'Per year', 'Paid this period', 'Next due', 'Autopay'], rows }, notes: ups.filter(u => u.status === 'overdue').length ? [`${ups.filter(u => u.status === 'overdue').length} item(s) in this range are overdue.`] : [] })
+    const com = commitments(d)   // 0.25.1: cards and loans without a recurring payment item count too, as on the Bills page
+    out.push({ id: 'bills', title: 'Bills & subscriptions', kpis: [{ label: 'Monthly commitments', value: com.total, fmt: 'money' }, { label: 'Subscriptions / month', value: round2(sum(subs.map(recMonthly))), fmt: 'money' }, { label: 'Subscriptions / year', value: round2(sum(subs.map(recMonthly)) * 12), fmt: 'money' }, { label: 'Paid this period', value: round2(sum(rows.map(x => +x[6]))), fmt: 'money' }, { label: 'Active items', value: act.length, fmt: 'num' }],
+      table: { headers: ['Item', 'Kind', 'Frequency', 'Amount', 'Per month', 'Per year', 'Paid this period', 'Next due', 'Autopay'], rows }, notes: [...(com.accountPayments > 0 ? [`Monthly commitments include ${fmtMoney(com.accountPayments)} of planned card and loan payments that have no recurring item (see the Debt section).`] : []), ...(ups.filter(u => u.status === 'overdue').length ? [`${ups.filter(u => u.status === 'overdue').length} item(s) in this range are overdue.`] : [])] })
   }
   if (sections.includes('cashflow')) {
     const months: string[] = []; for (let k = r.from.slice(0, 7); k <= r.to.slice(0, 7); k = mAdd(k, 1)) months.push(k)
-    const rows = months.map(k => { const a = monthStart(k) < r.from ? r.from : monthStart(k), b = monthEnd(k) > r.to ? r.to : monthEnd(k); const st = rangeStat(d, a, b); return [k, round2(st.income), round2(st.spend), round2(st.debt), round2(st.income - st.spend - st.debt)] as Array<string | number> })
-    out.push({ id: 'cashflow', title: 'Cash flow by month', kpis: [{ label: 'Money in', value: round2(cur.income), fmt: 'money' }, { label: 'Money out', value: round2(cur.spend + cur.debt), fmt: 'money' }, { label: 'Net', value: net, fmt: 'money', prev: prevNet }],
-      table: { headers: ['Month', 'Income', 'Spending', 'Debt payments', 'Net'], rows }, notes: [] })
+    const rows = months.map(k => { const a = monthStart(k) < r.from ? r.from : monthStart(k), b = monthEnd(k) > r.to ? r.to : monthEnd(k); const st = rangeStat(d, a, b); return [k, round2(st.income), round2(st.spend), round2(st.loans), round2(st.cards), round2(st.net)] as Array<string | number> })
+    out.push({ id: 'cashflow', title: 'Cash flow by month', kpis: [{ label: 'Money in', value: round2(cur.income), fmt: 'money' }, { label: 'Money out', value: round2(cur.out), fmt: 'money' }, { label: 'Net', value: net, fmt: 'money', prev: prevNet }],
+      table: { headers: ['Month', 'Income', 'Spending', 'Loan payments', 'Card payments', 'Net'], rows }, notes: cur.cards > 0 ? ['Net = income − spending − loan payments. Card payments are shown but not counted: what was bought on the cards is already in spending.'] : [] })
   }
   if (period('trend')) {
     const months: string[] = []; for (let k = mAdd(r.to.slice(0, 7), -11); k <= r.to.slice(0, 7); k = mAdd(k, 1)) months.push(k)
-    const rows = months.map(k => { const st = rangeStat(d, monthStart(k), monthEnd(k) > asOf ? asOf : monthEnd(k)); const net = round2(st.income - st.spend - st.debt); return [k, round2(st.income), round2(st.spend), round2(st.debt), round2(st.saved), net, st.income > 0 ? round2(net / st.income) : ''] as Array<string | number> })
-    const withData = rows.filter(x => +x[1] > 0 || +x[2] > 0); const avg = (i: number) => withData.length ? round2(sum(withData.map(x => +x[i])) / withData.length) : 0
-    const best = withData.slice().sort((a, b) => +b[5] - +a[5])[0]
-    out.push({ id: 'trend', title: '12-month trend', kpis: [{ label: 'Average monthly income', value: avg(1), fmt: 'money' }, { label: 'Average monthly spending', value: avg(2), fmt: 'money' }, { label: 'Average kept per month', value: avg(5), fmt: 'money' }, ...(best ? [{ label: `Best month (${best[0]})`, value: +best[5], fmt: 'money' as const }] : []), { label: 'Months with data', value: withData.length, fmt: 'num' }],
-      table: { headers: ['Month', 'Income', 'Spending', 'Debt payments', 'Saved', 'Net', 'Savings rate'], rows }, notes: withData.length < 12 ? [`Only ${withData.length} of the last 12 months have transactions on file — import older statements for a full-year view.`] : [] })
+    const rows = months.map(k => { const st = rangeStat(d, monthStart(k), monthEnd(k) > asOf ? asOf : monthEnd(k)); return [k, round2(st.income), round2(st.spend), round2(st.loans), round2(st.saved), round2(st.net), st.rate != null ? round2(st.rate) : ''] as Array<string | number> })
+    // the averages stand on the completed months on file (0.25.1): not the month still running, not the empty months before the first transaction
+    const av = monthlyAverages(d, months, asOf); const best = rows.filter(x => av.used.includes(String(x[0]))).sort((a, b) => +b[5] - +a[5])[0]
+    const nMonths = Math.abs(av.months - Math.round(av.months)) < 0.05 ? String(Math.round(av.months)) : av.months.toFixed(1)
+    out.push({ id: 'trend', title: '12-month trend', kpis: [{ label: 'Average monthly income', value: round2(av.income), fmt: 'money' }, { label: 'Average monthly spending', value: round2(av.spend), fmt: 'money' }, { label: 'Average kept per month', value: round2(av.net), fmt: 'money' }, ...(best ? [{ label: `Best month (${best[0]})`, value: +best[5], fmt: 'money' as const }] : []), { label: 'Months averaged', value: round2(av.months), fmt: 'num' }],
+      table: { headers: ['Month', 'Income', 'Spending', 'Loan payments', 'Saved', 'Net', 'Savings rate'], rows }, notes: av.months < 11.95 ? [`The averages cover the ${av.months > 0 ? nMonths : 'no'} completed month${nMonths === '1' ? '' : 's'} on file since the first transaction (the month still running is left out) — import older statements for a full-year view.`] : [] })
   }
   if (period('accounts')) {
     const accts = d.accounts.filter(a => a.status === 'Active').sort((a, b) => a.sort_order - b.sort_order)
@@ -161,8 +169,8 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
   }
   if (period('debts')) {
     const ls = liabilities(d).filter(a => debtBal(a, d) >= 1 || debtPaidInRange(d, a, r.from, r.to) > 0)
-    const rows = ls.map(a => { const bal = debtBal(a, d), pay = debtPlanned(a), paid = round2(debtPaidInRange(d, a, r.from, r.to)), pr = payoffProjection(bal, m => aprAt(a, m, asOf), Math.max(pay, 1)), u = utilization(a), rate = aprAt(a, 0, asOf); return [a.name, ACCOUNT_KIND_LABEL[a.kind], bal, rate, +a.minimum_payment || 0, pay, paid, round2(bal * rate / 100 / 12), isFinite(pr.months) ? pr.months : '', u != null ? round2(u) : ''] as Array<string | number> }).sort((a, b) => +b[2] - +a[2])
-    const sim = simulate(liabilities(d), 0, 'avalanche'); const total = round2(sum(rows.map(x => +x[2])))
+    const rows = ls.map(a => { const bal = debtBal(a, d), pay = debtPlanned(a), paid = round2(debtPaidInRange(d, a, r.from, r.to)), pr = payoffProjection(bal, m => aprAt(a, m, asOf), Math.max(pay, 1)), u = utilization(a, d), rate = aprAt(a, 0, asOf); return [a.name, ACCOUNT_KIND_LABEL[a.kind], bal, rate, +a.minimum_payment || 0, pay, paid, round2(bal * rate / 100 / 12), isFinite(pr.months) ? pr.months : '', u != null ? round2(u) : ''] as Array<string | number> }).sort((a, b) => +b[2] - +a[2])
+    const sim = simulate(liabilities(d), 0, 'avalanche', false, d); const total = round2(sum(rows.map(x => +x[2])))
     out.push({ id: 'debts', title: 'Debt', kpis: [{ label: 'Total owed', value: total, fmt: 'money' }, { label: 'Paid this period', value: round2(sum(rows.map(x => +x[6]))), fmt: 'money' }, { label: 'Interest per month (est.)', value: round2(sum(rows.map(x => +x[7]))), fmt: 'money' }, { label: 'Planned per month', value: round2(sum(rows.map(x => +x[5]))), fmt: 'money' }, ...(total > 0 && isFinite(sim.months) ? [{ label: 'Debt-free in (months)', value: sim.months, fmt: 'num' as const }] : [])],
       table: { headers: ['Account', 'Type', 'Balance', 'APR %', 'Minimum', 'Planned', 'Paid this period', 'Interest / mo', 'Months to payoff', 'Utilization'], rows }, notes: total > 0 ? [`At the planned payments (avalanche order) the last balance clears in about ${isFinite(sim.months) ? sim.months + ' months' : 'more than 30 years'}, paying roughly ${fmtMoney(sim.interest)} in interest.`,
         // 0.25.1: APR % and Interest / mo are the rate in force today; say when a promotional rate steps up
@@ -181,8 +189,9 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
     const startPt = at(r.from) || series[0], endPt = at(r.to) || series[series.length - 1]; const nw = netWorth(d); const accts = d.accounts.filter(a => a.status === 'Active' && a.include_in_net_worth).sort((a, b) => a.sort_order - b.sort_order)
     const exactStart = !!at(r.from)
     out.push({ id: 'networth', title: 'Net worth', kpis: [{ label: `Net worth ${endPt.date === today() ? 'today' : 'on ' + endPt.date}`, value: round2(endPt.net), fmt: 'money', prev: round2(startPt.net) }, { label: `Change since ${startPt.date}`, value: round2(endPt.net - startPt.net), fmt: 'money' }, { label: 'Assets today', value: round2(nw.assets), fmt: 'money' }, { label: 'Liabilities today', value: round2(nw.liabilities), fmt: 'money' }],
-      table: { headers: ['Account', 'Type', 'Institution', 'Balance', 'As of'], rows: accts.map(a => [a.name, ACCOUNT_KIND_LABEL[a.kind], a.institution || '', round2(['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability'].includes(a.kind) ? -Math.abs(+a.balance || 0) : +a.balance || 0), a.balance_as_of || '']) },
-      notes: [exactStart ? `Start of period uses the snapshot of ${startPt.date}; end uses ${endPt.date === today() ? "today's balances" : 'the snapshot of ' + endPt.date}.` : `No snapshot on or before ${r.from}; the earliest one (${startPt.date}) is used as the starting point.`, 'Account balances are as last updated. Record a snapshot monthly on Account Balances to keep the trend accurate.'] })
+      // the verified balance (the bank's figure plus anything still outstanding, else the book) — the same figures as the totals (0.25.1)
+      table: { headers: ['Account', 'Type', 'Institution', 'Balance', 'As of'], rows: accts.map(a => [a.name, ACCOUNT_KIND_LABEL[a.kind], a.institution || '', round2(LIAB.includes(a.kind) ? -debtBal(a, d) : balanceOf(a, d)), (a.bank_balance != null ? a.bank_balance_as_of || a.balance_as_of : a.balance_as_of) || '']) },
+      notes: [exactStart ? `Start of period uses the snapshot of ${startPt.date}; end uses ${endPt.date === today() ? "today's balances" : 'the snapshot of ' + endPt.date}.` : `No snapshot on or before ${r.from}; the earliest one (${startPt.date}) is used as the starting point.`, 'Balances are the verified ones — the bank\'s figure plus anything still outstanding where the bank reports one, else the balance as last updated — the same figures as the totals. Accounts left out of net worth are not listed. Record a snapshot monthly on Account Balances to keep the trend accurate.'] })
   }
   if (sections.includes('investments')) {
     const pf = portfolio(d)

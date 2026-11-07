@@ -5,8 +5,7 @@ import { addDays, diffDays, monthEnd, monthStart, mAdd, today } from './dates'
 import { round2, sum } from './money'
 import { recActive, recMonthly } from './recurring'
 import { cashOnHand } from './accounts'
-import { inRange } from './budget'
-import { categoryLines } from './splits'
+import { inRange, rangeStat, monthsOnFile } from './budget'
 
 /** Normalised merchant key: lower-case, punctuation and trailing store numbers / card suffixes removed. "KROGER #1234 COLUMBUS OH" → "kroger" */
 export function merchantKey(payee?: string | null) {
@@ -107,15 +106,18 @@ export function wasteDetection(d: Data, asOf = today(), lookbackDays = 90): Wast
 // ---------------- financial health ----------------
 export interface Health { burnRate: number; income: number; savingsRate: number | null; expenseRatio: number | null; essentialShare: number | null; discretionaryShare: number | null; monthsCovered: number | null; cashFlowScore: number; efficiencyScore: number; months: number; notes: string[] }
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x))
-/** Scores over the last `months` full months (default 3). Burn rate = average monthly spending + debt payments. */
+/** Scores over the last `months` full months (default 3), by the same rule every page uses (rangeStat): burn rate = average monthly spending
+ *  + loan payments (a purchase on a card is the spending; paying the card is not counted again), savings rate = what was kept ÷ income.
+ *  Averages stand on the completed months on file (0.25.1, monthOnFile): months before the first transaction do not count, so a new
+ *  household's empty months never pull them down. `months` in the result is how many months the averages stand on. */
 export function healthIndicators(d: Data, s: Settings, months = 3, asOf = today()): Health {
   const m0 = asOf.slice(0, 7); const keys = [...Array(months)].map((_, i) => mAdd(m0, -(i + 1)))
   const from = monthStart(keys[keys.length - 1]), to = monthEnd(keys[0])
   const tx = d.transactions.filter(t => inRange(t, from, to) && !t.exclude_from_budget)
-  const spend = sum(tx.filter(t => t.kind === 'expense').map(t => t.amount)), income = sum(tx.filter(t => t.kind === 'income').map(t => t.amount))
-  const debt = sum(tx.filter(t => t.kind === 'transfer' && t.to_account_id && d.accounts.some(a => a.id === t.to_account_id && ['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability'].includes(a.kind))).map(t => t.amount))
-  const pri = (p: string) => sum(categoryLines(d, tx.filter(t => t.kind === 'expense')).filter(l => d.categories.find(c => c.id === l.category_id)?.priority === p).map(l => l.amount))
-  const burn = round2((spend + debt) / months), inc = round2(income / months)
+  const r = rangeStat(d, from, to); const seen = monthsOnFile(d, keys, asOf); const per = seen || 1
+  const spend = r.spend, income = r.income
+  const pri = (p: string) => (p === 'Essential' ? r.ess : r.disc)
+  const burn = seen > 0 ? round2((spend + r.loans) / per) : 0, inc = seen > 0 ? round2(income / per) : 0
   const savingsRate = inc > 0 ? round2((inc - burn) / inc) : null, expenseRatio = inc > 0 ? round2(burn / inc) : null
   const ess = spend > 0 ? round2(pri('Essential') / spend) : null, disc = spend > 0 ? round2(pri('Discretionary') / spend) : null
   const cash = cashOnHand(d, s); const monthsCovered = burn > 0 ? round2(cash / burn) : null
@@ -123,11 +125,11 @@ export function healthIndicators(d: Data, s: Settings, months = 3, asOf = today(
   const cfs = Math.round(100 * (0.6 * clamp01((savingsRate ?? 0) / Math.max(0.01, s.savingsTargetPct / 100)) + 0.4 * clamp01((monthsCovered ?? 0) / Math.max(1, s.runwayGreen))))
   // efficiency score: low discretionary share, essentials covered by income, no fees
   const fees = sum(tx.filter(t => t.kind === 'expense' && FEE_RX.test(`${t.payee || ''} ${t.memo || ''}`)).map(t => t.amount))
-  const eff = Math.round(100 * (0.5 * clamp01(1 - (disc ?? 0) / 0.4) + 0.35 * clamp01(inc > 0 ? 1 - pri('Essential') / months / inc : 0) + 0.15 * clamp01(1 - fees / Math.max(1, spend) * 20)))
+  const eff = Math.round(100 * (0.5 * clamp01(1 - (disc ?? 0) / 0.4) + 0.35 * clamp01(inc > 0 ? 1 - pri('Essential') / per / inc : 0) + 0.15 * clamp01(1 - fees / Math.max(1, spend) * 20)))
   const notes: string[] = []
   if (savingsRate != null && savingsRate < s.savingsTargetPct / 100) notes.push(`Savings rate ${Math.round(savingsRate * 100)}% is below your ${s.savingsTargetPct}% target`)
   if (monthsCovered != null && monthsCovered < s.runwayYellow) notes.push(`Cash covers ${monthsCovered.toFixed(1)} months of spending — under the ${s.runwayYellow}-month floor`)
   if (disc != null && disc > 0.3) notes.push(`Discretionary is ${Math.round(disc * 100)}% of spending`)
   if (fees > 0) notes.push(`${fees.toFixed(2)} went to fees and interest charges`)
-  return { burnRate: burn, income: inc, savingsRate, expenseRatio, essentialShare: ess, discretionaryShare: disc, monthsCovered, cashFlowScore: cfs, efficiencyScore: eff, months, notes }
+  return { burnRate: burn, income: inc, savingsRate, expenseRatio, essentialShare: ess, discretionaryShare: disc, monthsCovered, cashFlowScore: cfs, efficiencyScore: eff, months: round2(seen), notes }
 }

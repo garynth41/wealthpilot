@@ -55,7 +55,7 @@ export function metrics(kind: ScenarioKind, d: Data, s: Settings, raw: unknown):
       { k: 'end', label: 'Cash in 24 months', v: p.ys[p.ys.length - 1], text: fmtMoney(p.ys[p.ys.length - 1]), better: 'high' }]
   }
   if (kind === 'debt') {
-    const a = normalize('debt', raw); const sim = simulate(liabilities(d), a.extra, a.strategy)
+    const a = normalize('debt', raw); const sim = simulate(liabilities(d), a.extra, a.strategy, false, d)
     return [{ k: 'months', label: 'Debt-free in', v: sim.months, text: mo(sim.months), better: 'low' },
       { k: 'date', label: 'Debt-free on', v: sim.months, text: isFinite(sim.months) ? addDays(t, Math.round(sim.months * 30.44)) : 'never', better: null },
       { k: 'interest', label: 'Interest paid', v: sim.interest, text: isFinite(sim.interest) ? fmtMoney(sim.interest) : 'grows', better: 'low' },

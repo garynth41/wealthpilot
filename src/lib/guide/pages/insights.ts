@@ -10,9 +10,9 @@ export const insights: GuidePage = {
     'Set your savings-rate target in Settings → General → Planning thresholds so the scores measure against your own goal.',
   ],
   top: [
-    { term: 'Monthly burn rate', text: 'Average monthly spending plus card and loan payments over the last 3 full calendar months (or 6, with the switch on Cash-flow score). The current month is left out because it is not over yet, and so are transactions excluded from budget.' },
-    { term: 'Savings rate', text: 'Monthly income minus the monthly burn rate, divided by monthly income, over the same months. Green when it meets your target in Settings; underneath are the target and your average monthly income.' },
-    { term: 'Expense ratio', text: 'The monthly burn rate divided by monthly income. Green at 80% or less, amber up to 100%, red above — spending more than you earn.' },
+    { term: 'Monthly burn rate', text: 'Average monthly spending (less refunds) plus loan payments over the last 3 full calendar months (or 6, with the switch on Cash-flow score). Card payments are not added: what you bought on the cards is already in spending. The average stands on the completed months on file — months before your first transaction do not count, and your first month counts for the part of it you tracked — and underneath it says how many months that is. The current month is left out because it is not over yet, and so are transactions excluded from budget.' },
+    { term: 'Savings rate', text: 'Monthly income minus the monthly burn rate, divided by monthly income, over the same months — what you kept, by the same rule as the Dashboard, Budget, Trends and Reports. Green when it meets your target in Settings; underneath are the target and your average monthly income.' },
+    { term: 'Expense ratio', text: 'The monthly burn rate (spending plus loan payments) divided by monthly income. Green at 80% or less, amber up to 100%, red above — spending more than you earn.' },
     { term: 'Months covered', text: 'Cash on hand divided by the monthly burn rate: how many months you could pay your way if income stopped. Coloured by your runway thresholds in Settings.' },
     { term: 'Subscriptions', text: 'What your subscriptions cost a month: the subscriptions on Bills & Subscriptions plus the recurring charges the app detected that are not there. Underneath: how many, the yearly total, and how many are not on Bills yet (amber when there are any).' },
     { term: 'Waste found', text: 'The total of the duplicate charges, bank and card fees, late fees, spending spikes and unusually large charges found in the last 90 days. Rising and dormant subscriptions are listed below but not added in. Underneath: how many findings in all.' },
@@ -104,7 +104,7 @@ export const insights: GuidePage = {
     { q: 'Why is a subscription marked ↑ price?', steps: ['Its latest charge is more than 5% above the first one the app saw.', 'Look for the matching Subscription went up line in Waste detection for the yearly cost of the increase.'] },
   ],
   glossary: [
-    { term: 'Monthly burn rate', def: 'Average monthly spending plus card and loan payments over your last three (or six) full months. Unlike Monthly burn on the forecast, income is not taken off.' },
+    { term: 'Monthly burn rate', def: 'Average monthly spending plus loan payments over your last three (or six) full months on file. Card payments are not added, because the purchases on the cards are already spending. Unlike Monthly burn on the forecast, income is not taken off.' },
     { term: 'Expense ratio', def: 'The monthly burn rate divided by monthly income. Under 80% leaves room to save; over 100% means you are spending more than you earn.' },
     { term: 'Months covered', def: 'Cash on hand divided by the monthly burn rate — how many months you could pay your way if income stopped.' },
     { term: 'Cash-flow score', def: 'A 0–100 score: 60% your savings rate against your target, 40% the months your cash covers against your green runway threshold.' },

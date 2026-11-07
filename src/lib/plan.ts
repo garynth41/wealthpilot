@@ -26,6 +26,7 @@ import { burn } from './forecast'
 import { aprAt, assumedPay, type Strategy } from './debts'
 import { goalProgress } from './goals'
 import { retirementAssets } from './portfolio'
+import { oneOffPay } from './paySchedule'
 import { RETIREMENT_DEFAULTS, projectRetirement } from './retirement'
 
 export type AllocMode = 'debt_first' | 'goals_first' | 'retirement_first' | 'split'
@@ -92,10 +93,13 @@ export function buildPlan(d: Data, s: Settings, raw?: Partial<PlanAssumptions>):
   const goals = gl.map(g => { const p = goalProgress(d, g); return { g, saved: p.saved, target: p.target, reachedOn: p.reached ? t : null as string | null, extraFirst: 0 } })
   const heldInCash = Math.min(cashOnHand(d, s), sum(goals.filter(x => x.g.account_id && cashIds.has(x.g.account_id)).map(x => Math.min(x.saved, x.g.account_id ? balanceOf(d.accounts.find(z => z.id === x.g.account_id)!, d) : 0))))
   const startCash = round2(cashOnHand(d, s) - heldInCash)
-  const debts = liabilities(d).filter(x => debtBal(x) >= 1).map(x => ({ acct: x, b: debtBal(x), pay: assumedPay(x, debtPlanned(x)), rate: 0 }))
+  // the verified balance (0.25.1): the bank's figure plus anything outstanding — the same total the Debts page shows
+  const debts = liabilities(d).filter(x => debtBal(x, d) >= 1).map(x => ({ acct: x, b: debtBal(x, d), pay: assumedPay(x, debtPlanned(x), d), rate: 0 }))
   const startDebt = round2(sum(debts.map(x => x.b))); const startRetire = retirementAssets(d).total; const startGoals = sum(goals.map(x => x.saved))
   const baseSpend = (b.fixed + b.variable) * (1 - a.cutPct / 100) - b.relief
-  const events = d.planned.filter(p => p.status === 'Planned').map(p => ({ date: p.date.slice(0, 10), amount: +p.amount || 0 }))
+  // one-off (Irregular) pay counts once, in its own month, as in the cash calendar — never as monthly income, never after income stops (0.25.1)
+  const oneOffs = oneOffPay(d, t, addDays(monthDate(a.months + 1), -1)).filter(x => !a.incomeEndsOn || x.date < a.incomeEndsOn).map(x => ({ date: x.date, amount: x.amount }))
+  const events = [...d.planned.filter(p => p.status === 'Planned').map(p => ({ date: p.date.slice(0, 10), amount: +p.amount || 0 })), ...oneOffs]
   const order = (): Array<'debt' | 'goals' | 'retirement'> => a.mode === 'goals_first' ? ['goals', 'debt', 'retirement'] : a.mode === 'retirement_first' ? ['retirement', 'debt', 'goals'] : ['debt', 'goals', 'retirement']
   const shareSum = a.split.debt + a.split.goals + a.split.retirement || 1
 

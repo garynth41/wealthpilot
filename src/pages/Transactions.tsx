@@ -12,7 +12,7 @@ import { suggest, applySuggestion, planAutoCategorise, learnRule, upsertRule, si
 import { CommentsModal, commentsFor } from './Comments'
 import { logGoalLinks } from '../app/goalLinks'
 import { spanFor } from '../lib/periods'
-import { isLiability } from '../lib/accounts'
+import { isLiability, isRevolving } from '../lib/accounts'
 import { splitsFor, validateSplits, splitRemaining, isSplit } from '../lib/splits'
 import { DuplicatesReview, duplicateCounts } from './Duplicates'
 import { AttachmentsModal, attachmentsFor } from './Attachments'
@@ -30,7 +30,7 @@ export function TransactionsPage() {
   const acctUpd = (id: string, p: Partial<Account>) => update('accounts', id, p)
   const pushUndo = useStore.getState().pushUndo
   const sp = spanFor(data, settings); const t = today()
-  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates), [data.transactions, data.duplicates]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
+  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts), [data.transactions, data.duplicates, data.accounts]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
   const from = range === 'period' ? sp.start : range === '30' ? addDays(t, -29) : range === 'month' ? monthStart(curMonth()) : range === '90' ? addDays(t, -89) : '0000'
   const to = range === 'period' ? sp.end : '9999'
   const ids = useMemo(() => new Set((params.get('ids') || '').split(',').filter(Boolean)), [params])
@@ -138,7 +138,7 @@ export function AddTxn({ onDone, preset }: { onDone: () => void; preset?: Partia
     <div className="grid2"><Field label={f.kind === 'income' ? 'Deposited to' : f.kind === 'transfer' ? 'From account' : 'Paid from'}><select className="inp" value={f.account_id || ''} onChange={e => set('account_id', e.target.value || null)}><option value="">—</option>{accts.map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select></Field>
       {f.kind === 'transfer' ? <Field label="To account" hint="a card or loan here = a debt payment"><select className="inp" value={f.to_account_id || ''} onChange={e => set('to_account_id', e.target.value || null)} required><option value="">—</option>{accts.filter(a => a.id !== f.account_id).map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select></Field>
         : <Field label="Category"><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— uncategorized —</option>{catOpts(f.kind === 'income' ? 'income' : 'expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}</div>
-    {f.kind === 'transfer' && <Field label="Budget line (optional)" hint={liabilityTo ? 'e.g. Credit card payments, so the payment shows in the budget' : 'e.g. Emergency fund, so the transfer counts toward that line'}><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— none —</option>{catOpts('expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}
+    {f.kind === 'transfer' && <Field label="Budget line (optional)" hint={liabilityTo && isRevolving(data.accounts.find(a => a.id === f.to_account_id)!) ? 'not needed — a card payment is not spending: what you bought on the card already counts in its own lines' : liabilityTo ? 'e.g. Loan payments, so the payment counts in the budget' : ['savings', 'investment', 'retirement'].includes(data.accounts.find(a => a.id === f.to_account_id)?.kind || '') ? 'e.g. Emergency fund, so the transfer counts toward that line (as saving, not spending)' : 'e.g. Emergency fund, so the transfer counts toward that line'}><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— none —</option>{catOpts('expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}
     <div className="grid2"><Field label="Payee" hint={hint || undefined}><input className="inp" value={f.payee || ''} onChange={e => set('payee', e.target.value)} onBlur={onPayeeBlur} placeholder="Kroger, Landlord, Employer…" /></Field><Field label="Memo"><input className="inp" value={f.memo || ''} onChange={e => set('memo', e.target.value)} /></Field></div>
   </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn type="submit" primary disabled={saving}>{saving ? 'Saving…' : 'Save'}</Btn></MFoot></form>
 }

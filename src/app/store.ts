@@ -8,7 +8,7 @@ import { SupabaseRepo } from './data/supabaseRepo'
 import { hasSupabase, sb } from './supabase'
 import { LS, APP_VERSION, cmpVer } from './config'
 import { canViewPath } from '../lib/access'
-import { planDedupe, type DTxn } from '../lib/dedupe'
+import { planDedupe, unpairPatch, type DTxn } from '../lib/dedupe'
 import { paycheckOnFile } from '../lib/paySchedule'
 import { post } from '../lib/ledger'
 import type { Transaction } from './data/types'
@@ -167,15 +167,19 @@ export const useStore = create<State>((set, get) => ({
     for (const id of dups) { const d = await repo.update('transactions', id, { duplicate_of: keeper }); set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) }
   },
   async restoreDuplicate(id) {
-    const repo = need(get); const r = await repo.update('transactions', id, { duplicate_of: null, dedupe_ok: true })
+    const repo = need(get); const dup = get().data.duplicates.find(t => t.id === id); const keeper = dup?.duplicate_of ? get().data.transactions.find(t => t.id === dup.duplicate_of) : undefined
+    const r = await repo.update('transactions', id, { duplicate_of: null, dedupe_ok: true })
     set(s => ({ data: { ...s.data, duplicates: s.data.duplicates.filter(t => t.id !== id), transactions: [...s.data.transactions.filter(t => t.id !== id), r] } }))
+    // the card or loan side of a paired payment (0.25.1): the kept checking or savings row goes back to the expense it arrived as
+    const unpair = dup && keeper ? unpairPatch(keeper as unknown as DTxn, dup as unknown as DTxn) : null
+    if (keeper && unpair) { const k = await repo.update('transactions', keeper.id, unpair as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper.id ? k : t) } })) }
   },
   async notDuplicates(ids) { for (const id of ids) await get().update('transactions', id, { dedupe_ok: true }) },
   async autoDedupe(quiet) {
     if (deduping || !get().canEdit() || !get().repo) return 0
     deduping = true
     try {
-      const plan = planDedupe(get().data.transactions as unknown as DTxn[]); let n = 0
+      const plan = planDedupe(get().data.transactions as unknown as DTxn[], get().data.accounts); let n = 0
       for (const g of plan.auto) { await get().mergeDuplicates(g.keeper, g.dups, g.patch as Partial<Transaction>); n += g.dups.length }
       if (n && !quiet) get().toast(`Merged ${n} duplicate transaction${n === 1 ? '' : 's'} — one copy kept (the bank's when there is one). Review or undo in Transactions → Duplicates.`)
       return n

@@ -69,7 +69,8 @@ describe('normalise, match and map', () => {
   it('maps posted items only: out = expense, in = income, with a stable external id', () => {
     const t = toNewTxns(n.accounts[0], { id: 'L1', kind: 'checking' })
     expect(t.map(x => [x.kind, x.amount, x.payee, x.external_id])).toEqual([['expense', 45.2, 'KROGER #123', 'sfin:A1:t1'], ['income', 1800, 'ACME PAYROLL', 'sfin:A1:t2']])
-    expect(toNewTxns(n.accounts[1], { id: 'L2', kind: 'credit_card' }).map(x => x.kind)).toEqual(['expense', 'income'])
+    // 0.25.1: on a card, a payment is a transfer into the card (as a statement file makes it), never income
+    expect(toNewTxns(n.accounts[1], { id: 'L2', kind: 'credit_card' }).map(x => [x.kind, x.account_id, x.to_account_id])).toEqual([['expense', 'L2', null], ['transfer', null, 'L2']])
   })
 })
 
