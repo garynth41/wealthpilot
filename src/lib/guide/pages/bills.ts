@@ -10,10 +10,10 @@ export const bills: GuidePage = {
     'Check Coming up & overdue every few days and click Mark paid when you pay, or let the bank feed and email capture match the payment for you.',
   ],
   top: [
-    { term: 'Monthly commitments', text: 'What your active bills, subscriptions, card and loan payments and savings transfers cost in an average month: each item\'s amount × how many times a year it comes ÷ 12, added up. The line underneath splits it into bills, subscriptions, debt and savings. Irregular items and recurring income are not counted.' },
-    { term: 'Due next N days', text: 'The total of unpaid bills and payments due from today to the end of the window chosen on Coming up & overdue (14, 30, 60 or 90 days). Recurring income is left out of the total; the count underneath is every unpaid item in the window, income included.' },
-    { term: 'Overdue', text: 'How many items from the last 45 days are past their due date with no payment matched or recorded, and how much they add up to. Green when nothing is overdue.' },
-    { term: 'Due within 7 days', text: 'How many unpaid items fall due between today and a week from today, and their total ("clear week" when there are none).' },
+    { term: 'Monthly commitments', text: 'What your active bills, subscriptions, card and loan payments and savings transfers cost in an average month: each item\'s amount × how many times a year it comes ÷ 12, added up, plus the planned (or minimum) payment of every card or loan that has no payment item here — the same monthly debt figure as the Debts and Account Balances pages. The line underneath splits it into bills, subscriptions, card & loan payments and savings. Irregular items and recurring income are not counted.' },
+    { term: 'Due next N days', text: 'The total of unpaid bills and payments due from today to the end of the window chosen on Coming up & overdue (14, 30, 60 or 90 days), including the planned payment of each card or loan with no payment item, on its due date. Recurring income is left out of the total; the count underneath is every unpaid item in the window, income included.' },
+    { term: 'Overdue', text: 'How many items from the last 45 days are past their due date with no payment matched or recorded — a card or loan whose due date has passed unpaid included — and how much they add up to. Green when nothing is overdue.' },
+    { term: 'Due within 7 days', text: 'How many unpaid items and card or loan payments fall due between today and a week from today, and their total ("clear week" when there are none).' },
     { term: 'Subscriptions', text: 'How many active items are of the Subscription kind, with what they cost per month and per year. It turns amber above six, a nudge to review them.' },
     { term: 'On autopay', text: 'How many active items have Autopay ticked, out of all active items. Autopays still need the cash in the account on the day.' },
   ],
@@ -34,6 +34,7 @@ export const bills: GuidePage = {
         { term: 'Status', text: 'Overdue (past the due date, nothing paid), Due today, Due soon (within the item\'s Remind days), Autopay (autopay is ticked and it is not due yet), Scheduled (an email said the payment is scheduled) or Due.' },
         { term: 'Mark paid / Received', text: 'Opens a window with Date, Amount and From (Into for income). Save records the payment and marks this due date paid. The date starts at today, or at the due date when that has already passed.' },
         { term: 'Skip', text: 'Marks just this due date as skipped. The next one still comes.' },
+        { term: '(Account) payment', text: 'A card or loan that has no payment item here still has a payment due: its planned payment (never less than the minimum) on each monthly due date, marked "Card / loan payment · planned on the account". Record on Debts opens the Debts page, where you record it; once this month\'s is paid it drops off. Add a Card / loan payment item with Pays set to that account to manage it here instead.' },
       ],
       tips: [
         'Mark paid records an expense from the From account against the Budget line. When Pays is set to a card or loan, it records a transfer that lowers what you owe instead, and when the amount covers the minimum and is paid no later than three days after the card\'s due date, that statement shows as Paid. When Pays is a savings account, the money moves into it. Recurring income records a deposit into the Into account.',
@@ -44,7 +45,7 @@ export const bills: GuidePage = {
     },
     {
       title: 'Cash needed by day',
-      what: 'A bar chart of how much your unpaid bills and payments need on each day from today to the end of the window chosen on Coming up & overdue, so you know which days the account must be ready for.',
+      what: 'A bar chart of how much your unpaid bills and payments — card and loan payments planned on the account included — need on each day from today to the end of the window chosen on Coming up & overdue, so you know which days the account must be ready for.',
       fields: [
         { term: 'Bars', text: 'One bar for each day with something due; its height is the total due that day. Bars in the next 7 days are amber, later ones blue. Hover a bar for the date and the amount.' },
         { term: 'Total', text: 'Everything unpaid and due from today to the end of the window. Recurring income and overdue items are not on the chart.' },
@@ -92,7 +93,7 @@ export const bills: GuidePage = {
   ],
   glossary: [
     { term: 'Recurring item', def: 'A bill, subscription, card or loan payment, savings transfer or deposit that repeats on a schedule. Its due dates are worked out from how often it comes and its next due date.' },
-    { term: 'Monthly commitments', def: 'What your recurring bills, subscriptions, debt payments and savings transfers cost in an average month.' },
+    { term: 'Monthly commitments', def: 'What your recurring bills, subscriptions, debt payments and savings transfers cost in an average month — with the planned payment of each card or loan that has no recurring payment item.' },
     { term: 'Amount varies', def: 'A bill whose amount changes each time, like electricity. Any payment to the payee counts as paid, and price-rise alerts are off for it.' },
     { term: 'Autopay', def: 'A payment the company takes from your account automatically on the due date. The money still has to be there.' },
     { term: 'Skipped due date', def: 'One due date you marked as not happening. Only that date is skipped; the schedule carries on.' },

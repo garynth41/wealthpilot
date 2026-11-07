@@ -31,9 +31,9 @@ export function InsightsPage() {
   const steps = [{ range: [0, 40] as [number, number], color: c.critSoft }, { range: [40, 70] as [number, number], color: cssVar('--warn-soft') }, { range: [70, 100] as [number, number], color: cssVar('--good-soft') }]
   return <>
     <div className="kpis" style={{ marginBottom: 16 }}>
-      <KPI l="Monthly burn rate" v={fmtMoney(health.burnRate)} cls="warn" s={`spending + debt payments · avg of ${prevMonths.length} closed months`} />
+      <KPI l="Monthly burn rate" v={fmtMoney(health.burnRate)} cls="warn" s={`spending + loan payments · ${health.months ? `avg of ${Math.abs(health.months - Math.round(health.months)) < 0.05 ? Math.round(health.months) : health.months.toFixed(1)} completed month${Math.abs(health.months - 1) < 0.05 ? '' : 's'} on file` : `no completed month on file in the last ${prevMonths.length}`}`} />
       <KPI l="Savings rate" v={fmtPct(health.savingsRate)} cls={health.savingsRate == null ? 'idle' : health.savingsRate >= settings.savingsTargetPct / 100 ? 'good' : 'warn'} s={`target ${settings.savingsTargetPct}% · income ${fmtMoney(health.income)}/mo`} />
-      <KPI l="Expense ratio" v={fmtPct(health.expenseRatio)} cls={health.expenseRatio == null ? 'idle' : health.expenseRatio <= 0.8 ? 'good' : health.expenseRatio <= 1 ? 'warn' : 'crit'} s="spending ÷ income" />
+      <KPI l="Expense ratio" v={fmtPct(health.expenseRatio)} cls={health.expenseRatio == null ? 'idle' : health.expenseRatio <= 0.8 ? 'good' : health.expenseRatio <= 1 ? 'warn' : 'crit'} s="spending + loan payments ÷ income" />
       <KPI l="Months covered" v={health.monthsCovered == null ? '—' : health.monthsCovered.toFixed(1)} cls={health.monthsCovered == null ? 'idle' : health.monthsCovered >= settings.runwayGreen ? 'good' : health.monthsCovered >= settings.runwayYellow ? 'warn' : 'crit'} s="cash on hand ÷ burn rate, if income stopped" />
       <KPI l="Subscriptions" v={fmtMoney(subs.monthly) + '/mo'} cls={subs.detectedUnknown.length ? 'warn' : 'info'} s={`${subs.count} items · ${fmtMoney(subs.annual)}/yr${subs.detectedUnknown.length ? ` · ${subs.detectedUnknown.length} not in Bills` : ''}`} />
       <KPI l="Waste found" v={fmtMoney(wasteTotal)} cls={wasteTotal > 0 ? 'crit' : 'good'} s={`${waste.length} findings · last 90 days`} />

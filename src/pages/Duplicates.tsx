@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
-import type { Transaction } from '../app/data/types'
+import type { Account, Transaction } from '../app/data/types'
 import { Btn, Note, Pill, MHead, MBody, MFoot } from '../components/ui'
 import { planDedupe, keeperOrder, keeperPatch, origin, type DTxn } from '../lib/dedupe'
 import { fmtD } from '../lib/dates'
@@ -13,14 +13,14 @@ import { linkTo } from '../lib/focus'
 const ORIGIN: Record<string, [string, string]> = { bank: ['bank feed', 'good'], file: ['statement file', 'info'], typed: ['typed / email', 'idle'] }
 const srcPill = (t: Transaction) => { const o = origin(t as unknown as DTxn); const [l, c] = ORIGIN[o]; return <Pill cls={c}>{t.source === 'email' ? 'email' : l}</Pill> }
 
-export function duplicateCounts(txns: Transaction[], merged: Transaction[]) {
-  const plan = planDedupe(txns as unknown as DTxn[])
+export function duplicateCounts(txns: Transaction[], merged: Transaction[], accounts: Account[] = []) {
+  const plan = planDedupe(txns as unknown as DTxn[], accounts)
   return { review: plan.review.length, pendingAuto: plan.auto.reduce((n, g) => n + g.dups.length, 0), merged: merged.length }
 }
 
 export function DuplicatesReview({ onDone }: { onDone: () => void }) {
   const { data, acctLabels, guarded, canEdit } = useData(); const st = useStore.getState
-  const plan = useMemo(() => planDedupe(data.transactions as unknown as DTxn[]), [data.transactions])
+  const plan = useMemo(() => planDedupe(data.transactions as unknown as DTxn[], data.accounts), [data.transactions, data.accounts])
   const byId = useMemo(() => new Map([...data.transactions, ...data.duplicates].map(t => [t.id, t])), [data.transactions, data.duplicates])
   const line = (t?: Transaction) => t ? <div style={{ display: 'grid', gridTemplateColumns: '92px 1fr 150px 92px 110px', gap: 8, alignItems: 'center', fontSize: 13 }}>
     <span>{fmtD(t.date)}</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.payee || ''}><Link to={linkTo('/transactions', t.id)} onClick={onDone}>{t.payee || <i style={{ color: 'var(--ink-3)' }}>no payee</i>}</Link></span>
@@ -33,7 +33,7 @@ export function DuplicatesReview({ onDone }: { onDone: () => void }) {
   const keepBoth = (a: string, b: string) => guarded(() => st().notDuplicates([a, b]), 'Marked as two different transactions')
   const merged = data.duplicates.slice().sort((a, b) => b.date.localeCompare(a.date))
   return <><MHead title="Duplicate transactions" /><MBody>
-    <Note>Every new transaction — from the bank feed, a statement file, email or typed by hand — is checked against what is already there. Clear-cut copies are merged automatically (the bank's copy is kept and inherits the category); nothing is deleted, and any merge can be undone below. Look-alikes that could be real (two identical charges on one day, the same amount in two accounts) wait here for you.</Note>
+    <Note>Every new transaction — from the bank feed, a statement file, email or typed by hand — is checked against what is already there. Clear-cut copies are merged automatically (the bank's copy is kept and inherits the category); a card or loan payment that arrives as two bank rows — out of checking or savings, onto the card — becomes one transfer, and an emailed or typed copy of it merges in too. Nothing is deleted, and any merge can be undone below (undoing the card side of a payment puts both rows back as they arrived). Look-alikes that could be real (two identical charges on one day, the same amount in two accounts) wait here for you.</Note>
     {plan.auto.length > 0 && <div className="msg warn">{plan.auto.reduce((n, g) => n + g.dups.length, 0)} clear-cut duplicate{plan.auto.length === 1 ? '' : 's'} not merged yet{canEdit ? '' : ' — someone with edit access can merge them'}. {canEdit && <Btn sm primary onClick={() => guarded(() => st().autoDedupe())}>Merge them now</Btn>}</div>}
     <h3 style={{ margin: '14px 0 6px' }}>Needs your decision ({plan.review.length})</h3>
     {plan.review.length === 0 ? <div className="empty">Nothing to decide.</div> : plan.review.map(p => <div key={p.a + p.b} className="card" style={{ padding: 10, marginBottom: 8, boxShadow: 'none', border: '1px solid var(--line)' }}>

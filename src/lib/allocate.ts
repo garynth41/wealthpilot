@@ -36,7 +36,7 @@ export function allocatePaycheck(d: Data, s: Settings, pay: Transaction, asOf = 
     lines.push({ group: x.src === 'debt' ? 'debt' : x.src === 'planned' || x.src === 'tax' ? 'planned' : 'bills', label: x.label, amount: round2(-x.amt), date: x.date })
   }
   // goals: each active goal's monthly contribution, shared across the paychecks in a month
-  const perMonth = schedule ? PER_YEAR[schedule.frequency] / 12 : 2
+  const perMonth = !schedule ? 2 : schedule.frequency === 'irregular' ? 1 : PER_YEAR[schedule.frequency] / 12   // a one-off covers one month's share
   for (const g of d.goals.filter(g => g.status === 'Active' && g.kind !== 'debt_payoff' && +g.monthly_contribution > 0)) {
     const p = goalProgress(d, g); if (p.reached) continue
     lines.push({ group: 'goals', label: g.name, amount: round2(Math.min(p.left, +g.monthly_contribution / perMonth)), goalId: g.id, accountId: g.account_id || null })

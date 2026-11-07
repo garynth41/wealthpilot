@@ -14,7 +14,7 @@ export function goalProgress(d: Data, g: Goal) {
   const target = goalTarget(g)
   const contributed = sum(d.contributions.filter(c => c.goal_id === g.id).map(c => c.amount))
   const acct = g.account_id ? d.accounts.find(a => a.id === g.account_id) : null
-  const saved = g.kind === 'debt_payoff' && acct ? Math.max(0, target - debtBal(acct)) : +g.starting_amount + contributed
+  const saved = g.kind === 'debt_payoff' && acct ? Math.max(0, target - debtBal(acct, d)) : +g.starting_amount + contributed   // the verified balance, as the Debts page shows it (0.25.1)
   const pct = target > 0 ? Math.min(1, saved / target) : 0
   const left = Math.max(0, target - saved)
   const t = today(); const monthsLeft = g.target_date ? Math.max(0, diffDays(g.target_date, t) / 30.44) : null

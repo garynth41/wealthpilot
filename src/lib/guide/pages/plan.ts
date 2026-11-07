@@ -41,12 +41,12 @@ export const plan: GuidePage = {
         { term: 'when the last debt is paid, keep its payments working', text: 'Once every debt is paid off, the payments you were making join the extra each month.' },
         { term: 'Cut bills + everyday spending by N%', text: 'Lowers your bills and everyday spending by that share (0–50%) in every month.' },
         { term: 'Extra income / month', text: 'Income on top of your pay schedules, every month.' },
-        { term: 'Current income stops on', text: 'Your pay-schedule income stops on that date (part of that month is counted). Extra income continues.' },
+        { term: 'Current income stops on', text: 'Your pay-schedule income stops on that date (part of that month is counted), and a one-off pay due after it does not come. Extra income continues.' },
         { term: 'Apply this plan…', text: 'Opens a summary of what will change: the extra the Debts page starts its slider at (with the order and the first debt), each goal\'s monthly contribution from → to, and the retirement contribution per year from → to. Click Apply to write it, or Cancel. The button reads Applied when the sliders match the applied plan.' },
         { term: 'Reset sliders', text: 'Puts every slider back to the starting values: no extra, Debt first, Avalanche, 36 months.' },
       ],
       tips: [
-        'The plan only decides where the extra goes. It starts from today\'s balances, pay schedules, bills, planned one-off items and every card and loan\'s planned payment.',
+        'The plan only decides where the extra goes. It starts from today\'s balances (for cards and loans, the verified figure the Debts page shows), pay schedules, bills, planned one-off items and every card and loan\'s planned payment.',
         'Base retirement contributions come out of pay and do not touch cash; only extra sent to retirement leaves cash.',
         'Applying again replaces what a previous apply added — it never adds to it. After you apply, the plan still starts from your contributions without the applied extra, so nothing is counted twice and the retirement extra keeps coming out of cash.',
         'Moving the sliders changes nothing elsewhere until you apply.',
@@ -81,7 +81,7 @@ export const plan: GuidePage = {
       what: 'The plan as a table, one row per month. Every dollar of extra lands in exactly one column.',
       fields: [
         { term: 'Month', text: 'The month the row covers; the first row runs from today to the end of this month.' },
-        { term: 'Income', text: 'Take-home pay from your pay schedules (or your recent average income when there are none), plus extra income, stopping on the date you set.' },
+        { term: 'Income', text: 'Take-home pay from your pay schedules that repeat (or your recent average income when there are none), plus extra income, stopping on the date you set. A one-off (Irregular) pay is added once, in the month it is due.' },
         { term: 'Spending', text: 'Bills plus everyday spending (your recent average from the forecast), less any cut, less hardship relief in effect.' },
         { term: 'Debt payments', text: 'The planned payment on every card and loan, with the extra shown in green as "+$X".' },
         { term: 'Goal contributions', text: 'Each goal\'s monthly contribution, until it is full, with the extra in green.' },

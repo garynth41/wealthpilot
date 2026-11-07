@@ -62,7 +62,7 @@ export const GENERAL: { intro: string; start: StartStep[]; tasks: GuideTask[]; f
     { term: 'Budget period', def: 'The stretch of time a budget covers — a calendar month, a pay period, every 2 weeks, twice a month or a week — as chosen in Settings → General → Budget cadence.' },
     { term: 'Category priority', def: 'Essential (you could not cut it), Important or Discretionary. Liquidity, the runway and the hardship plan use it.' },
     { term: 'Cost type', def: 'Fixed (the same each time), Variable (changes month to month) or Irregular (a few times a year).' },
-    { term: 'Transfer', def: 'Money moving between two of your own accounts — including a card or loan payment. It is not spending unless you give it a budget line.' },
+    { term: 'Transfer', def: 'Money moving between two of your own accounts — including a card or loan payment. It is not spending: paying a card is moving money (what you bought with it was the spending), a loan payment is counted apart as a loan payment, and money moved into savings is saving. A savings transfer or loan payment counts on a budget line when you give it one; a card payment never does.' },
     { term: 'Excluded from budget', def: 'A transaction that stays in the account but does not count against any budget category.' },
     { term: 'Pending / Cleared / Void', def: 'A transaction\'s status: not yet posted by the bank, posted, or cancelled (kept for the record but not counted).' },
     { term: 'Payee rule', def: 'A rule that categorizes (and can rename or tag) every transaction from a merchant automatically as it arrives.' },

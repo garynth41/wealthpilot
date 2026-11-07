@@ -10,7 +10,9 @@ export interface SfinResponse { errors?: string[]; accounts?: SfinAccountRaw[] }
 
 export interface SfinAccount { id: string; name: string; org: string; last4: string | null; balance: number; available: number | null; balanceDate: string; currency: string; txns: Array<{ id: string; date: string; amount: number; description: string; pending: boolean }> }
 export interface Local { id: string; name: string; institution?: string | null; last4?: string | null; kind: string }
-export interface NewTxn { date: string; kind: 'expense' | 'income'; amount: number; payee: string; status: 'cleared' | 'pending'; source: 'import'; external_id: string }
+/** A bank-feed row ready to save. A payment onto a card or loan is a transfer into it (account_id null until the duplicate engine pairs it
+ *  with the money leaving checking or savings); everything else is an expense or income on the account itself. */
+export interface NewTxn { date: string; kind: 'expense' | 'income' | 'transfer'; amount: number; account_id: string | null; to_account_id: string | null; payee: string; status: 'cleared' | 'pending'; source: 'import'; external_id: string }
 
 export const LIABILITY = ['credit_card', 'store_card', 'loan', 'auto_loan', 'student_loan', 'mortgage', 'bnpl', 'line_of_credit', 'medical', 'collection', 'other_liability']
 export const isLiabilityKind = (k: string) => LIABILITY.includes(k)
@@ -74,9 +76,31 @@ export function guessLast4(name: string): string | null {
   return m ? m[1] : null
 }
 
+/** Never keep more than the last four digits of an account or card number (0.25.1): any run of 5 or more digits — spaces or dashes
+ *  between them allowed — becomes "••" and its last four ("PAYMENT TO ACCT 4400123456" → "PAYMENT TO ACCT ••3456"). The same result as
+ *  maskDigits in lib/email/extract.ts; this file stays import-free because the bank-sync function carries a copy of it. */
+export const maskDigits = (s: string) => String(s || '').replace(/\d(?:[ -]*\d){4,}/g, m => '••' + m.replace(/\D/g, '').slice(-4))
+
+/** What a credit on a card or loan is, from its description (and a statement file's Type column, when there is one) — the one rule the bank
+ *  feed, statement files and the duplicate engine share (0.25.1). 'payment': the Type says Payment, or the text says payment (pmt, pymt,
+ *  autopay, epay, thank you) — or pay or transfer when it does not also say refund — money paid onto the card or loan. 'refund': the Type
+ *  says Return or Refund, or the text says return, refund or credit (also reversal, chargeback, cash back, rewards) — it takes spending
+ *  down. null: it does not say; the duplicate engine treats it as a payment when the same amount left the household's checking or savings
+ *  within 4 days, and every total reads it as a refund when nothing did. */
+export function cardCredit(text: string, type = ''): 'refund' | 'payment' | null {
+  const ty = String(type || '').trim().toLowerCase()
+  if (/^(return|refund|reversal|chargeback)/.test(ty)) return 'refund'
+  if (/^(payment|pmt|autopay)/.test(ty)) return 'payment'
+  const s = ' ' + String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' '
+  if (/ (payments?|pymts?|pmt|autopay|auto pay|epay|epayment|thank you) /.test(s)) return 'payment'
+  if (/ (returns?|returned|refunds?|refunded|credits?|credited|reversal|reversed|chargeback|cash ?back|rewards?|redemption) /.test(s)) return 'refund'
+  if (/ (pay|transfer|xfer) /.test(s)) return 'payment'
+  return null
+}
+
 export function normaliseResponse(resp: SfinResponse): { accounts: SfinAccount[]; errors: string[] } {
   const accounts = (resp.accounts || []).map(a => ({
-    id: String(a.id), name: String(a.name || 'Account'), org: String(a.org?.name || a.org?.domain || ''), last4: guessLast4(a.name),
+    id: String(a.id), name: maskDigits(String(a.name || 'Account')), org: String(a.org?.name || a.org?.domain || ''), last4: guessLast4(a.name),
     balance: r2(num(a.balance)), available: a['available-balance'] != null && a['available-balance'] !== '' ? r2(num(a['available-balance'])) : null,
     balanceDate: unixToDate(a['balance-date'] || Math.floor(Date.now() / 1000)), currency: String(a.currency || 'USD'),
     txns: (a.transactions || []).map(t => ({ id: String(t.id), date: unixToDate(t.posted), amount: r2(num(t.amount)), description: String(t.description || '').replace(/\s+/g, ' ').trim(), pending: !!t.pending })),
@@ -123,12 +147,19 @@ export function balanceFor(sf: Pick<SfinAccount, 'balance'>, kind: string): numb
   return isLiabilityKind(kind) ? r2(Math.max(0, -sf.balance)) : sf.balance
 }
 
-/** Posted items only (pending ones change id when they post, which would create duplicates). Money in is income, money out is expense — on a card a payment shows as income, the same convention as statement import. */
-export function toNewTxns(sf: SfinAccount, _local: Pick<Local, 'id' | 'kind'>, cleanPayee: (s: string) => string = s => s): NewTxn[] {
-  return sf.txns.filter(t => !t.pending && t.amount !== 0).map(t => ({
-    date: t.date, kind: t.amount < 0 ? 'expense' as const : 'income' as const, amount: Math.abs(t.amount), payee: cleanPayee(t.description).slice(0, 120),
-    status: 'cleared' as const, source: 'import' as const, external_id: `sfin:${sf.id}:${t.id}`,
-  }))
+/** Posted items only (pending ones change id when they post, which would create duplicates). Money out is an expense, money in is income —
+ *  except on a card or loan (0.25.1), where money in is never income: a payment (the description says so) is a transfer into that account,
+ *  the same as a statement file makes it, and anything else stays a credit on it, which every total reads as a refund. The duplicate engine
+ *  then pairs a payment or credit with the same amount leaving checking or savings into one transfer (lib/dedupe.ts). Payees keep at most
+ *  the last four digits of any account number. */
+export function toNewTxns(sf: SfinAccount, local: Pick<Local, 'id' | 'kind'>, cleanPayee: (s: string) => string = s => s): NewTxn[] {
+  const liab = isLiabilityKind(local.kind)
+  return sf.txns.filter(t => !t.pending && t.amount !== 0).map(t => {
+    const payee = maskDigits(cleanPayee(t.description)).slice(0, 120)
+    const pay = liab && t.amount > 0 && cardCredit(payee) === 'payment'
+    return { date: t.date, kind: t.amount < 0 ? 'expense' as const : pay ? 'transfer' as const : 'income' as const, amount: Math.abs(t.amount), account_id: pay ? null : local.id, to_account_id: pay ? local.id : null, payee,
+      status: 'cleared' as const, source: 'import' as const, external_id: `sfin:${sf.id}:${t.id}` }
+  })
 }
 
 export interface Existing { account_id: string | null; date: string; kind: string; amount: number; external_id?: string | null }

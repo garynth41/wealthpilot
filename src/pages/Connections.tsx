@@ -35,7 +35,8 @@ export function ConnectionsPage() {
       else { const rs = trimPreamble(parseCsv(text)); const m = detectMapping(rs); setRows(rs); setOfx(null); setMap(m ? { ...m, negativeIsOutflow: !(account && isLiability(account)) ? true : m.negativeIsOutflow } : null); setStage(m ? 'map' : 'map'); if (!m) setErr('Could not recognise the columns — pick them below.') } }).catch(ex => setErr(String(ex))) }
 
   const imported: ImportRow[] = useMemo(() => (ofx ? ofx.rows : map ? mapRows(rows, map, { card: !!account && isLiability(account), source: 'csv' }) : []), [ofx, map, rows, account])
-  const proposed: Proposed[] = useMemo(() => (account ? dedupe(data, account, imported).map(p => { if (p.txn.kind === 'transfer') return p; const sg = suggest(data, settings, { payee: p.txn.payee, kind: p.txn.kind as 'expense' | 'income' }); const patch = applySuggestion(p.txn, sg); return patch ? { ...p, txn: { ...p.txn, ...patch }, how: sg.how } : p }) : []), [data, settings, account, imported])
+  // a credit on a card is a refund: it takes the spending category of the merchant, like the purchase it reverses (0.25.1)
+  const proposed: Proposed[] = useMemo(() => (account ? dedupe(data, account, imported).map(p => { if (p.txn.kind === 'transfer') return p; const sg = suggest(data, settings, { payee: p.txn.payee, kind: p.txn.kind === 'income' && isLiability(account) ? 'expense' : p.txn.kind as 'expense' | 'income' }); const patch = applySuggestion(p.txn, sg); return patch ? { ...p, txn: { ...p.txn, ...patch }, how: sg.how } : p }) : []), [data, settings, account, imported])
   const categorised = proposed.filter(p => p.txn.category_id).length
   const bad = proposed.filter(p => p.row.warn), dups = proposed.filter(p => p.dup), fresh = proposed.filter(p => !p.dup && !p.row.warn)
   const toAdd = skipDups ? fresh : proposed.filter(p => !p.row.warn && p.dup !== 'in_file')
@@ -121,10 +122,10 @@ export function ConnectionsPage() {
 }
 
 function PreviewTable({ rows }: { rows: Proposed[] }) {
-  const { catLabels } = useData()
+  const { catLabels, data } = useData(); const onDebt = (id?: string | null) => { const a = id ? data.accounts.find(x => x.id === id) : undefined; return !!a && isLiability(a) }
   if (!rows.length) return <Empty>No rows to show.</Empty>
   return <div className="tblwrap" style={{ maxHeight: 420 }}><table className="tbl"><thead><tr><th>#</th><th>Date</th><th>Payee</th><th>Category</th><th className="num">Amount</th><th>Kind</th><th>Status</th></tr></thead><tbody>
-    {rows.map((p, i) => <tr key={i} style={{ opacity: p.row.warn || p.dup ? .6 : 1 }}><td>{p.row.line}</td><td>{p.row.date ? fmtD(p.row.date) : <span style={{ color: 'var(--crit)' }}>?</span>}</td><td>{p.row.payee || <i>—</i>}{p.row.memo && <div className="note" style={{ margin: 0 }}>{p.row.memo}</div>}</td><td style={{ color: p.txn.category_id ? undefined : 'var(--ink-3)' }}>{p.txn.category_id ? catLabels[p.txn.category_id] : '—'}</td><td className="num">{p.row.amount ? fm2(p.row.amount) : '?'}</td><td>{p.txn.kind === 'transfer' ? <Pill cls="good">payment</Pill> : p.row.kind === 'income' ? <Pill cls="good">in</Pill> : <Pill cls="warn">out</Pill>}</td><td>{p.row.warn ? <Pill cls="crit">{p.row.warn}</Pill> : p.dup ? <Pill cls="idle">{DUP_LABEL[p.dup]}</Pill> : <Pill cls="good">new</Pill>}</td></tr>)}
+    {rows.map((p, i) => <tr key={i} style={{ opacity: p.row.warn || p.dup ? .6 : 1 }}><td>{p.row.line}</td><td>{p.row.date ? fmtD(p.row.date) : <span style={{ color: 'var(--crit)' }}>?</span>}</td><td>{p.row.payee || <i>—</i>}{p.row.memo && <div className="note" style={{ margin: 0 }}>{p.row.memo}</div>}</td><td style={{ color: p.txn.category_id ? undefined : 'var(--ink-3)' }}>{p.txn.category_id ? catLabels[p.txn.category_id] : '—'}</td><td className="num">{p.row.amount ? fm2(p.row.amount) : '?'}</td><td>{p.txn.kind === 'transfer' ? <Pill cls="good">payment</Pill> : p.row.kind === 'income' && onDebt(p.txn.account_id) ? <Pill cls="good">refund</Pill> : p.row.kind === 'income' ? <Pill cls="good">in</Pill> : <Pill cls="warn">out</Pill>}</td><td>{p.row.warn ? <Pill cls="crit">{p.row.warn}</Pill> : p.dup ? <Pill cls="idle">{DUP_LABEL[p.dup]}</Pill> : <Pill cls="good">new</Pill>}</td></tr>)}
   </tbody></table></div>
 }
 

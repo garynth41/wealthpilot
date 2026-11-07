@@ -4,7 +4,7 @@ import type { PaySchedule } from '../app/data/types'
 import { PAY_FREQ_LABEL } from '../app/data/types'
 import { Card, KPI, Btn, Pill, Note, useConfirm, useModal } from '../components/ui'
 import { Table, type Col } from '../components/Table'
-import { payDates, nextPayDate, lastPayDate, monthlyIncome, monthlyEquivalent, paycheckOnFile } from '../lib/paySchedule'
+import { payDates, nextPayDate, lastPayDate, monthlyIncome, monthlyEquivalent, paycheckOnFile, nextPaycheck } from '../lib/paySchedule'
 import { addDays, fmtD, fmtDY, today, diffDays, monthStart, monthEnd, curMonth, mAdd, mShort } from '../lib/dates'
 import { fmtMoney, fm2, sum } from '../lib/money'
 import { spanFor } from '../lib/periods'
@@ -20,19 +20,20 @@ export function IncomePage() {
   const next90 = useMemo(() => act.flatMap(p => payDates(p, t, addDays(t, 90)).map(d => ({ p, d }))).sort((a, b) => a.d.localeCompare(b.d)), [act, t])
   const monthly = monthlyIncome(data.paySchedules); const thisPeriod = sum(act.flatMap(p => payDates(p, sp.start, sp.end).map(() => +p.net_amount || 0)))
   const received = rangeStat(data, sp.start, sp.end).income
-  const nextPay = next90[0]
+  const nextPay = nextPaycheck(data, t, 90)   // a payday already on file (logged, from the bank feed, or a day early) is not "next" (0.25.1)
+  const oneOffs = act.filter(p => p.frequency === 'irregular').length
   const months = [...Array(6)].map((_, i) => mAdd(curMonth(), i - 5)); const hist = months.map(m => rangeStat(data, monthStart(m), monthEnd(m)).income)
   const cols: Col<PaySchedule>[] = [
     { k: 'name', label: 'Name', type: 'text', w: 160 }, { k: 'payer', label: 'Payer / employer', type: 'text', w: 150 }, { k: 'kind', label: 'Kind', type: 'select', opts: Object.keys(KIND_LABEL), labels: KIND_LABEL, w: 110 },
     { k: 'frequency', label: 'Paid', type: 'select', opts: Object.keys(PAY_FREQ_LABEL), labels: PAY_FREQ_LABEL, w: 130 }, { k: 'anchor_date', label: 'A known pay date', type: 'date' },
-    { k: 'net_amount', label: 'Take-home', type: 'money', cls: 'num' }, { k: 'gross_amount', label: 'Gross', type: 'money', cls: 'num' }, { k: '_m', label: 'Per month', type: 'ro', cls: 'num', fmt: p => fmtMoney(monthlyEquivalent(+p.net_amount || 0, p.frequency)) },
+    { k: 'net_amount', label: 'Take-home', type: 'money', cls: 'num' }, { k: 'gross_amount', label: 'Gross', type: 'money', cls: 'num' }, { k: '_m', label: 'Per month', type: 'ro', cls: 'num', fmt: p => p.frequency === 'irregular' ? 'one-off' : fmtMoney(monthlyEquivalent(+p.net_amount || 0, p.frequency)) },
     { k: '_n', label: 'Next pay', type: 'ro', fmt: p => { const n = nextPayDate(p); return n ? `${fmtD(n)} · in ${diffDays(n, t)}d` : '—' } }, { k: '_l', label: 'Last pay', type: 'ro', fmt: p => fmtD(lastPayDate(p)) },
     { k: 'deposit_account_id', label: 'Deposited to', type: 'select', opts: ['', ...accts.map(a => a.id)], labels: { '': '—', ...acctLabels }, w: 150 }, { k: 'category_id', label: 'Income category', type: 'select', opts: ['', ...catOpts('income').map(c => c.id)], labels: { '': '—', ...catLabels }, w: 150 },
     { k: 'starts_on', label: 'Starts', type: 'date' }, { k: 'ends_on', label: 'Ends', type: 'date' }, { k: 'status', label: 'Status', type: 'select', opts: ['Active', 'Paused', 'Ended'], w: 95 }, { k: 'notes', label: 'Notes', type: 'text', w: 160 }, { k: 'ref', label: 'ID', type: 'ro', cls: 'id' }]
   const c = C()
   return <>
     <div className="kpis" style={{ marginBottom: 16 }}>
-      <KPI l="Take-home per month" v={fmtMoney(monthly)} cls="good" s={`${act.length} active source${act.length === 1 ? '' : 's'} · ${fmtMoney(monthly * 12)}/yr`} />
+      <KPI l="Take-home per month" v={fmtMoney(monthly)} cls="good" s={`${act.length} active source${act.length === 1 ? '' : 's'} · ${fmtMoney(monthly * 12)}/yr${oneOffs ? ` · ${oneOffs} one-off${oneOffs === 1 ? '' : 's'} not included` : ''}`} />
       <KPI l="Next paycheck" v={nextPay ? fmtD(nextPay.d) : '—'} cls={nextPay ? (diffDays(nextPay.d, t) <= 3 ? 'good' : 'info') : 'idle'} s={nextPay ? `${nextPay.p.name} · ${fmtMoney(nextPay.p.net_amount)} · in ${diffDays(nextPay.d, t)} days` : 'add a pay schedule'} />
       <KPI l={`Expected · ${sp.label}`} v={fmtMoney(thisPeriod)} cls="info" s={`${act.flatMap(p => payDates(p, sp.start, sp.end)).length} pay dates in the period`} />
       <KPI l={`Received · ${sp.label}`} v={fmtMoney(received)} cls={received >= thisPeriod && thisPeriod > 0 ? 'good' : received > 0 ? 'warn' : 'idle'} s={thisPeriod ? `${Math.round(received / thisPeriod * 100)}% of expected` : 'income transactions this period'} />
