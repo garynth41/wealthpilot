@@ -78,7 +78,7 @@ export function guessLast4(name: string): string | null {
 
 /** Never keep more than the last four digits of an account or card number (0.25.1): any run of 5 or more digits — spaces or dashes
  *  between them allowed — becomes "••" and its last four ("PAYMENT TO ACCT 4400123456" → "PAYMENT TO ACCT ••3456"). The same result as
- *  maskDigits in lib/email/extract.ts; this file stays import-free because the bank-sync function carries a copy of it. */
+ *  email capture uses (lib/email/extract.ts re-exports it); this file stays import-free because the bank-sync function carries a copy of it. */
 export const maskDigits = (s: string) => String(s || '').replace(/\d(?:[ -]*\d){4,}/g, m => '••' + m.replace(/\D/g, '').slice(-4))
 
 /** What a credit on a card or loan is, from its description (and a statement file's Type column, when there is one) — the one rule the bank

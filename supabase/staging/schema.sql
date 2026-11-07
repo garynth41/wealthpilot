@@ -1874,3 +1874,25 @@ end $$;
 revoke execute on function public.start_period(uuid, text, date, date, text) from public, anon;
 grant execute on function public.start_period(uuid, text, date, date, text) to authenticated;
 
+-- 6. Account numbers stored before 0.25.1: bank-feed descriptions (and the account names the feed reported) kept the whole number. The
+--    same rule the app now applies everywhere (lib/simplefin.ts maskDigits): a run of 5 or more digits, spaces or dashes allowed inside,
+--    keeps only its last four ("ACH ACCT 4400123456" → "ACH ACCT ••3456"). Quiet: no activity-log row per transaction.
+create or replace function public.mask_digits(s text) returns text language plpgsql immutable set search_path = '' as $$
+declare m text; outp text := s;
+begin
+  if s is null then return null; end if;
+  for m in select (regexp_matches(s, '[0-9](?:[ -]*[0-9]){4,}', 'g'))[1] loop
+    outp := replace(outp, m, '••' || right(regexp_replace(m, '[^0-9]', '', 'g'), 4));
+  end loop;
+  return outp;
+end $$;
+revoke all on function public.mask_digits(text) from public, anon, authenticated;
+do $$
+begin
+  perform set_config('wealthpilot.quiet_audit', 'on', true);
+  update public.transactions set payee = public.mask_digits(payee) where payee ~ '[0-9](?:[ -]*[0-9]){4,}';
+  update public.accounts set name = public.mask_digits(name) where name ~ '[0-9](?:[ -]*[0-9]){4,}';
+  update public.email_items set payee = public.mask_digits(payee) where payee ~ '[0-9](?:[ -]*[0-9]){4,}';
+  perform set_config('wealthpilot.quiet_audit', 'off', true);
+end $$;
+

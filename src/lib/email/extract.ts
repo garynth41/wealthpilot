@@ -2,6 +2,7 @@
 import type { EmailKind } from '../../app/data/types'
 import { iso } from '../dates'
 import { cleanText, datesIn, dateAfter, moneyAfter, moneyIn, orgFromDomain, titleCase, type Msg } from './text'
+import { maskDigits } from '../simplefin'
 
 export type PayeeKind = 'card' | 'bnpl' | 'loc' | 'auto' | 'student' | 'collection' | 'loan' | 'insurance' | 'phone' | 'electric' | 'gasutil' | 'water' | 'internet' | 'school' | 'sub' | 'hsa' | 'benefit' | 'bank' | 'wallet' | 'rent' | 'other' | 'payroll' | 'refund' | 'deposit'
 export const DEBT_KINDS = new Set<PayeeKind>(['card', 'bnpl', 'loc', 'auto', 'student', 'collection', 'loan'])
@@ -122,6 +123,8 @@ export function extract(m: Msg): Fact | Skip | null {
   return f
 }
 export const isSkip = (x: Fact | Skip | null): x is Skip => !!x && 'skip' in x
-export const maskDigits = (s: string) => String(s || '').replace(/\d[\d -]{4,}\d/g, m => '••' + m.replace(/\D/g, '').slice(-4))
+/** One masking rule for everything the app stores (0.25.1): any run of 5 or more digits (spaces or dashes allowed inside) keeps only its last
+ *  four. Shared with the bank feed (lib/simplefin.ts, which the bank-sync function carries a copy of). */
+export { maskDigits }
 export const when = (f: Fact) => f.txnDate || f.dueDate || f.stmtDate || f.date
 export const eventDate = (f: Fact) => (f.kind === 'bill' || f.kind === 'balance' ? f.stmtDate || f.date : f.kind === 'scheduled' ? f.date : f.txnDate || f.date)
