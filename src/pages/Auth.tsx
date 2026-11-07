@@ -41,7 +41,7 @@ export function Onboarding() {
   return <div className="auth"><div className="box"><h2 style={{ marginTop: 0 }}>Welcome{user?.email ? `, ${user.email}` : ''}</h2>
     {households.length > 0 && <div style={{ marginBottom: 14 }}><div className="note" style={{ marginTop: 0 }}>Your households</div>{households.map(h => <Btn key={h.id} block onClick={() => openHousehold(h.id)}>{h.name} · {h.role}</Btn>)}</div>}
     <p className="note" style={{ marginTop: 0 }}>A household holds your accounts, budget and transactions. You can invite a partner later from Settings.</p>
-    <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Thomas household" /></div>
+    <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. The Rivera household" /></div>
     <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household') } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
     {err && <div className="msg crit">{err}</div>}
     <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button></div>
