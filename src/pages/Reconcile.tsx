@@ -12,6 +12,7 @@ import { fm2, fmtMoney, parseNum } from '../lib/money'
 import { acctLabel, isLiability } from '../lib/accounts'
 import { post } from '../lib/ledger'
 import { linkTo } from '../lib/focus'
+import { amountProblem } from '../lib/validate'
 
 const KIND_LABEL: Record<string, string> = { check: 'Check', payment: 'Payment', deposit: 'Deposit', transfer: 'Transfer' }
 const AUDIT_PILL: Record<string, string> = { sync: 'good', import: 'info', sync_failure: 'crit', override: 'warn', adjustment: 'warn', reconciliation: 'good', match: 'info', unmatch: 'warn', balance_change: 'idle', correction: 'warn', register: 'idle' }
@@ -126,8 +127,8 @@ export function ReconcilePage() {
         <Note>Completing ticks the items, sets the bank balance to the statement figure, updates the verified balance every module uses, and writes an immutable audit record. Completed reconciliations cannot be edited.</Note>
       </Card>
       <Card span={8} title="Tick what appears on the statement" hint="bank rows are ticked for you; untick anything the statement does not show">
-        {candidates.length === 0 ? <Empty>No unreconciled items on or before {fmtDY(stmtDate)}.</Empty> : <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th /><th>Date</th><th>Chk #</th><th>Payee</th><th>Type</th><th className="num">Amount</th><th>From</th></tr></thead><tbody>
-          {candidates.sort((x, y) => x.date.localeCompare(y.date)).map(t => <tr key={t.id} style={{ opacity: clearedIds.has(t.id) ? 1 : .6 }}><td><input type="checkbox" checked={clearedIds.has(t.id)} onChange={() => toggle(t.id)} /></td><td>{fmtD(t.date)}</td><td>{t.check_number ? '#' + +t.check_number : ''}</td><td>{t.payee}</td><td>{KIND_LABEL[itemType(t, a.id, a.kind)]}</td><td className="num" style={{ color: eff(t) < 0 ? 'var(--crit-ink)' : 'var(--good-ink)' }}>{eff(t) < 0 ? '−' : '+'}{fm2(Math.abs(eff(t)))}</td><td><Pill cls={t.external_id ? 'good' : t.status === 'pending' ? 'warn' : 'idle'}>{t.external_id ? 'bank' : t.status === 'pending' ? 'outstanding' : 'by hand'}</Pill></td></tr>)}
+        {candidates.length === 0 ? <Empty>No unreconciled items on or before {fmtDY(stmtDate)}.</Empty> : <div className="tblwrap" style={{ maxHeight: 520 }}><table className="tbl"><thead><tr><th><span className="sr-only">On the statement</span></th><th>Date</th><th>Chk #</th><th>Payee</th><th>Type</th><th className="num">Amount</th><th>From</th></tr></thead><tbody>
+          {candidates.sort((x, y) => x.date.localeCompare(y.date)).map(t => <tr key={t.id} style={{ opacity: clearedIds.has(t.id) ? 1 : .6 }}><td><input type="checkbox" checked={clearedIds.has(t.id)} onChange={() => toggle(t.id)} aria-label={`On the statement: ${t.payee || KIND_LABEL[itemType(t, a.id, a.kind)]} ${fm2(Math.abs(eff(t)))} on ${fmtD(t.date)}`} /></td><td>{fmtD(t.date)}</td><td>{t.check_number ? '#' + +t.check_number : ''}</td><td>{t.payee}</td><td>{KIND_LABEL[itemType(t, a.id, a.kind)]}</td><td className="num" style={{ color: eff(t) < 0 ? 'var(--crit-ink)' : 'var(--good-ink)' }}>{eff(t) < 0 ? '−' : '+'}{fm2(Math.abs(eff(t)))}</td><td><Pill cls={t.external_id ? 'good' : t.status === 'pending' ? 'warn' : 'idle'}>{t.external_id ? 'bank' : t.status === 'pending' ? 'outstanding' : 'by hand'}</Pill></td></tr>)}
         </tbody></table></div>}
       </Card>
     </div>}
@@ -156,20 +157,24 @@ function RegisterForm({ account, onDone }: { account: Account; onDone: () => voi
   const { data, insert, guarded, repo, acctLabels, accts, cats } = useData(); const st = useStore.getState; const catOpts = cats.filter(c => !c.archived).map(c => [c.id, c.name] as [string, string])
   const nextCheck = useMemo(() => { const nums = data.transactions.filter(t => t.account_id === account.id && t.check_number).map(t => +t.check_number!).filter(n => n > 0); return nums.length ? String(Math.max(...nums) + 1) : '' }, [data.transactions, account.id])
   const [f, setF] = useState({ type: 'check' as 'check' | 'payment' | 'deposit' | 'transfer', check: nextCheck, date: today(), payee: '', memo: '', amount: '', category_id: '', to: '' })
-  const submit = (e: FormEvent) => { e.preventDefault(); guarded(async () => {
-    const amount = parseNum(f.amount); if (amount == null || !(amount > 0)) throw new Error('Enter an amount')
+  const [err, setErr] = useState<{ amount?: string; to?: string }>({})
+  const submit = (e: FormEvent) => { e.preventDefault()
+    const problems = { amount: amountProblem(f.amount) || undefined, to: f.type === 'transfer' && !f.to ? 'Choose the account the money goes to — a transfer needs both accounts.' : undefined }
+    if (problems.amount || problems.to) { setErr(problems); const form = e.currentTarget as HTMLFormElement; requestAnimationFrame(() => form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return }
+    setErr({}); guarded(async () => {
+    const amount = parseNum(f.amount)!
     const row: Partial<Transaction> = { date: f.date, amount, payee: f.payee || null, memo: f.memo || null, category_id: f.category_id || null, status: 'pending', source: 'manual', check_number: f.type === 'check' ? (f.check ? String(+f.check) : null) : null, tags: [], exclude_from_budget: false,
       kind: f.type === 'deposit' ? 'income' : f.type === 'transfer' ? 'transfer' : 'expense', account_id: account.id, to_account_id: f.type === 'transfer' ? f.to || null : null }
     const t = await insert('transactions', row); await post(data, (id, p) => st().update('accounts', id, p), t, 1, f.date)
     await repo!.logAudit('register', `Recorded ${f.type}${row.check_number ? ' #' + +row.check_number : ''}: ${f.payee || ''} ${fm2(amount)}`, { txn: t.id }, account.id)
     setF(x => ({ ...x, check: x.type === 'check' && x.check ? String(+x.check + 1) : x.check, payee: '', memo: '', amount: '' })); onDone()
   }, 'Recorded — outstanding until the bank shows it') }
-  return <form onSubmit={submit}>
+  return <form onSubmit={submit} noValidate>
     <Field label="Type"><Seg value={f.type} options={[['check', 'Check'], ['payment', 'Payment'], ['deposit', 'Deposit'], ['transfer', 'Transfer']]} onChange={v => setF(x => ({ ...x, type: v }))} /></Field>
     <div className="grid2">{f.type === 'check' && <Field label="Check number"><input className="inp" inputMode="numeric" value={f.check} onChange={e => setF(x => ({ ...x, check: e.target.value }))} /></Field>}<Field label="Date"><input className="inp" type="date" value={f.date} onChange={e => setF(x => ({ ...x, date: e.target.value }))} /></Field></div>
     <Field label={f.type === 'deposit' ? 'From (payer)' : 'Payee'}><input className="inp" value={f.payee} onChange={e => setF(x => ({ ...x, payee: e.target.value }))} /></Field>
-    <div className="grid2"><Field label="Amount"><input className="inp" inputMode="decimal" value={f.amount} onChange={e => setF(x => ({ ...x, amount: e.target.value }))} /></Field>
-      {f.type === 'transfer' ? <Field label="To account"><select className="inp" value={f.to} onChange={e => setF(x => ({ ...x, to: e.target.value }))}><option value="">—</option>{accts.filter(x => x.id !== account.id).map(x => <option key={x.id} value={x.id}>{acctLabels[x.id]}</option>)}</select></Field>
+    <div className="grid2"><Field label="Amount" error={err.amount}><input className="inp" inputMode="decimal" value={f.amount} onChange={e => { setF(x => ({ ...x, amount: e.target.value })); if (err.amount) setErr(x => ({ ...x, amount: undefined })) }} /></Field>
+      {f.type === 'transfer' ? <Field label="To account" error={err.to}><select className="inp" value={f.to} onChange={e => { setF(x => ({ ...x, to: e.target.value })); if (err.to) setErr(x => ({ ...x, to: undefined })) }}><option value="">—</option>{accts.filter(x => x.id !== account.id).map(x => <option key={x.id} value={x.id}>{acctLabels[x.id]}</option>)}</select></Field>
         : <Field label="Category"><select className="inp" value={f.category_id} onChange={e => setF(x => ({ ...x, category_id: e.target.value }))}><option value="">—</option>{catOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>}</div>
     <Field label="Memo"><input className="inp" value={f.memo} onChange={e => setF(x => ({ ...x, memo: e.target.value }))} /></Field>
     <Btn primary type="submit">Record</Btn>

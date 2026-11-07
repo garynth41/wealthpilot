@@ -18,7 +18,7 @@ export function setIdleMinutes(n: number) { write('idleLock', String(n)); window
 export const lockNow = () => window.dispatchEvent(new Event('wp-lock'))
 
 export function IdleLock({ children }: { children: ReactNode }) {
-  const mode = useStore(s => s.mode); const { close } = useModal()
+  const mode = useStore(s => s.mode); const { closeAll: close } = useModal()   // locking closes every open dialog
   const [mins, setMins] = useState(() => idleMinutes(mode))
   const last = useRef<number>(Date.now())
   const [locked, setLocked] = useState(() => { if (read('locked') === '1') return true; const m = idleMinutes(mode); const la = +(read('lastActive') || 0); return m > 0 && la > 0 && Date.now() - la > m * 60000 })

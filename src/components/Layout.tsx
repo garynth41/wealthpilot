@@ -2,14 +2,15 @@ import { lockNow } from './IdleLock'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { useStore, outdated, nativeUpdate, updateRequired } from '../app/store'
-import { initNative, syncSystemBars, storeName, storeUrl, openExternal, isNative } from '../app/native'
+import { initNative, syncSystemBars, storeName, storeUrl, openExternal, isNative, hasAppHistory } from '../app/native'
 import { rescheduleReminders, wireReminderTaps } from '../app/nativeReminders'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
 import { Logo } from './Logo'
 import { fmtDY, fmtDT, today, addDays, ago } from '../lib/dates'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
-import { Toasts, useModal, MHead, MBody, Btn } from './ui'
+import { useModal, useConfirm, useLayer, hasOpenLayer, trapTab, MHead, MBody, Btn } from './ui'
+import { installTableCards } from './tableCards'
 import { sb } from '../app/supabase'
 import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
 import { focusIdFrom, highlight } from '../lib/focus'
@@ -64,20 +65,22 @@ export function Layout({ children }: { children: ReactNode }) {
   const toggleZone = (z: string) => setClosedZones(s => { const n = new Set(s); if (n.has(z)) n.delete(z); else n.add(z); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
   const setAllZones = (open: boolean) => setClosedZones(() => { const n = new Set(open ? [] : zonesRef.current); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
   const zonesRef = { current: [] as string[] }
-  const [drawer, setDrawer] = useState(false); const { open } = useModal(); const online = useOnline()
+  const [drawer, setDrawer] = useState(false); const { open } = useModal(); const confirm = useConfirm(); const online = useOnline()
+  // Back (0.25.1): the previous page when the app got here itself; a page opened directly (a notification, a home-screen shortcut, a link) goes to the dashboard instead of leaving the app
+  const goBack = () => { if (hasAppHistory()) nav(-1); else nav('/', { replace: true }) }
   const [palette, setPalette] = useState(false); const [help, setHelp] = useState<false | { card?: string | null; tab?: HelpTab }>(false); const keepHelp = useRef(false); const priv = useSyncExternalStore(subscribeDisplay, privacyOn); const dv = useSyncExternalStore(subscribeDisplay, displayVersion)
   // keyboard shortcuts (0.19.0): never while typing in a field; G-then-letter jumps; ? shows the list; Ctrl-Z undoes the last ledger edit
   useEffect(() => {
     let g = 0
     const k = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null; const typing = !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette(p => !p); return }
-      if (typing || e.altKey) return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { if (hasOpenLayer() && !document.querySelector('.modal.palette')) return; e.preventDefault(); setPalette(p => !p); return }
+      if (typing || e.altKey || hasOpenLayer()) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); void useStore.getState().guarded(() => useStore.getState().undoLast(), 'Undone'); return }
       if (e.ctrlKey || e.metaKey) return
       if (e.key === '/') { e.preventDefault(); setPalette(true); return }
       if (e.key === '?') { e.preventDefault(); open(<><MHead title="Keyboard shortcuts" /><MBody><ShortcutsHelp /></MBody></>); return }
-      if (e.key === '[') { nav(-1); return } if (e.key === ']') { nav(1); return }
+      if (e.key === '[') { goBack(); return } if (e.key === ']') { nav(1); return }
       if (e.key === 'F1') { e.preventDefault(); setHelp({}); return }
       if (e.key.toLowerCase() === 'l' && !(g && Date.now() - g < 1500)) { e.preventDefault(); lockNow(); return }
       if (e.key.toLowerCase() === 'h' && !(g && Date.now() - g < 1500)) { e.preventDefault(); togglePrivacy(); useStore.getState().toast(privacyOn() ? 'Amounts hidden — press H to show them' : 'Amounts shown'); return }
@@ -93,53 +96,69 @@ export function Layout({ children }: { children: ReactNode }) {
   const navRef = useRef(nav); navRef.current = nav
   useEffect(() => {
     if (!isNative()) return
-    void initNative({ back: () => navRef.current(-1), atRoot: () => !location.hash || location.hash === '#/' || location.hash === '#', onResume: () => { const s = useStore.getState(); if (s.mode === 'db') void s.refresh(); void s.checkLatest() } })
+    void initNative({ back: () => navRef.current(-1), home: () => navRef.current('/', { replace: true }), atRoot: () => !location.hash || location.hash === '#/' || location.hash === '#', onResume: () => { const s = useStore.getState(); if (s.mode === 'db') void s.refresh(); void s.checkLatest() } })
     void wireReminderTaps(u => navRef.current(u)); syncSystemBars(document.documentElement.dataset.theme === 'dark')
     let t: ReturnType<typeof setTimeout> | undefined; void rescheduleReminders(useStore.getState().data)
     const off = useStore.subscribe((s, p) => { if (s.data !== p.data) { clearTimeout(t); t = setTimeout(() => void rescheduleReminders(s.data), 1500) } })
     return () => { off(); clearTimeout(t) }
   }, [])
-  useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; setDrawer(false); if (keepHelp.current) keepHelp.current = false; else setHelp(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
+  const drawerOpen = useRef(false); drawerOpen.current = drawer
+  // a page picked from the phone menu: the menu closes and focus goes to the new page (it was left on a link that just disappeared)
+  useEffect(() => { document.title = `${view.title} · ${APP_NAME}`; if (drawerOpen.current) { setDrawer(false); requestAnimationFrame(() => document.getElementById('main')?.focus({ preventScroll: true })) } if (keepHelp.current) keepHelp.current = false; else setHelp(false); window.scrollTo(0, 0) }, [loc.pathname, view.title])
   // a card's ? (lib/helpBus) opens the drawer at that card
   useEffect(() => { const on = (e: Event) => { const d = (e as CustomEvent<HelpRequest>).detail || {}; setHelp({ card: d.card ?? null, tab: d.tab }) }; window.addEventListener(HELP_EVENT, on); return () => window.removeEventListener(HELP_EVENT, on) }, [])
   // a search result on another page: go there and keep the drawer open at that card; general topics open the Help Center
   const helpGo = (path: string | null, card?: string | null) => { if (!path || path.startsWith('/help')) { setHelp(false); nav(path || '/help') } else if (path !== view.path) { keepHelp.current = true; nav(path); setHelp({ card: card ?? null }) } else setHelp({ card: card ?? null }) }
   useEffect(() => { try { localStorage.setItem(LS('rail'), collapsed ? 'collapsed' : 'open') } catch { /* */ } }, [collapsed])
+  // the phone menu (0.25.1): hidden from screen readers and the keyboard while closed (styles.css); open, it takes focus, keeps Tab inside,
+  // and Esc, a tap outside or the phone's Back button closes it and puts focus back on the Menu button
+  const railRef = useRef<HTMLElement>(null); const menuBtn = useRef<HTMLButtonElement | null>(null); const mbarMenu = useRef<HTMLButtonElement>(null)
+  const closeDrawer = () => { setDrawer(false); requestAnimationFrame(() => (menuBtn.current || mbarMenu.current)?.focus({ preventScroll: true })) }
+  const drawerLayer = useLayer(drawer, closeDrawer)
+  useEffect(() => { if (!drawer) return; const el = railRef.current; const t = setTimeout(() => (el?.querySelector<HTMLElement>('.nav a.active') || el?.querySelector<HTMLElement>('.nav a, .nav button'))?.focus({ preventScroll: true }), 60)
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape' && isTop()) { e.preventDefault(); closeDrawer() } }
+    const isTop = () => !!drawerLayer.current && !document.querySelector('.modal')
+    window.addEventListener('keydown', k); return () => { clearTimeout(t); window.removeEventListener('keydown', k) } }, [drawer])   // eslint-disable-line react-hooks/exhaustive-deps
+  // phones: hand-written tables become cards, and table areas that still scroll get a tab stop (components/tableCards.ts)
+  useEffect(() => installTableCards(document.body), [])
+  // Skip to content moves focus to the page without changing the route (the hash router read "#main" as a page and opened the dashboard)
+  const skip = (e: React.MouseEvent) => { e.preventDefault(); const m = document.getElementById('main'); if (m) { m.focus({ preventScroll: true }); m.scrollIntoView({ block: 'start' }) } }
   const zones = [...new Set(visible.map(v => v.zone))]; zonesRef.current = zones
   const focusId = focusIdFrom(loc.search)
   useEffect(() => { if (focusId) setTimeout(() => highlight(focusId), 120) }, [focusId, loc.pathname])
   const activeZone = visible.find(v => v.path === loc.pathname)?.zone
   const allOpen = zones.every(z => !closedZones.has(z) || z === activeZone)
+  const resetDemoAsk = async () => { if (await confirm('Reset the demo? Every change you made in the demo is replaced by fresh sample data. This cannot be undone.', 'Reset sample data')) resetDemo() }
   const about = () => open(<><MHead title={`About ${APP_NAME}`} /><MBody><p><b>{APP_NAME}</b> v{APP_VERSION} · build <code>{APP_BUILD}</code></p><StatusPanel /><p className="note">Personal budgeting, savings and financial planning. Data lives in your own Supabase project; email bodies are never stored — only amounts, dates, payees and the last four digits of an account.</p></MBody></>)
   const tabs = visible.filter(v => v.tab)
   if (blocked) return <Navigate to="/" replace />
   const access = mode === 'db' ? { role, read_only: readOnly, modules } : null
   if (updateRequired()) return <div className="lockscreen" role="alert"><div className="box"><h2>Update WealthPilot</h2><p className="note">This version (v{APP_VERSION}) is too old to keep your data in step with the household. Install the latest version from {storeName()} — nothing you saved is lost.</p>{storeUrl() ? <Btn primary block onClick={() => void openExternal(storeUrl())}>Open {storeName()}</Btn> : <p className="note">Open {storeName()} and update WealthPilot.</p>}</div></div>
   return <div className={`app ${collapsed ? 'rail-collapsed' : ''}`}>
-    <a href="#main" className="skip">Skip to content</a>
+    <a href="#main" className="skip" onClick={skip}>Skip to content</a>
     {palette && <Palette onClose={() => setPalette(false)} />}
     {help && <Suspense fallback={null}><HelpDrawer path={view.path} title={view.title} card={help.card} tab={help.tab} onClose={() => setHelp(false)} onGo={helpGo} /></Suspense>}
-    <header className="mbar"><button onClick={() => setDrawer(d => !d)} aria-label="Menu">☰</button><button onClick={() => nav(-1)} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><button onClick={togglePrivacy} aria-label={priv ? 'Show amounts' : 'Hide amounts'} aria-pressed={priv} title="Hide amounts">{priv ? '◉' : '◎'}</button><button onClick={() => setHelp({})} aria-label="Help for this page">ⓘ</button><ThemeBtn /></header>
-    <div className={`backdrop ${drawer ? 'show' : ''}`} onClick={() => setDrawer(false)} aria-hidden="true" />
-    <aside className={`rail ${drawer ? 'open' : ''}`}>
-      <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo size={28} /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!collapsed}>{collapsed ? '›' : '‹'}</button></div>
+    <header className="mbar"><button type="button" ref={mbarMenu} onClick={() => { if (drawer) closeDrawer(); else { menuBtn.current = mbarMenu.current; setDrawer(true) } }} aria-label="Menu" aria-expanded={drawer} aria-controls="app-menu">☰</button><button type="button" onClick={goBack} aria-label="Back" style={{ fontSize: 28 }}>‹</button><span className="mb-title">{view.title}</span><button type="button" onClick={togglePrivacy} aria-label={priv ? 'Show amounts' : 'Hide amounts'} aria-pressed={priv} title="Hide amounts">{priv ? '◉' : '◎'}</button><button type="button" onClick={() => setHelp({})} aria-label="Help for this page">ⓘ</button><ThemeBtn /></header>
+    <div className={`backdrop ${drawer ? 'show' : ''}`} onClick={closeDrawer} aria-hidden="true" />
+    <aside className={`rail ${drawer ? 'open' : ''}`} id="app-menu" ref={railRef} aria-label="Menu" onKeyDown={e => { if (drawer) trapTab(e, railRef.current) }}>
+      <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo size={28} /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button type="button" className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!collapsed}>{collapsed ? '›' : '‹'}</button></div>
       <nav className="nav" aria-label="Main">
-        <div className="navtools"><button onClick={() => setAllZones(!allOpen)} title={allOpen ? 'Collapse all sections' : 'Expand all sections'}>{allOpen ? '⊟ Collapse all' : '⊞ Expand all'}</button></div>
+        <div className="navtools"><button type="button" onClick={() => setAllZones(!allOpen)} title={allOpen ? 'Collapse all sections' : 'Expand all sections'}>{allOpen ? '⊟ Collapse all' : '⊞ Expand all'}</button></div>
         {zones.map(z => { const items = visible.filter(v => v.zone === z); const open = collapsed || !closedZones.has(z) || z === activeZone
           return <div key={z} className={`zoneblock ${open ? 'open' : 'closed'}`}>
-            <button className="zone" onClick={() => toggleZone(z)} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}><span className="chev">{open ? '▾' : '▸'}</span><span className="zt">{z}</span></button>
-            {open && items.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span></NavLink>)}
+            <button type="button" className="zone" onClick={() => toggleZone(z)} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}><span className="chev">{open ? '▾' : '▸'}</span><span className="zt">{z}</span></button>
+            {open && items.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={collapsed ? `${v.title} — ${v.sub}` : v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span></NavLink>)}
           </div> })}
       </nav>
       <div className="me"><span className="avatar">{(mode === 'demo' ? 'D' : (user?.email?.[0] || '?')).toUpperCase()}</span><span className="who"><b>{mode === 'demo' ? 'demo' : user?.email}</b><span>{access ? (accessLevel(access) === 'owner' ? 'owner' : accessLevel(access) === 'full' ? 'full access' : accessLevel(access) === 'readonly' ? 'read-only' : 'limited access') : role}</span></span><Btn sm onClick={() => (mode === 'demo' ? exitDemo() : signOut())}>Sign out</Btn></div>
       <div className="railfoot" onClick={about}>{APP_NAME} <b>v{APP_VERSION}</b> · <span className={`envtag env-${envName()}`}>{envName()}</span><br />build {APP_BUILD}</div>
     </aside>
     <main className="main" id="main" tabIndex={-1}>
-      <nav className="histnav" aria-label="History"><button className="hn-btn" onClick={() => nav(-1)} title="Back"><span aria-hidden>←</span> Back</button><button className="hn-btn" onClick={() => nav(1)} title="Forward">Forward <span aria-hidden>→</span></button><span className="hn-crumb">{view.path !== '/' && <><NavLink to="/">Home</NavLink> › <span>{view.zone}</span> › </>}<b>{view.title}</b></span></nav>
-      <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Ctrl K: search and jump" style={{ padding: '6px 10px' }}><span aria-hidden="true">⌕ </span><kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button className="btn" onClick={() => setHelp({})} title="Help for this page (F1)" style={{ padding: '6px 10px' }}><span aria-hidden="true">ⓘ </span>Help</button><button className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Hidden — show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? <><span aria-hidden="true">◉ </span>Hidden</> : '◎'}</button><button className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
+      <nav className="histnav" aria-label="History"><button type="button" className="hn-btn" onClick={goBack} title="Back"><span aria-hidden>←</span> Back</button><button type="button" className="hn-btn" onClick={() => nav(1)} title="Forward">Forward <span aria-hidden>→</span></button><span className="hn-crumb">{view.path !== '/' && <><NavLink to="/">Home</NavLink> › <span>{view.zone}</span> › </>}<b>{view.title}</b></span></nav>
+      <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button type="button" className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Ctrl K: search and jump" style={{ padding: '6px 10px' }}><span aria-hidden="true">⌕ </span><kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button type="button" className="btn" onClick={() => setHelp({})} title="Help for this page (F1)" style={{ padding: '6px 10px' }}><span aria-hidden="true">ⓘ </span>Help</button><button type="button" className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Hidden — show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? <><span aria-hidden="true">◉ </span>Hidden</> : '◎'}</button><button type="button" className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
       {outdated() && <div className="banner crit">A newer release (v{useStore.getState().latest}) is available — this tab is still running <b>v{APP_VERSION}</b>. <Btn sm primary onClick={() => { try { navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.update())) } catch { /* */ } location.reload() }}>Reload now</Btn></div>}
       {nativeUpdate() && <div className="banner info" role="status">A newer version of WealthPilot (v{useStore.getState().nativeLatest}) is in {storeName()}. {storeUrl() && <Btn sm primary onClick={() => void openExternal(storeUrl())}>Update</Btn>}</div>}
-      {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={resetDemo}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
+      {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={() => void resetDemoAsk()}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
       {offlineAt && mode === 'db' ? <div className="banner warn" role="status" data-testid="offline-banner">You're offline — showing your data as of <b>{fmtDT(offlineAt)}</b>. Changes are paused until you're back online; the page updates by itself when the connection returns.</div>
         : !online && <div className="banner warn">You're offline. {mode === 'demo' ? 'The demo keeps working; changes stay in this browser.' : 'Showing what was loaded before the connection dropped — changes are paused until you are back online.'}</div>}
       {household?.deletion_scheduled_for && <div className="banner crit" role="alert" data-testid="deletion-banner">This household will be <b>permanently deleted on {fmtDY(household.deletion_scheduled_for.slice(0, 10))}</b> — every account, transaction, file and backup, for every member. Until then it is read-only. {useStore.getState().isOwner() ? <Btn sm primary onClick={() => void useStore.getState().cancelDeletion().then(() => useStore.getState().toast('Deletion cancelled — the household is back to normal'), (e: Error) => useStore.getState().toast(e.message, true))}>Cancel the deletion</Btn> : 'An owner can cancel it in Settings.'}</div>}
@@ -147,8 +166,7 @@ export function Layout({ children }: { children: ReactNode }) {
       {priv && <div className="banner info privacy-note" role="status">Amounts are hidden on this device. <Btn sm onClick={togglePrivacy}>Show amounts</Btn> <span className="note" style={{ display: 'inline', margin: 0 }}>(or press H)</span></div>}
       <div className={useStore.getState().canEdit() ? '' : 'ro'} key={useThemeName() + '·' + dv}><PullToRefresh>{children}</PullToRefresh></div>
     </main>
-    <nav className="tabbar" aria-label="Quick tabs">{tabs.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')}><Icon n={v.icon} /><span>{v.tab}</span></NavLink>)}<button onClick={() => setDrawer(true)}><Icon n="menu" /><span>Menu</span></button></nav>
-    <Toasts />
+    <nav className="tabbar" aria-label="Quick tabs">{tabs.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')}><Icon n={v.icon} /><span>{v.tab}</span></NavLink>)}<button type="button" onClick={e => { menuBtn.current = e.currentTarget; setDrawer(true) }} aria-expanded={drawer} aria-controls="app-menu"><Icon n="menu" /><span>Menu</span></button></nav>
   </div>
 }
 export type ThemeMode = 'light' | 'dark' | 'system'
@@ -172,7 +190,7 @@ export function ThemeBtn() {
   const [m, setM] = useState<ThemeMode>(themeMode)
   const cycle = () => { const n: ThemeMode = m === 'system' ? 'dark' : m === 'dark' ? 'light' : 'system'; setThemeMode(n); setM(n) }   // system → dark → light → system
   const label = m === 'system' ? `System (${sysTheme()})` : m === 'dark' ? 'Dark' : 'Light'
-  return <button className="btn" onClick={cycle} title={`Theme: ${label} — click to change`} aria-label={`Theme: ${label}`} style={{ padding: '6px 10px' }}>{m === 'system' ? '◐' : m === 'dark' ? '☀︎' : '☾'}</button>
+  return <button type="button" className="btn" onClick={cycle} title={`Theme: ${label} — click to change`} aria-label={`Theme: ${label}`} style={{ padding: '6px 10px' }}>{m === 'system' ? '◐' : m === 'dark' ? '☀︎' : '☾'}</button>
 }
 export function applySavedTheme() { setThemeMode(themeMode()); try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode() === 'system') setThemeMode('system') }) } catch { /* */ } }
 

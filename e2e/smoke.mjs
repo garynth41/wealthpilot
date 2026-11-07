@@ -19,6 +19,17 @@ for (const W of [1400, 390]) {
   ok(await p.locator('h1').first().textContent() === 'Dashboard', `${W}: demo opens on the Dashboard`)
   const pages = ['/forecast', '/budget', '/transactions', '/bills', '/income', '/accounts', '/debts', '/investments', '/goals', '/plan', '/protection', '/tax', '/reports', '/insights', '/connections', '/trends', '/hardship', '/email', '/settings', '/']
   for (const path of pages) { await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(900); const h = await p.locator('h1').first().textContent(); const sw = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth); ok(h && sw <= 1, `${W}: ${path} renders "${h}" (sideways overflow ${sw}px)`); await p.screenshot({ path: `e2e/shots/${W}_${path.replace('/', '') || 'home'}.png`, fullPage: true }) }
+  if (W === 390) {
+    // 0.25.1: on a phone every value and button of a hand-written table is on screen; the menu is out of reach until opened
+    await p.goto('http://localhost:4173/#/bills'); await p.waitForTimeout(900)
+    const bc = await p.evaluate(() => { const t = document.querySelector('main table.tbl'); const b = [...document.querySelectorAll('main table.tbl button')].find(x => /Mark paid/.test(x.textContent)); const r = b && b.getBoundingClientRect(); return { cards: !!t && t.hasAttribute('data-cards'), right: r ? Math.round(r.right) : 9999 } })
+    ok(bc.cards && bc.right <= 390, `phones: Bills "Coming up" is one card per row with Mark paid on screen (right edge ${bc.right}px)`)
+    ok(await p.evaluate(() => getComputedStyle(document.querySelector('.rail')).visibility) === 'hidden', 'phones: the closed menu is hidden from the keyboard and screen readers')
+    await p.click('.mbar button[aria-label="Menu"]'); await p.waitForTimeout(300)
+    ok(await p.getAttribute('.mbar button[aria-label="Menu"]', 'aria-expanded') === 'true' && await p.evaluate(() => !!document.activeElement && !!document.activeElement.closest('.rail')), 'phones: Menu opens the menu, says so and moves focus into it')
+    await p.keyboard.press('Escape'); await p.waitForTimeout(300)
+    ok(await p.evaluate(() => !document.querySelector('.rail.open') && document.activeElement && document.activeElement.getAttribute('aria-label') === 'Menu'), 'phones: Esc closes the menu and focus returns to the Menu button')
+  }
   if (W === 1400) {
     // add a transaction
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(700); const before = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length)
@@ -123,17 +134,20 @@ for (const W of [1400, 390]) {
     ok(/you can sync again at/.test(await p.locator('[data-testid="sync-limit"]').textContent().catch(() => '')) && !(await p.locator('button:has-text("Sync now")').isEnabled()), 'after an on-demand sync, Sync now waits 15 minutes and says until when')
     await p.evaluate(() => { localStorage.removeItem('wealthpilot.simSync'); localStorage.removeItem('wealthpilot.simSyncLimit') }); await p.reload(); await p.waitForTimeout(600)
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500); await p.click('.seg button:has-text("Security")'); await p.waitForTimeout(300); ok((await p.locator('.card').first().textContent()).includes('offline demo'), 'Security tab renders (demo notice)')
-    // 0.10.0: members — invite with limited access drafts an email carrying a one-time temporary password; access can be changed afterwards
+    // 0.10.0, 0.25.1: members — inviting with limited access records the invitation and drafts the email; no password is made any more (the
+    // person joins by signing in or signing up with that address) and they wait under "Waiting to sign up"; a member's access can be changed
     await p.click('button:has-text("Members")'); await p.waitForTimeout(300); const members0 = await p.locator('table.tbl tbody tr').count()
     await p.fill('input[placeholder="name@example.com"]', 'pat.smoke@example.com'); await p.fill('input[placeholder="how the email greets them"]', 'Pat'); await p.click('.seg button:has-text("Limited")'); await p.waitForTimeout(100)
-    ok(await p.locator('button:has-text("Create sign-in & draft email")').isDisabled(), 'limited access needs at least one section before inviting')
+    ok(await p.locator('button:has-text("Invite & draft email")').isDisabled(), 'limited access needs at least one section before inviting')
     await p.click('label:has-text("Budget") input'); await p.click('label:has-text("Savings goals") input'); await p.waitForTimeout(100); ok(/Limited — Budget, Savings goals & plan \(read-only\)/.test(await p.locator('main').textContent()), 'access summary describes the limited grant')
-    await p.click('button:has-text("Create sign-in & draft email")'); await p.waitForTimeout(600); const invM = await p.locator('.modal').textContent()
-    ok(/Temporary password/.test(invM) && /WP-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}/.test(invM), 'invitation shows a one-time temporary password'); ok(/Hi Pat,/.test(invM) && /Limited — Budget, Savings goals/.test(invM) && /first sign-in only/.test(invM), 'drafted email greets by name and states the access')
+    await p.click('button:has-text("Invite & draft email")'); await p.waitForTimeout(600); const invM = await p.locator('.modal').textContent()
+    ok(/Invitation ready/.test(invM) && !/Temporary password|WP-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}/.test(invM), 'the invitation makes no password — they join by signing in with that address'); ok(/Hi Pat,/.test(invM) && /Limited — Budget, Savings goals/.test(invM) && /pat\.smoke@example\.com/.test(invM), 'drafted email greets by name and states the access')
     ok((await p.locator('.modal a:has-text("Open in email app")').getAttribute('href')).startsWith('mailto:pat.smoke%40example.com?subject='), 'Open in email app is a mailto link'); await p.click('.modal button:has-text("Done")'); await p.waitForTimeout(300)
-    ok((await p.locator('table.tbl tbody tr').count()) === members0 + 1 && /pat\.smoke@example\.com/.test(await p.locator('table.tbl').textContent()) && /Limited/.test(await p.locator('table.tbl').textContent()), 'new member is listed as Limited')
-    await p.click('table.tbl tr:has-text("pat.smoke") button:has-text("Change")'); await p.waitForTimeout(300); await p.click('.modal .seg button:has-text("Full")'); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(500)
-    ok(/Full access/.test(await p.locator('table.tbl tr:has-text("pat.smoke")').textContent()), 'changing access to Full updates the member row')
+    ok((await p.locator('table.tbl tbody tr').count()) === members0 && /Waiting to sign up:.*pat\.smoke@example\.com \(Limited\)/s.test(await p.locator('main').textContent()), 'the invitation waits under "Waiting to sign up" as Limited')
+    await p.click('table.tbl tr:has-text("sam@example.com") button:has-text("Change")'); await p.waitForTimeout(300); await p.click('.modal .seg button:has-text("Read-only")'); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(500)
+    ok(/Read-only/.test(await p.locator('table.tbl tr:has-text("sam@example.com")').textContent()), 'changing a member\'s access to Read-only updates the member row')
+    await p.click('table.tbl tr:has-text("sam@example.com") button:has-text("Change")'); await p.waitForTimeout(300); await p.click('.modal .seg button:has-text("Full")'); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(500)
+    ok(/Full access/.test(await p.locator('table.tbl tr:has-text("sam@example.com")').textContent()), 'changing it back to Full updates the member row')
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500); ok(!/as you last updated them/.test(await p.locator('main').textContent()), 'Dashboard overview no longer buries the account balances at the bottom')
     await p.click('.seg button:has-text("Account balances")'); await p.waitForTimeout(300); ok(/Account balances/.test(await p.locator('main .card').first().textContent()) && /as you last updated them/.test(await p.locator('main').textContent()) && await p.locator('main .kpi').count() > 0, 'Dashboard has an Account balances tab at the top with every account')
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(500)
@@ -164,7 +178,7 @@ for (const W of [1400, 390]) {
     await p.locator('.modal input[aria-label="Amount for line 1"]').fill('1.00'); await p.waitForTimeout(200); ok(/still to assign/.test(await p.locator('.modal').textContent()) && (await p.locator('.modal button:has-text("Save split")').isDisabled()), 'a split that does not add up cannot be saved'); await p.click('.modal button:has-text("Cancel")'); await p.waitForTimeout(200)
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(800); const bud = await p.locator('main').textContent(); ok(/Groceries/.test(bud), 'the budget page renders with the split counted (Groceries line present)')
     await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(600); await p.click('.opts button:has-text("All")'); await p.waitForTimeout(300)
-    const boxes = p.locator('tbody input[type=checkbox][aria-label^="Select row"]'); await boxes.nth(0).check(); await boxes.nth(1).check(); await p.waitForTimeout(200)
+    const boxes = p.locator('tbody input[type=checkbox][aria-label^="Select "]'); ok(/^Select (?!row )\S.*\$[\d,.]+, \w{3} \d+$/.test(await boxes.nth(0).getAttribute('aria-label')), `a row's checkbox says which transaction it selects (${await boxes.nth(0).getAttribute('aria-label')})`); await boxes.nth(0).check(); await boxes.nth(1).check(); await p.waitForTimeout(200)
     ok(/2 selected/.test(await p.locator('[aria-label="Bulk edit"]').textContent()), 'selecting two rows shows the bulk-edit bar')
     await p.fill('[aria-label="Tag to add or remove"]', 'smoke'); await p.click('button:has-text("+ Tag")'); await p.waitForTimeout(500)
     ok((await p.locator('.opts button:has-text("#smoke")').count()) === 1, 'bulk tagging adds the tag and it appears as a filter'); await p.click('.opts button:has-text("#smoke")'); await p.waitForTimeout(300); ok((await p.locator('tbody tr').count()) === 2, 'the tag filter shows exactly the two tagged rows')
@@ -215,11 +229,11 @@ for (const W of [1400, 390]) {
     // 0.21.0: comment threads, "apply to earlier", rule review flags, paycheck allocation, per-member alert routing, statement PDFs
     const LS = () => p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data)
     await p.click('.slicer:has(.l:text-is("Range")) button:text-is("All")'); await p.waitForTimeout(500)
-    await p.locator('button[aria-label="Comments (2)"]').first().click(); await p.waitForTimeout(400)
+    await p.locator('button[aria-label="2 comments"]').first().click(); await p.waitForTimeout(400)
     ok(/Sam/.test(await p.locator('.modal').textContent()) && (await p.locator('.modal .thread li').count()) === 2, 'a transaction shows its comment thread with who said what')
     await p.fill('#wp-comment', 'Smoke: confirmed with the receipt.'); await p.click('.modal button:has-text("Post")'); await p.waitForTimeout(500)
     ok((await p.locator('.modal .thread li').count()) === 3 && (await LS()).comments.length === 3, 'posting a comment adds it to the thread and stores it'); await p.click('.modal .mfoot button:has-text("Close")'); await p.waitForTimeout(200)
-    ok((await p.locator('button[aria-label="Comments (3)"]').count()) === 1, 'the ledger button counts the comments')
+    ok((await p.locator('button[aria-label="3 comments"]').count()) === 1, 'the ledger button counts the comments')
     const shellN = (await LS()).transactions.filter(t => t.payee === 'Shell').length
     const sh = p.locator('input[aria-label="Payee"][value="Shell"]').first(); await sh.fill('Shell Oil'); await sh.press('Tab'); await p.waitForTimeout(600)
     const act = p.locator('.toast-act:has-text("Apply to")'); ok((await act.count()) === 1 && new RegExp(`Apply to ${shellN - 1}`).test(await act.textContent()), `renaming a payee offers to rename the ${shellN - 1} earlier ones`)
@@ -289,7 +303,7 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/transactions?add=1'); await p.waitForTimeout(900); ok(/Add transaction/.test(await p.locator('.modal').textContent().catch(() => '')), 'the "Add a transaction" shortcut opens the add form'); await p.keyboard.press('Escape'); await p.waitForTimeout(200)
     // 0.24.0: property & vehicles with the quarterly reminder, balance history and balance-on-date, the credit-score trend, moving in from Mint
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(900); ok(/Update the value of 2021 Honda CR-V/.test(await p.locator('main').textContent()), 'the dashboard asks for a new value once a car\'s is a quarter old')
-    await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900); const pv = p.locator('.card:has(h3:has-text("Property & vehicles")), .card:has-text("Property & vehicles")').first()
+    await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900); const pv = p.locator('.card:has(.card-head h2:has-text("Property & vehicles"))').first()
     const pvt = await pv.textContent(); ok(/2021 Honda CR-V/.test(pvt) && /update due/.test(pvt) && /Auto loan/.test(pvt) && /Kelley Blue Book/.test(pvt), 'Property & vehicles lists the car with its loan, its source and the update-due flag')
     await pv.locator('button:has-text("Update value")').first().click(); await p.waitForTimeout(300); await p.fill('.modal input[aria-label="Value"]', '21900'); await p.click('.modal button:has-text("Save value")'); await p.waitForTimeout(600)
     const pvt2 = await pv.textContent(); ok(/21,900/.test(pvt2) && !/update due/.test(pvt2), 'typing a new value clears the reminder')
@@ -335,7 +349,7 @@ for (const W of [1400, 390]) {
     await p.goto('http://localhost:4173/#/help?topic=%2Freconcile&card=Statement'); await p.waitForTimeout(900); ok((await p.locator('.hc-main .g-card.g-focus[open]').count()) === 1, 'a link straight to one card of the guide opens it')
     // 0.25.0: deleting a household — type the name, 7 days read-only with a banner every member sees, any owner can cancel
     await p.goto('http://localhost:4173/#/settings'); await p.waitForTimeout(900); await p.click('button:has-text("Delete this household…")'); await p.waitForTimeout(400)
-    const hhName = (await p.locator('.modal .mhead b').first().textContent()).replace(/^Delete\s+/, '').replace(/\?\s*$/, '').trim()
+    const hhName = (await p.locator('.modal .mhead h2').first().textContent()).replace(/^Delete\s+/, '').replace(/\?\s*$/, '').trim()
     ok(!(await p.locator('.modal button:has-text("Schedule deletion")').isEnabled()), 'deletion stays locked until the name is typed and the box ticked')
     await p.fill('.modal input[aria-label="Type the household\'s name to confirm"]', hhName); await p.check('.modal input[type=checkbox]'); await p.click('.modal button:has-text("Schedule deletion")'); await p.waitForTimeout(900)
     ok(/permanently deleted on/.test(await p.locator('[data-testid="deletion-banner"]').textContent().catch(() => '')), 'a scheduled deletion shows its date to everyone')
@@ -353,6 +367,8 @@ for (const W of [1400, 390]) {
     await p.click('.seg button:has-text("General")'); await p.waitForTimeout(300)
     ok(/Email capture \(Gmail \/ Outlook\)/.test(await p.locator('main').textContent()), 'Settings → General has the Email capture card')
     await p.click('button:has-text("Open email capture settings")'); await p.waitForTimeout(300)
+    ok((await p.locator('.modal details.techsetup:not([open])').count()) === 1 && /never kept/.test(await p.locator('.modal .mbody').textContent()), 'email capture settings lead with plain language; the technical steps are in a closed "Technical setup" section')
+    await p.click('.modal summary:has-text("Technical setup")'); await p.waitForTimeout(200)
     ok(await p.locator('.modal :text("Google OAuth client ID")').count() > 0 && await p.locator('.modal :text("Application (client) ID")').count() > 0, 'the card opens the Gmail and Outlook client-ID fields')
     const contrast = async () => p.evaluate(() => { const rgb = c => c.match(/[\d.]+/g).map(Number); const L = ([r, g, b]) => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4 }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b) }
       const one = el => { const cs = getComputedStyle(el); const a = L(rgb(cs.color)), b = L(rgb(cs.backgroundColor)); return (Math.max(a, b) + .05) / (Math.min(a, b) + .05) }
@@ -361,6 +377,29 @@ for (const W of [1400, 390]) {
     const cLight = await contrast(); await p.evaluate(() => { document.documentElement.dataset.theme = 'dark' }); const cDark = await contrast(); await p.evaluate(() => { document.documentElement.dataset.theme = 'light' })
     ok(cLight >= 4.5 && cDark >= 4.5, `dialog, toast, banner and message text meet 4.5:1 in light (${cLight.toFixed(1)}) and dark (${cDark.toFixed(1)})`)
     await p.click('.modal button:has-text("Cancel")'); await p.waitForTimeout(200)
+    // 0.25.1: a cleared required date or a negative amount is refused and the page keeps working; Enter saves; a confirmation opened from
+    // a dialog returns to it as it was; Skip to content stays on the page
+    const demo = () => p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data)
+    await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(700); await p.click('.slicer:has(.l:text-is("Range")) button:text-is("All")'); await p.waitForTimeout(300)
+    const dIn = p.locator('table.tbl tbody tr').first().locator('input[type=date]'); const d0 = await dIn.inputValue(); await dIn.focus(); await dIn.evaluate(el => { el.value = '' }); await p.click('h1'); await p.waitForTimeout(400)
+    ok(await p.locator('table.tbl tbody tr').first().locator('input[type=date]').inputValue() === d0 && (await demo()).transactions.every(t => !!t.date) && (await p.locator('h1').first().textContent()) === 'Transactions', 'clearing a transaction date puts the date back, saves nothing and the page keeps working')
+    const amtIn = p.locator('table.tbl tbody tr').first().locator('input[aria-label="Amount"]'); const a0 = await amtIn.inputValue(); await amtIn.fill('-25'); await amtIn.press('Tab'); await p.waitForTimeout(300)
+    ok(await p.locator('table.tbl tbody tr').first().locator('input[aria-label="Amount"]').inputValue() === a0 && (await demo()).transactions.every(t => t.amount >= 0) && /cannot be negative/.test(await p.locator('.toasts').textContent()), 'a negative ledger amount is refused with a message')
+    const nE = (await demo()).transactions.length
+    await p.click('text=+ Add transaction'); await p.waitForTimeout(300); await p.fill('input[placeholder="0.00"]', 'abc'); await p.press('input[placeholder="0.00"]', 'Enter'); await p.waitForTimeout(200)
+    ok((await p.locator('.modal').count()) === 1 && /is not an amount/.test(await p.locator('.modal .field-err').textContent().catch(() => '')), 'Add transaction says why "abc" cannot be saved and stays open')
+    await p.fill('input[placeholder="0.00"]', '7.25'); await p.press('input[placeholder="0.00"]', 'Enter'); await p.waitForTimeout(600)
+    ok((await p.locator('.modal').count()) === 0 && (await demo()).transactions.length === nE + 1, 'Enter in Add transaction saves it')
+    await p.locator('button[aria-label="3 comments"]').first().click(); await p.waitForTimeout(300); await p.fill('#wp-comment', 'unsent reply')
+    await p.locator('.modal button[aria-label="Delete comment"]').first().click(); await p.waitForTimeout(300)
+    ok((await p.locator('.modal').count()) === 2 && (await p.locator('.modal[role=alertdialog][aria-modal=true]').count()) === 1, 'a confirmation opens on top of the comments dialog')
+    await p.click('.modal[role=alertdialog] button:has-text("Cancel")'); await p.waitForTimeout(300)
+    ok((await p.locator('.modal').count()) === 1 && await p.inputValue('#wp-comment') === 'unsent reply', 'cancelling it returns to the comments with the unsent reply still there')
+    await p.keyboard.press('Escape'); await p.waitForTimeout(200)
+    await p.goto('http://localhost:4173/#/budget'); await p.reload(); await p.waitForTimeout(1200); await p.keyboard.press('Tab')
+    ok(await p.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('skip')), 'on a freshly opened page the first Tab stop is Skip to content')
+    await p.keyboard.press('Enter'); await p.waitForTimeout(300)
+    ok(/#\/budget$/.test(p.url()) && await p.evaluate(() => document.activeElement && document.activeElement.id) === 'main', 'Skip to content moves focus to the page without leaving it')
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(500)
     // 0.19.0: accessibility gate — axe-core WCAG 2.0/2.1 A + AA on eight pages; any serious or critical violation fails the run
     const axeSrc = readFileSync(fileURLToPath(new URL('../node_modules/axe-core/axe.min.js', import.meta.url)), 'utf8')

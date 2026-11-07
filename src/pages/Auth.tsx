@@ -42,7 +42,7 @@ export function Onboarding() {
     <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Thomas household" /></div>
     <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household') } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
     {err && <div className="msg crit">{err}</div>}
-    <div className="links"><button onClick={() => signOut()}>Sign out</button></div>
+    <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button></div>
   </div></div>
 }
 

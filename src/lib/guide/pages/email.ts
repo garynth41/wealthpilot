@@ -4,7 +4,7 @@ export const email: GuidePage = {
   path: '/email',
   summary: 'Reads bills, statements, payments, deposits and bank alerts from Gmail or Outlook. You review what it found; the app files what you approve as transactions, card statements and recurring bills, and keeps a record of each with a link back to the email.',
   start: [
-    'An owner clicks Set up Gmail (or Set up Outlook), pastes the client ID and chooses how far back to read.',
+    'An owner clicks Set up Gmail (or Set up Outlook) and chooses how far back to read. The first time, whoever manages your Google or Microsoft account follows the Technical setup steps in that box once.',
     'Click ✉ Check Gmail (or ✉ Check Outlook) and sign in to your mailbox when asked.',
     'In Review, check where each item goes, its amount and its date, untick anything wrong, then click Apply selected.',
     'Not ready to connect? Click Paste an email to test to see what the reader finds in a single message.',
@@ -26,9 +26,9 @@ export const email: GuidePage = {
         'Click Paste an email to test to try the reader on one message without connecting.',
       ],
       fields: [
-        { term: 'Set up Gmail / Set up Outlook', text: 'Shown until a client ID is saved. For an owner it opens Email capture settings.' },
+        { term: 'Set up Gmail / Set up Outlook', text: 'Shown until that mailbox has had its one-time setup. For an owner it opens Email capture settings with the Technical setup steps showing.' },
         { term: 'Paste an email to test', text: 'Opens a window with From, Subject and Body (text or HTML). Parse shows what the reader found (type, payee, amount, statement balance, minimum due, due date, transaction date, last four digits, autopay and confidence) and adds it to Review, where you can file it like any other email. It says so when the message is not a money email or is skipped.' },
-        { term: 'Settings', text: 'Opens Email capture settings (owners): the Google OAuth client ID and Gmail address; the Outlook Application (client) ID, Tenant (consumers for a personal outlook.com address) and Mailbox; Read money emails from; Automatic filing; Statement and receipt PDFs; and Forget them, which clears every remembered payee.' },
+        { term: 'Settings', text: 'Opens Email capture settings (owners): the Gmail address and Outlook mailbox to read, the kind of Microsoft account, Read money emails from, Automatic filing, Statement and receipt PDFs, Forget them (clears every remembered payee) and, at the bottom, Technical setup — the one-time registration with Google or Microsoft.' },
         { term: 'Reads from', text: 'The earliest date read: 60 days back unless you change Read money emails from in settings, and never earlier than January 1, 2025.' },
         { term: 'Automatic filing', text: 'When it is on in settings, items that are clearly matched (a sure match to an existing card, loan, recurring bill or category, read with high confidence, not already recorded) are filed straight after the check without review.' },
         { term: 'Statement and receipt PDFs', text: 'Off by default. When on, the PDF attached to a filed email is saved with the statement or transaction (shown in Statement history on Account Balances and on the transaction\'s 📎). The email itself is still never stored, but a statement PDF is the bank\'s own document and can show your full account number; leave this off if you do not want that kept.' },
@@ -37,7 +37,7 @@ export const email: GuidePage = {
         'Every message is reviewed once: approved items are filed, and ignored ones are remembered so they do not come back.',
         'Email bodies are never stored. The record keeps the amounts, dates, payee, the last four digits of an account, and the subject line with any long number cut to its last four digits.',
         'Amounts and dates come only from the email. An amount the email does not state is left blank for you to fill in, and a payment or deposit with no stated date takes the date the email arrived. An email with no amount at all is listed under "nothing to record", except past-due and declined notices, bank alerts, bills that give a due date and scheduled card or loan payments that give a date.',
-        'Reading mail needs a Google OAuth client ID (Gmail) or a Microsoft app registration (Outlook) that allows this site\'s address. The same settings open from the Email capture card in Settings.',
+        'Reading mail needs a one-time setup with Google (Gmail) or Microsoft (Outlook), done by whoever manages that account; the steps are under Technical setup in Email capture settings, which also opens from the Email capture card in Settings.',
       ],
     },
     {
@@ -106,8 +106,8 @@ export const email: GuidePage = {
     },
   ],
   tasks: [
-    { q: 'How do I connect Gmail?', steps: ['Click Set up Gmail (an owner).', 'Paste the Google OAuth client ID (Google Cloud → APIs & Services → Credentials → OAuth client (Web)); that client must list this site as an authorized JavaScript origin and have the Gmail API enabled.', 'Click Save, then ✉ Check Gmail and sign in.'] },
-    { q: 'How do I connect Outlook?', steps: ['Click Set up Outlook (an owner).', 'Paste the Application (client) ID from Entra admin → App registrations → Single-page application, with the redirect address shown in the settings.', 'Pick the Tenant (consumers for a personal outlook.com address), click Save, then ✉ Check Outlook and sign in.'] },
+    { q: 'How do I connect Gmail?', steps: ['Click Set up Gmail (an owner).', 'The first time only, whoever manages your Google account follows Technical setup in the box: register the app with Google (the steps are listed there) and paste the Google OAuth client ID it gives back.', 'Click Save, then ✉ Check Gmail and sign in to your mailbox.'] },
+    { q: 'How do I connect Outlook?', steps: ['Click Set up Outlook (an owner).', 'Pick the kind of Microsoft account — personal (Outlook.com, Hotmail, Live) or work or school.', 'The first time only, whoever manages your Microsoft account follows Technical setup in the box and pastes the Application (client) ID it gives back.', 'Click Save, then ✉ Check Outlook and sign in to your mailbox.'] },
     { q: 'How do I file a card payment email to the right card?', steps: ['In Review, open Where it goes on that line and pick the card under Cards & loans.', 'Check Paid from, then click Apply selected.', 'The next email from that payee goes to the same card.'] },
     { q: 'How do I stop an email from coming back?', steps: ['In Review, tick "not money I track — ignore this email" on its line.', 'Click Apply selected.'] },
     { q: 'How do I make the app forget where it files payees?', steps: ['Click Settings on the Sync card.', 'Click Forget them next to the number of remembered payees.'] },
