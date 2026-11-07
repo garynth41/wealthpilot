@@ -2,12 +2,13 @@
 // behave differently inside an app goes through here, so pages never test the platform themselves:
 //   • files: browsers download; the apps write the file and open the share sheet (Save to Files, Drive, Mail, AirDrop…)
 //   • links to other sites open in the system browser, never inside the app
-//   • the Android back button walks back through the app's pages, then leaves the app from the dashboard
+//   • the Android back button closes the top dialog first, walks back through the app's pages, then leaves the app from the dashboard
 //   • status and navigation bar icons follow the light / dark theme
 //   • Face ID / Touch ID / fingerprint can unlock the idle lock on the device
 // Store links (STORE) are filled in once each listing exists; until then the update prompts simply say where to update.
 import { Capacitor, SystemBars, SystemBarsStyle } from '@capacitor/core'
 import { SITE_URL } from './config'
+import { closeTopDialog } from '../components/ui'
 
 export const isNative = () => Capacitor.isNativePlatform()
 export const platform = () => Capacitor.getPlatform() as 'ios' | 'android' | 'web'
@@ -75,13 +76,19 @@ export function syncSystemBars(dark: boolean) {
   SystemBars.setStyle({ style: dark ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => { /* older OS */ })
 }
 
+/** True when the app itself navigated to this page (react-router numbers its history entries in history.state.idx, 0 for the page the
+ *  app opened on). A page opened straight from a notification, a home-screen shortcut or a link has nothing inside the app to go back to,
+ *  and history.back() there would leave the app (a blank page in the Android app). */
+export const hasAppHistory = (): boolean => { try { return ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0 } catch { return false } }
+
 let started = false
-/** Once, at start-up inside the apps. `go(-1)` is the router's back; `atRoot()` says whether the dashboard is showing. */
-export async function initNative(opts: { back: () => void; atRoot: () => boolean; onResume: () => void }) {
+/** Once, at start-up inside the apps. `back()` is the router's back, `home()` opens the dashboard; `atRoot()` says whether the dashboard is showing. */
+export async function initNative(opts: { back: () => void; home: () => void; atRoot: () => boolean; onResume: () => void }) {
   if (!isNative() || started) return; started = true
   document.documentElement.classList.add('native', 'native-' + platform())
   const { App } = await import('@capacitor/app')
-  App.addListener('backButton', () => { if (document.querySelector('.modal-back, .modal')) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return } if (opts.atRoot()) App.minimizeApp(); else opts.back() })
+  // Back: the newest dialog, drawer or menu closes first; then the previous page; a page opened directly goes to the dashboard; the dashboard leaves the app
+  App.addListener('backButton', () => { if (closeTopDialog()) return; if (opts.atRoot()) App.minimizeApp(); else if (hasAppHistory()) opts.back(); else opts.home() })
   App.addListener('resume', () => opts.onResume())
   // links to other sites leave the app; links inside the app (hash routes, relative) stay
   document.addEventListener('click', e => {

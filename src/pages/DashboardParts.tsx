@@ -24,6 +24,6 @@ export function ArrangeDashboard({ layout, onChange, onDone }: { layout: DashLay
   return <><MHead title="Arrange dashboard" /><MBody>
     <Note>Move cards up or down and untick the ones you do not need. Saved on this device only.</Note>
     <ol className="arrange">{l.order.map((k, i) => <li key={k}><label><input type="checkbox" checked={!l.hidden.includes(k)} onChange={e => set(toggleCard(l, k, e.target.checked))} /> {label[k] || k}</label>
-      <span className="btnrow"><button className="btn sm" onClick={() => set(moveCard(l, k, -1))} disabled={i === 0} aria-label={`Move ${label[k]} up`}>↑</button><button className="btn sm" onClick={() => set(moveCard(l, k, 1))} disabled={i === l.order.length - 1} aria-label={`Move ${label[k]} down`}>↓</button></span></li>)}</ol>
+      <span className="btnrow"><button type="button" className="btn sm" onClick={() => set(moveCard(l, k, -1))} disabled={i === 0} aria-label={`Move ${label[k]} up`}>↑</button><button type="button" className="btn sm" onClick={() => set(moveCard(l, k, 1))} disabled={i === l.order.length - 1} aria-label={`Move ${label[k]} down`}>↓</button></span></li>)}</ol>
   </MBody><MFoot><Btn onClick={() => set(normalizeLayout(null, DASH_CARDS.map(c => c[0])))}>Reset to default</Btn><Btn primary onClick={onDone}>Done</Btn></MFoot></>
 }

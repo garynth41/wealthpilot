@@ -9,6 +9,7 @@ import { fm2 } from '../lib/money'
 import { fmtD } from '../lib/dates'
 import { merchantKey } from '../lib/intelligence'
 import { allowedPaths } from '../lib/access'
+import { useLayer, useDialogFocus, trapTab } from './ui'
 
 export interface Hit { kind: 'page' | 'account' | 'payee' | 'bill' | 'goal' | 'transaction' | 'action'; title: string; sub?: string; to: string; key: string }
 const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^\w\s.$-]/g, ' ').trim()
@@ -29,13 +30,13 @@ export function search(q: string, data: ReturnType<typeof useStore.getState>['da
 }
 export function Palette({ onClose }: { onClose: () => void }) {
   const nav = useNavigate(); const data = useStore(s => s.data); const mode = useStore(s => s.mode); const modules = useStore(s => s.modules)
-  const [q, setQ] = useState(''); const [ix, setIx] = useState(0); const ref = useRef<HTMLInputElement>(null)
+  const [q, setQ] = useState(''); const [ix, setIx] = useState(0); const ref = useRef<HTMLInputElement>(null); const box = useRef<HTMLDivElement>(null)
   const visible = useMemo(() => new Set(allowedPaths(mode === 'demo' ? null : modules)), [mode, modules])
   const hits = useMemo(() => search(q, data, visible), [q, data, visible])
-  useEffect(() => { ref.current?.focus() }, []); useEffect(() => { setIx(0) }, [q])
+  useLayer(true, onClose); useDialogFocus(box, { initial: '.pal-in' }); useEffect(() => { setIx(0) }, [q])
   const go = (h: Hit) => { onClose(); nav(h.to) }
-  const key = (e: React.KeyboardEvent) => { if (e.key === 'ArrowDown') { e.preventDefault(); setIx(i => Math.min(hits.length - 1, i + 1)) } else if (e.key === 'ArrowUp') { e.preventDefault(); setIx(i => Math.max(0, i - 1)) } else if (e.key === 'Enter') { e.preventDefault(); if (hits[ix]) go(hits[ix]) } else if (e.key === 'Escape') onClose() }
-  return <div className="modalBack" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}><div className="modal palette" role="dialog" aria-label="Go to">
+  const key = (e: React.KeyboardEvent) => { if (e.key === 'ArrowDown') { e.preventDefault(); setIx(i => Math.min(hits.length - 1, i + 1)) } else if (e.key === 'ArrowUp') { e.preventDefault(); setIx(i => Math.max(0, i - 1)) } else if (e.key === 'Enter') { e.preventDefault(); if (hits[ix]) go(hits[ix]) } else if (e.key === 'Escape') { e.preventDefault(); onClose() } }
+  return <div className="modalBack" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}><div className="modal palette" role="dialog" aria-modal="true" aria-label="Go to" ref={box} tabIndex={-1} onKeyDown={e => trapTab(e, box.current)}>
     <input ref={ref} className="inp pal-in" value={q} onChange={e => setQ(e.target.value)} onKeyDown={key} placeholder="Jump to a page, account, bill, goal or payee — or type an amount" aria-label="Search" aria-controls="pal-list" aria-activedescendant={hits[ix] ? 'pal-' + hits[ix].key : undefined} role="combobox" aria-expanded="true" />
     <ul id="pal-list" role="listbox" className="pal-list">{hits.map((h, i) => <li key={h.key} id={'pal-' + h.key} role="option" aria-selected={i === ix} className={i === ix ? 'on' : ''} onMouseEnter={() => setIx(i)} onMouseDown={e => { e.preventDefault(); go(h) }}><span className="pal-kind">{h.kind}</span><span className="pal-title">{h.title}</span>{h.sub && <span className="pal-sub">{h.sub}</span>}</li>)}{hits.length === 0 && <li className="pal-empty">Nothing matches.</li>}</ul>
     <div className="pal-foot"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> open · <kbd>esc</kbd> close · <kbd>?</kbd> all shortcuts</div>

@@ -11,6 +11,7 @@ import { canViewPath } from '../lib/access'
 import { planDedupe, unpairPatch, type DTxn } from '../lib/dedupe'
 import { paycheckOnFile } from '../lib/paySchedule'
 import { post } from '../lib/ledger'
+import { patchProblem, InputError, isInputError } from '../lib/validate'
 import type { Transaction } from './data/types'
 
 /** Merged duplicates live in data.duplicates, everything else in data.transactions — so every page and engine sees each transaction once. */
@@ -148,8 +149,8 @@ export const useStore = create<State>((set, get) => ({
     catch (e) { if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
       set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
-  async insert(coll, row) { const repo = need(get); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
-  async insertMany(coll, rows) { const repo = need(get); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async insert(coll, row) { const repo = need(get); refuseBad(coll, row as Record<string, unknown>); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async insertMany(coll, rows) { const repo = need(get); for (const row of rows) refuseBad(coll, row as Record<string, unknown>); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
   async logPaycheck(row) {
     const ps = get().data.paySchedules.find(p => p.id === row.pay_schedule_id); const date = (row.date || '').slice(0, 10)
     if (!ps || !date) throw new Error('Pick the income source and the date of this paycheck')
@@ -187,12 +188,16 @@ export const useStore = create<State>((set, get) => ({
       return n
     } finally { deduping = false }
   },
+  // 0.25.1: a value the database would refuse (an empty date, a negative amount — see lib/validate.ts) is refused here, before the
+  // optimistic copy shows it: an empty transaction date used to reach every page and take the whole app down. A save that fails
+  // anyway puts back just that row as it was, so other rows changed meanwhile are kept.
   async update(coll, id, patch) {
-    const repo = need(get); const before = get().data[coll] as unknown as Array<{ id: string }>
-    set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? { ...x, ...patch } : x) } }))   // optimistic
-    try { const r = await repo.update(coll, id, patch); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } }))
-      return r }
-    catch (e) { set(s => ({ data: { ...s.data, [coll]: before } })); throw e }
+    const repo = need(get); refuseBad(coll, patch as Record<string, unknown>)
+    const prev = (get().data[coll] as unknown as Array<{ id: string }>).find(x => x.id === id)
+    const put = (row: { id: string } | undefined) => { if (row) set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? row : x) } })) }
+    put(prev && { ...prev, ...patch })   // optimistic
+    try { const r = await repo.update(coll, id, patch); put(r as unknown as { id: string }); return r }
+    catch (e) { put(prev); throw e }
   },
   async remove(coll, id) {
     const repo = need(get); const before = get().data
@@ -203,7 +208,7 @@ export const useStore = create<State>((set, get) => ({
   pushUndo(e) { set(s => ({ undo: [...s.undo.slice(-9), e] })) },
   async undoLast() { const e = get().undo.at(-1); if (!e) { get().toast('Nothing to undo'); return } set(s => ({ undo: s.undo.slice(0, -1) })); const n = get().undo.length; await e.run(); set(s => ({ undo: s.undo.slice(0, n) })) },   // the undo's own write may push an entry: drop it so Ctrl-Z does not ping-pong
   async bulkUpdate(coll, ids, patch) {
-    const repo = need(get); const before = get().data[coll] as unknown as Array<Record<string, unknown>>; let n = 0; const inverses: Array<{ id: string; inverse: Record<string, unknown> }> = []
+    const repo = need(get); refuseBad(coll, patch as Record<string, unknown>); const before = get().data[coll] as unknown as Array<Record<string, unknown>>; let n = 0; const inverses: Array<{ id: string; inverse: Record<string, unknown> }> = []
     for (const id of ids) { const prev = before.find(x => x.id === id); if (!prev) continue; const inverse: Record<string, unknown> = {}; for (const k of Object.keys(patch)) inverse[k] = prev[k] ?? null; inverses.push({ id, inverse })
       const r = await repo.update(coll, id, patch); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } })); n++ }
     if (n) get().pushUndo({ label: `edit ${n} ${coll}`, run: async () => { for (const { id, inverse } of inverses) { const r = await repo.update(coll, id, inverse as Partial<RowOf<typeof coll>>); set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).map(x => x.id === id ? r : x) } })) } } })
@@ -223,7 +228,7 @@ export const useStore = create<State>((set, get) => ({
     set(s => ({ busy: s.busy + 1 }))
     const undoBefore = get().undo.length
     try { const r = await fn(); if (ok) { const grew = get().undo.length > undoBefore; get().toast(ok, false, grew ? { label: 'Undo', run: () => { void get().guarded(() => get().undoLast(), 'Undone') } } : undefined) } return r }
-    catch (e) { console.error(e); get().toast((e as Error).message || String(e), true); return undefined }
+    catch (e) { if (!isInputError(e)) console.error(e); get().toast((e as Error).message || String(e), true); return undefined }
     finally { set(s => ({ busy: Math.max(0, s.busy - 1) })) }
   },
 }))
@@ -236,8 +241,8 @@ async function needsMfa() { try { const { data } = await sb().auth.mfa.getAuthen
 export function authMessage(e: { message?: string; code?: string; name?: string } | null | undefined): string {
   const m = String(e?.message || ''), c = String(e?.code || '')
   if (/ERROR_CEREMONY_ABORTED|NotAllowedError|abort|cancel|timed out/i.test(c + ' ' + m + ' ' + (e?.name || ''))) return 'The passkey prompt was closed or timed out — try again.'
-  if (/passkey.*(disabled|not enabled)|webauthn.*(disabled|not enabled)|feature.*disabled/i.test(m) || /passkey.*disabled/i.test(c)) return 'Passkeys are not switched on for this app yet (Supabase → Authentication → Passkeys).'
-  if (c === 'mfa_recovery_codes_enroll_not_enabled' || c === 'mfa_recovery_codes_verify_not_enabled') return 'Recovery codes are not switched on for this app yet (Supabase → Authentication → Multi-factor).'
+  if (/passkey.*(disabled|not enabled)|webauthn.*(disabled|not enabled)|feature.*disabled/i.test(m) || /passkey.*disabled/i.test(c)) return 'Passkeys are not switched on for WealthPilot yet — use your password for now.'
+  if (c === 'mfa_recovery_codes_enroll_not_enabled' || c === 'mfa_recovery_codes_verify_not_enabled') return 'Recovery codes are not switched on for WealthPilot yet — the authenticator app still works.'
   if (c === 'mfa_recovery_codes_sole_factor') return 'Set up the authenticator app first — recovery codes back it up and cannot be the only second step.'
   if (c === 'mfa_recovery_codes_locked') return 'Too many wrong recovery codes — wait a few minutes, then try again or use the authenticator app.'
   if (c === 'mfa_verification_failed' || /invalid.*code|code.*invalid/i.test(m)) return 'That code did not match. Each recovery code works once; check for typos.'
@@ -245,6 +250,8 @@ export function authMessage(e: { message?: string; code?: string; name?: string 
   return m || 'Something went wrong — try again.'
 }
 const need = (get: () => State) => { const r = get().repo; if (!r) throw new Error('Not signed in'); return r }
+/** Throw a plain-language InputError when a write would put an empty or negative value where the database refuses one. */
+function refuseBad(coll: Collection, patch: Record<string, unknown>) { const p = patchProblem(coll, patch || {}); if (p) throw new InputError(p) }
 function attach(repo: Repo) { unsub?.(); unsub = repo.subscribe(() => { if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(() => useStore.getState().refresh(), repo.mode === 'demo' ? 0 : 700) }) }
 async function loadHouseholds(user: User) {
   try { await sb().rpc('accept_invites') } catch { /* no invites */ }

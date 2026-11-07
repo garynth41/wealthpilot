@@ -42,7 +42,7 @@ export function TaxPage() {
   const cols: Col<TaxItem>[] = [
     { k: 'kind', label: 'Type', type: 'select', opts: [...INCOME, ...OTHER], labels: TAX_ITEM_LABEL, w: 220 },
     { k: 'label', label: 'Description', type: 'text', w: 240 },
-    { k: 'amount', label: 'Amount (year)', type: 'money', cls: 'num' },
+    { k: 'amount', label: 'Amount (year)', type: 'money', cls: 'num', signed: true, required: true },
     { k: 'source', label: 'From', type: 'ro', fmt: r => r.source === 'auto' ? <Pill cls="info">auto</Pill> : <Pill cls="idle">manual</Pill> },
     { k: 'note', label: 'Note', type: 'ro', fmt: r => r.note ? <span style={{ color: 'var(--warn)' }}>{r.note}</span> : '' },
   ]
@@ -77,7 +77,7 @@ export function TaxPage() {
         <Note>Look up your city and school-district rates on the Ohio Department of Taxation "The Finder". Lewis Center addresses can fall in different municipalities and school districts.</Note>
       </Card>
 
-      <Card span={8} title="Income, deductions & payments" hint="auto rows come from the rest of the app; add W-2 box 2 / 1099 figures as you receive them" right={canEdit ? <span className="btnrow"><select className="inp" style={{ width: 150, maxWidth: '100%' }} value="" onChange={x => x.target.value && addItem(x.target.value as TaxItemKind)}><option value="">+ Add item…</option>{[...INCOME, ...OTHER].map(k => <option key={k} value={k}>{TAX_ITEM_LABEL[k]}</option>)}</select></span> : undefined}>
+      <Card span={8} title="Income, deductions & payments" hint="auto rows come from the rest of the app; add W-2 box 2 / 1099 figures as you receive them" right={canEdit ? <span className="btnrow"><select className="inp" style={{ width: 150, maxWidth: '100%' }} value="" onChange={x => x.target.value && addItem(x.target.value as TaxItemKind)} aria-label="Add an income, deduction or payment item"><option value="">+ Add item…</option>{[...INCOME, ...OTHER].map(k => <option key={k} value={k}>{TAX_ITEM_LABEL[k]}</option>)}</select></span> : undefined}>
         {items.length === 0 ? <Empty>No income yet. Add pay schedules on Income &amp; Pay Periods or add items here.</Empty> :
           <Table rows={items} cols={cols} name="tax-items" editable={canEdit} search={false} pageSize={25}
             onChange={(r, k, v) => { if (r.source === 'auto') return; setP(x => ({ ...x, items: x.items.map(i => i.id === r.id ? { ...i, [k]: k === 'amount' ? (+(v as number) || 0) : v } : i) })) }}
@@ -100,7 +100,7 @@ export function TaxPage() {
         <h3 style={{ margin: '10px 0 6px' }}>Underpayment risk monitor</h3><AList items={risks} /></Card>
 
       <Card span={6} title="Tax provisioning" hint="what-if — save to keep it">
-        <Field label={`Paychecks left this year: ${e.paychecksLeft}${p.paychecksLeft == null ? ' (from your pay schedule)' : ''}`}><input type="range" min={0} max={26} value={e.paychecksLeft} onChange={x => set('paychecksLeft', +x.target.value)} style={{ width: '100%' }} />{p.paychecksLeft != null && <button type="button" className="btn sm" onClick={() => set('paychecksLeft', null)}>Use pay schedule</button>}</Field>
+        <Field label={`Paychecks left this year: ${e.paychecksLeft}${p.paychecksLeft == null ? ' (from your pay schedule)' : ''}`}><input type="range" min={0} max={26} value={e.paychecksLeft} onChange={x => set('paychecksLeft', +x.target.value)} style={{ width: '100%' }} aria-label="Paychecks left this year" aria-valuetext={`${e.paychecksLeft} paychecks`} />{p.paychecksLeft != null && <button type="button" className="btn sm" onClick={() => set('paychecksLeft', null)}>Use pay schedule</button>}</Field>
         <Field label={`Extra withholding per paycheck: ${p.extraWithholdingPerCheck >= 0 ? '' : '−'}${fmtMoney(Math.abs(p.extraWithholdingPerCheck))}`} hint="negative = withhold less"><input type="range" min={-500} max={1500} step={10} value={p.extraWithholdingPerCheck} onChange={x => set('extraWithholdingPerCheck', +x.target.value)} style={{ width: '100%' }} /></Field>
         <Field label={`Estimated payments still planned: ${fmtMoney(p.plannedEstimates)}`}><input type="range" min={0} max={Math.max(5000, Math.ceil(base.due / 500) * 500 + 2000)} step={50} value={p.plannedEstimates} onChange={x => set('plannedEstimates', +x.target.value)} style={{ width: '100%' }} /></Field>
         <Field label={`Set aside from self-employment income: ${p.seSetAsidePct}%`}><input type="range" min={0} max={45} value={p.seSetAsidePct} onChange={x => set('seSetAsidePct', +x.target.value)} style={{ width: '100%' }} /></Field>
@@ -113,7 +113,7 @@ export function TaxPage() {
 
       <Card span={6} title="Tax calendar" hint={`${p.year} deadlines (federal and Ohio share the April date)`}>
         <div className="tblwrap"><table className="tbl"><thead><tr><th>Date</th><th>What</th><th className="num">When</th></tr></thead><tbody>
-          {cal.map(x => <tr key={x.date + x.label} style={{ opacity: x.days < 0 ? 0.55 : 1 }}><td>{fmtDY(x.date)}</td><td><Pill cls={x.kind === 'estimate' ? 'warn' : x.kind === 'filing' ? 'crit' : x.kind === 'extension' ? 'info' : 'idle'}>{x.kind}</Pill> {x.label}</td><td className="num">{x.days < 0 ? `${-x.days} days ago` : x.days === 0 ? 'today' : `in ${x.days} days`}</td></tr>)}
+          {cal.map(x => <tr key={x.date + x.label} className={x.days < 0 ? 'past' : undefined}><td>{fmtDY(x.date)}</td><td><Pill cls={x.kind === 'estimate' ? 'warn' : x.kind === 'filing' ? 'crit' : x.kind === 'extension' ? 'info' : 'idle'}>{x.kind}</Pill> {x.label}</td><td className="num">{x.days < 0 ? `${-x.days} days ago` : x.days === 0 ? 'today' : `in ${x.days} days`}</td></tr>)}
         </tbody></table></div>
         <label className="gm-ign" style={{ fontSize: 13, display: 'block', marginTop: 8 }}><input type="checkbox" checked={settings.taxInCalendar !== false} disabled={!canEdit} onChange={x => guarded(() => saveSettings({ taxInCalendar: x.target.checked }), x.target.checked ? 'Estimated payments show in the cash calendar' : 'Estimated payments hidden from the cash calendar')} /> Show the estimated payments still due in the cash calendar and forecast ({settings.tax ? 'planned estimates plus any safe-harbor shortfall, at each deadline' : 'save this profile first'})</label>
         {!e.safeHarbor.met && <Note>To reach the safe harbor with estimates alone: about <b>{fmtMoney(e.safeHarbor.quarterlyNeeded)}</b> {e.safeHarbor.estimatesLeft === 1 ? 'at the one quarterly deadline left' : `at each of the ${e.safeHarbor.estimatesLeft} quarterly deadlines left`} (IRS Direct Pay or EFTPS; Ohio IT-1040ES for state). Paying late in the year still accrues a penalty for the earlier quarters; extra W-4 withholding is treated as paid evenly through the year, which usually avoids that.</Note>}
