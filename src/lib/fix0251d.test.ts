@@ -9,12 +9,13 @@ import { MemoryRouter } from 'react-router-dom'
 vi.mock('plotly.js-basic-dist-min', () => ({ default: { react: () => {}, newPlot: () => {}, purge: () => {} } }))
 import { setToday } from './dates'
 import { emptyData, SETTINGS_DEFAULTS, type Account, type Data, type PaySchedule, type RetirementInputs, type Settings } from '../app/data/types'
-import { autoItems, estimateTax, estimatedTaxDue, paychecksRemaining, tableFor, type TaxItem, type TaxProfile } from './tax'
-import { FEDERAL, TAX_YEARS } from './taxTables'
+import { autoItems, estimateTax, estimatedTaxDue, paychecksRemaining, tableFor, underpaymentPenalty, type TaxItem, type TaxProfile } from './tax'
+import { FEDERAL, TAX_YEARS, underpaymentRateOn } from './taxTables'
+import { round2 } from './money'
 import { payDates } from './paySchedule'
 import { cashCalendar } from './forecast'
 import { buildReport } from './reports'
-import { monteCarlo, drawdown, projectRetirement, guaranteedIncome, ssClaimFactor, ssMonthlyAtClaim, ssStart, RETIREMENT_DEFAULTS } from './retirement'
+import { monteCarlo, drawdown, projectRetirement, guaranteedIncome, safeWithdrawal, ssClaimFactor, ssClaimShare, ssMonthlyAtClaim, ssStart, ssBirthYear, fullRetirementAge, fullRetirementAgeFor, RETIREMENT_DEFAULTS } from './retirement'
 import { MemoryRepo } from '../app/data/memoryRepo'
 import { demoSeed } from '../app/data/demoSeed'
 import { useStore } from '../app/store'
@@ -197,18 +198,98 @@ describe('the Social Security claiming age changes the benefit (11)', () => {
     expect(guaranteedIncome({ ...base, ssStartAge: 70 }, 70, 0.25)).toBe(27900)
     expect(ssStart({ ...base, ssStartAge: 60 })).toBe(62)
   })
-  it('the Investments page asks for the age-67 amount and shows what the claiming age pays next to it', async () => {
+  it('the Investments page asks for the full-retirement-age amount and shows what the claiming age pays next to it', async () => {
     const RO = globalThis.ResizeObserver; globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver
     const MM = window.matchMedia; window.matchMedia = ((media: string) => ({ matches: false, media, onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false })) as unknown as typeof window.matchMedia
     try {
       const repo = new MemoryRepo(demoSeed()); useStore.setState({ mode: 'demo', repo, role: 'owner', readOnly: false, offlineAt: null }); await useStore.getState().refresh()
       render(createElement(MemoryRouter, null, createElement(ModalHost, null, createElement(InvestmentsPage))))
-      expect(screen.getByLabelText(/^Social Security at 67 \/ month/)).toHaveValue('2000')   // the demo's $24,000 a year
+      const ss = screen.getByLabelText(/^Social Security at full retirement age \/ month/); expect(ss).toHaveValue('2000')   // the demo's $24,000 a year
+      expect(ss.closest('.field')).toHaveTextContent('yours is 67')   // the demo planner's age 40 in 2026 → born 1986
       const claim = screen.getByLabelText(/^Claim at age/); expect(claim.closest('.field')).toHaveTextContent('pays $2,000/mo (100%)')
       fireEvent.blur(claim, { target: { value: '62' } })
       await waitFor(() => expect(screen.getByLabelText(/^Claim at age/).closest('.field')).toHaveTextContent('pays $1,400/mo (70%)'))
       fireEvent.blur(screen.getByLabelText(/^Claim at age/), { target: { value: '70' } })
       await waitFor(() => expect(screen.getByLabelText(/^Claim at age/).closest('.field')).toHaveTextContent('pays $2,480/mo (124%)'))
     } finally { cleanup(); globalThis.ResizeObserver = RO; window.matchMedia = MM }
+  })
+})
+
+// ======================================================================================================
+// Follow-ups (coordinator, round 2): what the first round found but left
+// ======================================================================================================
+describe('follow-up 1: every tax deadline falls on a business day', () => {
+  it('2026 W-2s and 1099s are due Monday February 1, 2027 (January 31 is a Sunday); no date in either year is a weekend', () => {
+    expect(FEDERAL[2026].calendar.find(c => c.label.startsWith('W-2s'))!.date).toBe('2027-02-01')
+    for (const y of TAX_YEARS) for (const c of FEDERAL[y].calendar) { const wd = new Date(c.date + 'T12:00:00').getDay(); expect(wd >= 1 && wd <= 5, `${y}: ${c.label} on ${c.date}`).toBe(true) }
+    expect(FEDERAL[2025].calendar.find(c => c.kind === 'extension')!.date).toBe('2026-10-15')
+  })
+})
+describe('follow-up 2: the underpayment penalty charges each quarter its own IRS rate', () => {
+  it('2026: 7% January–March, 6% April–June, 7% July–September and October–December; quarters not announced yet use the latest rate', () => {
+    expect(['2026-02-15', '2026-05-15', '2026-08-15', '2026-11-15'].map(underpaymentRateOn)).toEqual([0.07, 0.06, 0.07, 0.07])
+    expect(['2025-02-15', '2025-05-15', '2025-08-15', '2025-11-15'].map(underpaymentRateOn)).toEqual([0.07, 0.07, 0.07, 0.07])
+    expect(underpaymentRateOn('2027-03-01')).toBe(0.07)
+  })
+  it('a $1,000 shortfall for 2026: a quarter of it from each due date to April 15, 2027, each Form 2210 period at its own rate', () => {
+    // days in each period (Apr 16–Jun 30 at 6%; Jul–Sep, Oct–Dec and Jan 1–Apr 15, 2027 at 7%): due Apr 15 → 76, 92, 92, 105; Jun 15 → 15, 92, 92, 105;
+    // Sep 15 → 15, 92, 105 (all 7%); Jan 15 → 90. A flat 7% for half a year (the old estimate) would have said $35.
+    const expected = 250 / 365 * ((76 * 0.06 + (92 + 92 + 105) * 0.07) + (15 * 0.06 + (92 + 92 + 105) * 0.07) + (15 + 92 + 105) * 0.07 + 90 * 0.07)
+    const p = underpaymentPenalty(1000, 2026); expect(p.amount).toBeCloseTo(expected, 2); expect(p.amount).toBe(45.93); expect(p.rates).toEqual([0.06, 0.07])
+    expect(underpaymentPenalty(1000, 2025).amount).toBe(round2(250 / 365 * 0.07 * (365 + 304 + 212 + 90)))   // every 2025 period, and Jan 1–Apr 15, 2026, at 7%
+    expect(underpaymentPenalty(0, 2026)).toEqual({ amount: 0, rates: [] })
+  })
+  it('the estimate carries that penalty — and none when this year\'s tax minus withholding is under $1,000 (estimated payments do not count for that)', () => {
+    const short = manual({ filingStatus: 'single', paychecksLeft: 0, items: [TI('w2', 100000), TI('withholding', 8000)] })   // tax $13,170
+    expect(short.safeHarbor.metBy).toBeNull(); expect(short.safeHarbor.shortfall).toBeCloseTo(11853 - 8000, 2)   // 90% of $13,170 − $8,000
+    expect(short.safeHarbor.penaltyEstimate).toBe(underpaymentPenalty(short.safeHarbor.shortfall, 2026).amount); expect(short.safeHarbor.penaltyRates).toEqual([0.06, 0.07])
+    const small = manual({ filingStatus: 'single', paychecksLeft: 0, items: [TI('w2', 50000), TI('withholding', 3000)] })   // tax $3,820: $820 left after withholding
+    expect(small.federal.total).toBeCloseTo(3820, 2); expect(small.safeHarbor.owedAfterWithholding).toBeCloseTo(820, 2); expect(small.paid.total).toBeLessThan(small.safeHarbor.required)
+    expect(small.safeHarbor.metBy).toBe('under $1,000'); expect(small.safeHarbor.met).toBe(true)
+    expect(small.safeHarbor.shortfall).toBe(0); expect(small.safeHarbor.penaltyEstimate).toBe(0); expect(small.safeHarbor.quarterlyNeeded).toBe(0)
+    const est = manual({ filingStatus: 'single', paychecksLeft: 0, items: [TI('w2', 50000), TI('withholding', 2700), TI('estimated_payment', 500)] })   // $1,120 after withholding
+    expect(est.safeHarbor.metBy).toBeNull(); expect(est.safeHarbor.shortfall).toBeCloseTo(3820 * 0.9 - 3200, 2)
+  })
+})
+describe('follow-up 3: the safe-withdrawal table starts from the current age once the retirement age is past', () => {
+  it('66, retired at 62, plan to 92: 26 years, not 30, and the run-out age counts from 66', () => {
+    const late: RetirementInputs = { ...RETIREMENT_DEFAULTS, currentAge: 66, retireAge: 62, lifeExpectancy: 92, expectedReturn: 0.025, inflation: 0.025, socialSecurity: 0, ssMonthly: 0, pensions: [] }   // real return 0
+    const [r38, r50] = safeWithdrawal(1000000, late, [0.038, 0.05])
+    expect(r38.yearsLast).toBe(27); expect(r38.lastsToLifeExpectancy).toBe(true); expect(r38.endingBalance).toBe(1000000 - 26 * 38000)   // measured from 62 it would fall short of 92
+    expect(r50.yearsLast).toBe(20); expect(r50.runsOutAge).toBe(66 + 20); expect(r50.lastsToLifeExpectancy).toBe(false)
+    expect(safeWithdrawal(1000000, { ...late, currentAge: 50 }, [0.05])[0].runsOutAge).toBe(62 + 20)   // not retired yet: from the retirement age
+  })
+})
+describe('follow-up 4: the 65+ add-on counts at most the filers', () => {
+  it('one per filer: up to 2 on a joint return, 1 on any other', () => {
+    const std = (filingStatus: TaxProfile['filingStatus'], age65: number) => manual({ filingStatus, age65, items: [TI('w2', 300000)] }).standard
+    expect([std('mfj', 1), std('mfj', 2), std('mfj', 3), std('mfj', 5)]).toEqual([32200 + 1650, 32200 + 3300, 32200 + 3300, 32200 + 3300])
+    expect([std('single', 0), std('single', 2), std('hoh', 3), std('mfs', 2)]).toEqual([16100, 16100 + 2050, 24150 + 2050, 16100 + 1650])
+    expect(manual({ year: 2025, filingStatus: 'mfj', age65: 4, items: [TI('w2', 300000)] }).standard).toBe(31500 + 2 * 1600)
+  })
+})
+describe('follow-up 5: full retirement age by year of birth', () => {
+  it('SSA\'s table: 66 for 1943–1954, two months more a year to 66 and 10 months for 1959, 67 from 1960 — and the reduction at 62 for each', () => {
+    expect([1943, 1954, 1955, 1956, 1957, 1958, 1959, 1960, 1990].map(fullRetirementAge)).toEqual([{ years: 66, months: 0 }, { years: 66, months: 0 }, { years: 66, months: 2 }, { years: 66, months: 4 }, { years: 66, months: 6 }, { years: 66, months: 8 }, { years: 66, months: 10 }, { years: 67, months: 0 }, { years: 67, months: 0 }])
+    const at62 = [1954, 1955, 1956, 1957, 1958, 1959, 1960].map(y => { const f = fullRetirementAge(y); return Math.round((1 - ssClaimFactor(62, f.years + f.months / 12)) * 10000) / 100 })
+    expect(at62).toEqual([25, 25.83, 26.67, 27.5, 28.33, 29.17, 30])   // SSA's "Reduction at 62" column
+  })
+  it('the birth year comes from the current age and today, and the benefit is scaled at that full retirement age', () => {
+    const at70: RetirementInputs = { ...RETIREMENT_DEFAULTS, currentAge: 70, retireAge: 70, lifeExpectancy: 92, socialSecurity: 0, ssMonthly: 2000, ssStartAge: 70, pensions: [] }
+    expect(ssBirthYear(at70)).toBe(1956); expect(fullRetirementAgeFor(at70)).toEqual({ years: 66, months: 4 })   // today is 2026-11-06
+    expect(ssClaimShare(at70)).toBeCloseTo(1 + 44 * (2 / 3) / 100, 10); expect(ssMonthlyAtClaim(at70)).toBe(2586.67)   // 44 months of delayed credits
+    expect(ssMonthlyAtClaim({ ...at70, ssStartAge: 62 })).toBe(1466.67)   // 52 months early: 26.67% less
+    expect(fullRetirementAgeFor({ ...at70, currentAge: 66 })).toEqual({ years: 67, months: 0 }); expect(ssBirthYear({ ...at70, currentAge: 66 }, '2027-03-01')).toBe(1961)
+    expect(guaranteedIncome({ ...at70, currentAge: 55, ssStartAge: 62 }, 62)).toBe(16800)   // born 1971: full retirement age 67, so 70% of $24,000 at 62
+  })
+})
+describe('follow-up 6: the child credits phase out together; the re-checked constants', () => {
+  it('$50 for each $1,000 or part of $1,000 over the threshold comes off the child and other-dependent credits together', () => {
+    expect(manual({ filingStatus: 'single', otherDependents: 2, items: [TI('w2', 210000)] }).federal.credits).toBe(1000 - 10 * 50)
+    expect(manual({ filingStatus: 'single', dependentsUnder17: 1, otherDependents: 1, items: [TI('w2', 250000)] }).federal.credits).toBe(2700 - 50 * 50)
+    expect(manual({ filingStatus: 'mfj', dependentsUnder17: 2, items: [TI('w2', 400001)] }).federal.credits).toBe(4400 - 50)   // $1 over takes a whole $50
+  })
+  it('self-employment 92.35% / 12.4% / 2.9%, safe harbor 90% / 110% above $150,000, the $1,000 minimum and the credit amounts are as the IRS states them', () => {
+    for (const y of TAX_YEARS) { const T = FEDERAL[y]; expect([T.seTaxableShare, T.seSocialSecurityRate, T.medicareRate, T.safeHarborPct, T.safeHarborHighPct, T.safeHarborHighAgi, T.penaltyMinimum, T.ctcPhaseoutPer1000, T.otherDependentCredit], String(y)).toEqual([0.9235, 0.124, 0.029, 0.9, 1.1, 150000, 1000, 50, 500]) }
   })
 })

@@ -2,18 +2,33 @@
 // Pure functions. Money in today's dollars unless stated; `expectedReturn`, `inflation`, `returnStdDev` are annual decimals (0.07 = 7%).
 import type { RetirementInputs } from '../app/data/types'
 import { round2 } from './money'
+import { today } from './dates'
 
 export const RETIREMENT_DEFAULTS: RetirementInputs = { currentAge: 40, retireAge: 65, lifeExpectancy: 92, annualContribution: 12000, expectedReturn: 0.07, inflation: 0.025, returnStdDev: 0.12, desiredIncome: 60000, socialSecurity: 24000, currentIncome: 90000, ssMonthly: null, ssStartAge: 67, ssHaircut: 0, pensions: [] }
 
 // ---------------- guaranteed income (0.20.0) ----------------
-/** Social Security full retirement age: 67 for anyone born in 1960 or later. The planner's benefit is the amount at this age. */
+/** Social Security full retirement age for anyone born in 1960 or later. The planner's benefit is the amount at the person's own full retirement age. */
 export const SS_FULL_AGE = 67
-/** Share of the full-retirement-age benefit paid for life when Social Security is claimed at `claimAge` (62–70; outside that, the nearest end).
- *  Early: 5/9 of 1% less for each of the first 36 months before full retirement age and 5/12 of 1% for each month before that — 70% at 62 with a
- *  full retirement age of 67. Late: delayed retirement credits of 2/3 of 1% a month (8% a year), which stop at 70 — 124% at 70.
- *  Sources (checked 2026-11-07): https://www.ssa.gov/benefits/retirement/planner/agereduction.html (full retirement age 67 for 1960 and later;
- *  60 months early at 62 = 30% less), https://www.ssa.gov/oact/quickcalc/earlyretire.html (5/9 of 1% for the first 36 months, 5/12 of 1% for each
- *  additional month), https://www.ssa.gov/benefits/retirement/planner/delayret.html (2/3 of 1% a month for 1943 or later; the increase stops at 70). */
+/** Full retirement age by year of birth (SSA): 66 for 1943–1954; 66 and 2, 4, 6, 8, 10 months for 1955–1959; 67 for 1960 and later. Someone born before
+ *  1943 (65 to 65 and 10 months, with smaller delayed credits) is past 70 already and is treated as 1943 here. SSA counts a January 1 birthday as the year
+ *  before; the planner has no birth date, so that cannot apply. Source (checked 2026-11-07): https://www.ssa.gov/benefits/retirement/planner/agereduction.html
+ *  ("1943-1954 | 66 | 48 …", "1955 | 66 and 2 months | 50 …" … "1959 | 66 and 10 months | 58 …", "1960 and later | 67 | 60 …"). */
+export function fullRetirementAge(birthYear: number): { years: number; months: number } {
+  return birthYear >= 1960 ? { years: 67, months: 0 } : birthYear >= 1955 ? { years: 66, months: (birthYear - 1954) * 2 } : { years: 66, months: 0 }
+}
+/** The planner stores an age, not a birth date, so the birth year is worked out as this calendar year minus the current age — right once this year's
+ *  birthday has passed, a year late before it (a 66-year-old born in December 1959 counts as born in 1960 until then). */
+export const ssBirthYear = (i: RetirementInputs, asOf = today()) => +asOf.slice(0, 4) - Math.round(+i.currentAge || 0)
+/** This person's full retirement age, from the birth year worked out from their current age. */
+export const fullRetirementAgeFor = (i: RetirementInputs, asOf = today()) => fullRetirementAge(ssBirthYear(i, asOf))
+const fullAgeYears = (i: RetirementInputs, asOf = today()) => { const f = fullRetirementAgeFor(i, asOf); return f.years + f.months / 12 }
+/** Share of the full-retirement-age benefit paid for life when Social Security is claimed at `claimAge` (62–70; outside that, the nearest end), for a
+ *  full retirement age of `fullAge` years (66 and 4 months = 66 + 4/12). Early: 5/9 of 1% less for each of the first 36 months before full retirement age
+ *  and 5/12 of 1% for each month before that — 70% at 62 with a full retirement age of 67, 75% with 66. Late: delayed retirement credits of 2/3 of 1% a
+ *  month (8% a year), which stop at 70 — 124% at 70 with a full retirement age of 67.
+ *  Sources (checked 2026-11-07): https://www.ssa.gov/benefits/retirement/planner/agereduction.html (full retirement age by birth year and the reduction at
+ *  62 for each), https://www.ssa.gov/oact/quickcalc/earlyretire.html (5/9 of 1% for the first 36 months, 5/12 of 1% for each additional month),
+ *  https://www.ssa.gov/benefits/retirement/planner/delayret.html (2/3 of 1% a month for 1943 or later; the increase stops at 70). */
 export function ssClaimFactor(claimAge: number, fullAge = SS_FULL_AGE): number {
   const months = Math.round((Math.min(70, Math.max(62, claimAge)) - fullAge) * 12)
   // counted in 3600ths so 70% and 124% come out exact: 5/9 of 1% = 20/3600, 5/12 of 1% = 15/3600, 2/3 of 1% = 24/3600
@@ -23,14 +38,16 @@ export function ssClaimFactor(claimAge: number, fullAge = SS_FULL_AGE): number {
 export const ssAnnual = (i: RetirementInputs) => i.ssMonthly != null && i.ssMonthly > 0 ? i.ssMonthly * 12 : (+i.socialSecurity || 0)
 /** Age Social Security starts: the claiming age entered, else the later of 67 and the retirement age; never before 62. */
 export const ssStart = (i: RetirementInputs) => Math.max(62, i.ssStartAge && i.ssStartAge > 0 ? i.ssStartAge : Math.max(SS_FULL_AGE, i.retireAge))
-/** The monthly benefit at the claiming age, today's dollars, before any benefit-cut scenario: the full-retirement-age amount × ssClaimFactor. */
-export const ssMonthlyAtClaim = (i: RetirementInputs) => round2(ssAnnual(i) / 12 * ssClaimFactor(ssStart(i)))
+/** The share of the full-retirement-age benefit this person's claiming age pays (ssClaimFactor at their own full retirement age). */
+export const ssClaimShare = (i: RetirementInputs) => ssClaimFactor(ssStart(i), fullAgeYears(i))
+/** The monthly benefit at the claiming age, today's dollars, before any benefit-cut scenario: the full-retirement-age amount × ssClaimShare. */
+export const ssMonthlyAtClaim = (i: RetirementInputs) => round2(ssAnnual(i) / 12 * ssClaimShare(i))
 /** The first age the portfolio pays out: the retirement age, or the current age when that is already past (earlier years are not drawn again). */
 const drawStart = (i: RetirementInputs) => Math.max(i.currentAge, i.retireAge)
 /** Guaranteed income at `age`, $/yr in today's dollars: Social Security at the claiming age's rate (less the haircut scenario) once claimed, plus
  *  pensions that have started. A pension without COLA loses purchasing power: its real value shrinks by inflation every year after it starts. */
 export function guaranteedIncome(i: RetirementInputs, age: number, haircut = i.ssHaircut || 0): number {
-  const ss = age >= ssStart(i) ? ssAnnual(i) * ssClaimFactor(ssStart(i)) * (1 - Math.max(0, Math.min(1, haircut))) : 0
+  const ss = age >= ssStart(i) ? ssAnnual(i) * ssClaimShare(i) * (1 - Math.max(0, Math.min(1, haircut))) : 0
   const pen = (i.pensions || []).filter(p => +p.monthly > 0 && age >= +p.startAge).reduce((n, p) => n + (+p.monthly * 12) * (p.cola === false ? Math.pow(1 + i.inflation, -(age - +p.startAge)) : 1), 0)
   return round2(ss + pen)
 }
@@ -104,12 +121,14 @@ export function monteCarlo(balance: number, i: RetirementInputs, runs = 1000, se
   return { runs, successRate: round2((runs - depletion.length) / runs), median: round2(q(finals, 0.5)), p10: round2(q(finals, 0.1)), p90: round2(q(finals, 0.9)), medianAtRetirement: round2(accYears ? q(atRet, 0.5) : balance), worst: round2(Math.min(...finals)), years: total, bands, depletionAges: depletion }
 }
 
-export interface SwrResult { rate: number; annualIncome: number; totalIncome: number; yearsLast: number | null; lastsToLifeExpectancy: boolean; endingBalance: number }
-/** Deterministic stress test: withdraw rate × starting balance (inflation-adjusted) each year at the expected real return; how long does it last? */
+export interface SwrResult { rate: number; annualIncome: number; totalIncome: number; yearsLast: number | null; runsOutAge: number | null; lastsToLifeExpectancy: boolean; endingBalance: number }
+/** Deterministic stress test: withdraw rate × starting balance (inflation-adjusted) each year at the expected real return; how long does it last?
+ *  Measured from the first year the portfolio pays out — the retirement age, or the current age when that is already past (as drawdown and the
+ *  Monte Carlo do) — to the plan age; `runsOutAge` is that first age + the years it lasts. */
 export function safeWithdrawal(startBalance: number, i: RetirementInputs, rates = [0.03, 0.04, 0.05]): SwrResult[] {
-  const realRate = (1 + i.expectedReturn) / (1 + i.inflation) - 1; const horizon = Math.max(1, i.lifeExpectancy - i.retireAge); const cap = 100
+  const realRate = (1 + i.expectedReturn) / (1 + i.inflation) - 1; const start = drawStart(i); const horizon = Math.max(1, i.lifeExpectancy - start); const cap = 100
   return rates.map(rate => { const draw = startBalance * rate; let v = startBalance, years = 0; let total = 0
     while (v > 0 && years < cap) { v = v * (1 + realRate) - draw; total += draw; years++ }
     const lasts = years >= cap || v > 0; const ending = (() => { let b = startBalance; for (let y = 0; y < horizon; y++) { b = b * (1 + realRate) - draw; if (b <= 0) return 0 } return b })()
-    return { rate, annualIncome: round2(draw + steadyGuaranteed(i)), totalIncome: round2(total), yearsLast: lasts ? null : years, lastsToLifeExpectancy: lasts || years >= horizon, endingBalance: round2(Math.max(0, ending)) } })
+    return { rate, annualIncome: round2(draw + steadyGuaranteed(i)), totalIncome: round2(total), yearsLast: lasts ? null : years, runsOutAge: lasts ? null : start + years, lastsToLifeExpectancy: lasts || years >= horizon, endingBalance: round2(Math.max(0, ending)) } })
 }

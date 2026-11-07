@@ -6,7 +6,7 @@ import { Card, KPI, Btn, Pill, Note, Field, Seg, Empty, useConfirm, useModal } f
 import { Table, type Col } from '../components/Table'
 import { Chart, C, PALETTE, Gauge, cssVar } from '../components/Chart'
 import { portfolio, holdingValue, holdingGain, retirementAssets } from '../lib/portfolio'
-import { projectRetirement, safeWithdrawal, RETIREMENT_DEFAULTS, drawdown, guaranteedIncome, ssAnnual, ssStart, ssClaimFactor, ssMonthlyAtClaim, SS_FULL_AGE, type MonteCarlo } from '../lib/retirement'
+import { projectRetirement, safeWithdrawal, RETIREMENT_DEFAULTS, drawdown, guaranteedIncome, ssAnnual, ssStart, ssClaimShare, ssMonthlyAtClaim, fullRetirementAgeFor, type MonteCarlo } from '../lib/retirement'
 import { isAutoPriced, priceFreshness, priceAgeDays } from '../lib/prices'
 import { ScenarioBar } from '../components/Scenarios'
 import { normalize } from '../lib/scenarios'
@@ -68,6 +68,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
   const pct = (k: 'expectedReturn' | 'inflation' | 'returnStdDev') => (i[k] * 100).toFixed(1)
   const setPen = (k: number, p: Partial<Pension>) => setI(x => ({ ...x, pensions: (x.pensions || []).map((y, j) => j === k ? { ...y, ...p } : y) }))
   const dd = useMemo(() => drawdown(proj.real, i), [proj.real, i]); const firstDraw = dd.path[0]?.age ?? i.retireAge   // the first year the portfolio pays out
+  const fra = fullRetirementAgeFor(i)   // from the birth year the engine works out from the current age
   const simulate = () => { setBusy(true); worker.current?.terminate(); const w = new Worker(new URL('../lib/mc.worker.ts', import.meta.url), { type: 'module' }); worker.current = w
     w.onmessage = (e: MessageEvent<MonteCarlo>) => { setMc(e.data); setBusy(false); w.terminate() }; w.onerror = () => { setBusy(false); w.terminate() }; w.postMessage({ balance, inputs: i, runs: +runs, seed: Date.now() % 100000 }) }
   useEffect(() => () => worker.current?.terminate(), [])
@@ -82,8 +83,8 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
       <div className="grid3">{num('Income wanted / yr', 'desiredIncome', 'in retirement, today\'s $')}{num('Income today / yr', 'currentIncome', 'for the replacement ratio')}{num('Return volatility %', 'returnStdDev', 'std dev, for Monte Carlo', true)}</div>
       <h3 style={{ margin: '10px 0 4px', fontSize: 14 }}>Guaranteed income</h3>
       <div className="grid3">
-        <Field label={`Social Security at ${SS_FULL_AGE} / month`} hint="full-retirement-age amount on your SSA statement, today's $"><input className="inp" inputMode="decimal" key={`ss-${ssAnnual(i)}`} defaultValue={String(Math.round(ssAnnual(i) / 12))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssMonthly: n, socialSecurity: n * 12 })) }} /></Field>
-        <Field label="Claim at age" hint={`62 – 70 · pays ${fmtMoney(ssMonthlyAtClaim(i))}/mo (${Math.round(ssClaimFactor(ssStart(i)) * 100)}%)`}><input className="inp" inputMode="numeric" key={`ssa-${ssStart(i)}`} defaultValue={String(ssStart(i))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssStartAge: Math.min(70, Math.max(62, Math.round(n))) })) }} /></Field>
+        <Field label="Social Security at full retirement age / month" hint={`yours is ${fra.months ? `${fra.years} and ${fra.months} months` : fra.years} · today's $`}><input className="inp" inputMode="decimal" key={`ss-${ssAnnual(i)}`} defaultValue={String(Math.round(ssAnnual(i) / 12))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssMonthly: n, socialSecurity: n * 12 })) }} /></Field>
+        <Field label="Claim at age" hint={`62 – 70 · pays ${fmtMoney(ssMonthlyAtClaim(i))}/mo (${Math.round(ssClaimShare(i) * 100)}%)`}><input className="inp" inputMode="numeric" key={`ssa-${ssStart(i)}`} defaultValue={String(ssStart(i))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssStartAge: Math.min(70, Math.max(62, Math.round(n))) })) }} /></Field>
         <Field label="Plan on" hint="benefit-cut scenario"><select className="inp" value={String(i.ssHaircut || 0)} onChange={e => setI(x => ({ ...x, ssHaircut: +e.target.value }))}><option value="0">Full benefit</option><option value="0.25">75% (shortfall)</option><option value="1">None</option></select></Field>
       </div>
       <div className="note" style={{ margin: '2px 0 4px' }}>Pensions and annuities</div>
@@ -96,7 +97,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
       </div>)}
       {(i.pensions || []).length > 0 && <div className="pens note" style={{ margin: 0 }}><span>name</span><span>per month</span><span>from age</span><span /><span /></div>}
       <Btn sm onClick={() => setI(x => ({ ...x, pensions: [...(x.pensions || []), { id: 'pen' + Date.now().toString(36), name: 'Pension', monthly: 500, startAge: x.retireAge, cola: true }] }))}>+ Add a pension</Btn>
-      <Note>Starting balance: <b>{fmtMoney(balance)}</b> — your retirement + investment accounts. Readiness = projected portfolio ÷ what it must hold: (income wanted − guaranteed income) at a 4% withdrawal rate, plus the bridge years before Social Security starts, which the portfolio funds in full. Social Security: enter your benefit at {SS_FULL_AGE}, full retirement age for anyone born in 1960 or later. Claiming earlier pays less for life (70% at 62); each year you wait past {SS_FULL_AGE} adds 8%, up to 124% at 70.</Note>
+      <Note>Starting balance: <b>{fmtMoney(balance)}</b> — your retirement + investment accounts. Readiness = projected portfolio ÷ what it must hold: (income wanted − guaranteed income) at a 4% withdrawal rate, plus the bridge years before Social Security starts, which the portfolio funds in full. Social Security: enter the monthly benefit your SSA statement shows at full retirement age — 67 for anyone born in 1960 or later, 66 to 66 and 10 months for 1943–1959 (worked out here from your current age). Claiming earlier pays less for life (70% at 62 when it is 67); each year you wait past it adds 8%, up to age 70.</Note>
     </Card>
     <Card span={7} title="Projection" hint={`${proj.years} years to retirement · real return ${(proj.realRate * 100).toFixed(1)}%/yr`}>
       <div className="kpis" style={{ marginBottom: 10 }}>
@@ -121,7 +122,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
     </Card>
     <Card span={5} title="Safe withdrawal rate" hint={`starting from ${fmtMoney(proj.real)} at retirement · income includes ${fmtMoney(proj.guaranteed)}/yr guaranteed`}>
       <div className="tblwrap"><table className="tbl"><thead><tr><th>Rate</th><th className="num">Income / yr</th><th>Lasts</th><th className="num">Left at {i.lifeExpectancy}</th></tr></thead><tbody>
-        {swr.map(r => <tr key={r.rate}><td><b>{(r.rate * 100).toFixed(1)}%</b></td><td className="num">{fmtMoney(r.annualIncome)}</td><td>{r.yearsLast == null ? <Pill cls="good">indefinitely</Pill> : r.lastsToLifeExpectancy ? <Pill cls="good">past age {i.lifeExpectancy} ({r.yearsLast} yrs)</Pill> : <Pill cls="crit">{r.yearsLast} years → runs out at {i.retireAge + r.yearsLast}</Pill>}</td><td className="num">{fmtMoney(r.endingBalance)}</td></tr>)}
+        {swr.map(r => <tr key={r.rate}><td><b>{(r.rate * 100).toFixed(1)}%</b></td><td className="num">{fmtMoney(r.annualIncome)}</td><td>{r.yearsLast == null ? <Pill cls="good">indefinitely</Pill> : r.lastsToLifeExpectancy ? <Pill cls="good">past age {i.lifeExpectancy} ({r.yearsLast} yrs)</Pill> : <Pill cls="crit">{r.yearsLast} years → runs out at {r.runsOutAge}</Pill>}</td><td className="num">{fmtMoney(r.endingBalance)}</td></tr>)}
       </tbody></table></div>
       <Field label="Custom rate %"><input className="inp" inputMode="decimal" value={custom} onChange={e => setCustom(e.target.value)} style={{ maxWidth: 120 }} /></Field>
       <Note>Deterministic: withdraws rate × starting balance each year, inflation-adjusted, at the expected real return. The 4% rule is calibrated to ~30 years; longer horizons favour 3–3.5%.</Note>
