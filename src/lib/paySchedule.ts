@@ -1,11 +1,13 @@
 import type { Data, PaySchedule, PayFrequency, Transaction } from '../app/data/types'
 import { addDays, addMonthsClamp, diffDays, iso, parse, today, daysInMonth, monthKey } from './dates'
+import { semiPayDaysN } from './notify'
 
 /** Paychecks a year by frequency. Irregular is a one-off (0.25.1): paid once, only on its known pay date — it has no monthly amount, and
  *  the cash calendar, the runway and the Plan count it once, in its own month (see oneOffPay). */
 export const PER_YEAR: Record<PayFrequency, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, quarterly: 4, yearly: 1, irregular: 0 }
 export const monthlyEquivalent = (amount: number, f: PayFrequency) => (amount * PER_YEAR[f]) / 12
-const semiDays = (ps: PaySchedule) => (ps.semimonthly_days && ps.semimonthly_days.length === 2 ? ps.semimonthly_days : [15, 31]).slice().sort((a, b) => a - b)
+/** A twice-a-month schedule's paydays: its own two days, else the 15th and the last day — one rule with the alerts (semiPayDaysN in ./notify). */
+const semiDays = (ps: PaySchedule) => semiPayDaysN(ps.semimonthly_days)
 
 /** Every pay date in [from, to] for a schedule, computed from its anchor date. */
 export function payDates(ps: PaySchedule, from: string, to: string): string[] {

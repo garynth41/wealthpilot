@@ -67,12 +67,18 @@ export function dueDatesN(r: NRecurring, from: string, to: string, today: string
   for (; i <= monthIdx(hi); i += months) { const d = on(i, day); if (d >= lo && d <= hi) out.push(d) }
   return out
 }
+/** The two paydays of a twice-a-month schedule, in order (0.25.1) — the one rule lib/paySchedule.ts payDates and the alerts both call: the
+ *  schedule's own two days, or the 15th and the last day of the month (31, shortened to the month's last day) when none are set, as the
+ *  Income page says. The alerts used to assume the 1st and the 15th, so a missed end-of-month paycheck went unflagged and a false one was
+ *  flagged on the 2nd. */
+export const semiPayDaysN = (days?: number[] | null): [number, number] => { const [a, b] = (days && days.length === 2 ? days : [15, 31]).slice().sort((x, y) => x - y); return [a, b] }
 /** Pay dates of a schedule inside [from, to] (same rules as lib/paySchedule.ts, compact). */
 export function payDatesN(p: NPay, from: string, to: string): string[] {
   const lo = p.starts_on && p.starts_on > from ? p.starts_on : from, hi = p.ends_on && p.ends_on < to ? p.ends_on : to
   if (lo > hi || p.status !== 'Active') return []
   const anchor = p.anchor_date.slice(0, 10); const out: string[] = []
-  if (p.frequency === 'semimonthly') { const [d1, d2] = (p.semimonthly_days && p.semimonthly_days.length === 2 ? p.semimonthly_days : [1, 15]).slice().sort((a, b) => a - b); let y = +lo.slice(0, 4), m = +lo.slice(5, 7); for (let n = 0; n < 36; n++) { for (const dd of [d1, d2]) { const d = clampDay(y, m, dd); if (d >= lo && d <= hi) out.push(d) } m++; if (m > 12) { m = 1; y++ } if (`${y}-${String(m).padStart(2, '0')}-01` > hi) break } return out }
+  // twice a month: both days in each month of the window, each clamped to the month's end and counted once (30 and 31 in February are one day)
+  if (p.frequency === 'semimonthly') { const days = semiPayDaysN(p.semimonthly_days); for (let i = monthIdx(lo); i <= monthIdx(hi); i++) for (const dd of days) { const d = clampDay(Math.floor(i / 12), (i % 12) + 1, dd); if (d >= lo && d <= hi && out[out.length - 1] !== d) out.push(d) } return out }
   if (p.frequency === 'weekly' || p.frequency === 'biweekly') { const step = p.frequency === 'weekly' ? 7 : 14; let d = anchor; while (d > lo) d = addDaysN(d, -step); while (d < lo) d = addDaysN(d, step); for (let k = 0; d <= hi && k < 60; k++) { out.push(d); d = addDaysN(d, step) } return out }
   if (p.frequency === 'irregular') return []
   const months = ({ monthly: 1, quarterly: 3, yearly: 12 } as Record<string, number>)[p.frequency] || 1; const day = +anchor.slice(8)
