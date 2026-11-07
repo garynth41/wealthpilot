@@ -1,6 +1,7 @@
 // Tax tables by year. Keep every figure here (never inline in the engine) so a new year is a data change.
 // Sources (checked 2026-11-01): 2026 federal brackets, standard deduction, LTCG thresholds, CTC $2,200, 65+ add-on, SS wage base $184,500, NIIT thresholds — IRS Rev. Proc. 2025-32
 //   as reported by CPA Practice Advisor / Accounting Today (Oct 9, 2025) and Everwise 2026 tax tables. Ohio — see the source note above OHIO below (ORC 5747.02 / 5747.025 as amended by HB 96).
+// 2025 federal (checked 2026-11-07) — see the source note above the 2025 entry. Senior deduction (2025–2028) — see the note on FederalYear.senior.
 export type FilingStatus = 'single' | 'mfj' | 'mfs' | 'hoh'
 export const FILING_LABEL: Record<FilingStatus, string> = { single: 'Single', mfj: 'Married filing jointly', mfs: 'Married filing separately', hoh: 'Head of household' }
 export interface Bracket { upTo: number | null; rate: number }   // upTo = taxable income ceiling for this rate (null = no ceiling)
@@ -11,10 +12,48 @@ export interface FederalYear {
   ssWageBase: number; seRate: number; seTaxableShare: number; medicareRate: number; additionalMedicareRate: number; additionalMedicareThreshold: Record<FilingStatus, number>
   niitRate: number; niitThreshold: Record<FilingStatus, number>
   safeHarborPct: number; safeHarborHighPct: number; safeHarborHighAgi: number; underpaymentRate: number
+  /** The 2025–2028 deduction for seniors (P.L. 119-21 §70103; Schedule 1-A Part V): `perPerson` for the filer and, on a joint return, the spouse who is
+   *  65 or older by the end of the year, itemizing or not, on top of the 65+ standard-deduction add-on. Each person's amount shrinks by `phaseoutRate`
+   *  × modified AGI above `magiOver` (null = not allowed: a married couple must file jointly to claim it). Absent for a year without the deduction.
+   *  Sources (checked 2026-11-07): https://www.irs.gov/newsroom/working-families-tax-cuts-individuals-and-workers ($6,000 per eligible individual,
+   *  $12,000 for a couple who both qualify, 2025 through 2028, phases out above $75,000 / $150,000 MAGI, itemizers and non-itemizers),
+   *  https://www.irs.gov/newsroom/new-and-enhanced-deductions-for-individuals (available whether or not you itemize),
+   *  https://www.irs.gov/pub/irs-pdf/f1040s1a.pdf (2025 Schedule 1-A Part V: lines 32–35 = $6,000 − 6% × (MAGI − $75,000 / $150,000), entered once
+   *  for each qualifying spouse on lines 36a / 36b; "If married, you must file jointly to claim this deduction"). The same $6,000 / $75,000 / $150,000
+   *  apply in 2026: IRS Publication 6142 (Rev. 10-2026), https://www.irs.gov/pub/irs-pdf/p6142.pdf ("Starting in 2025 and through 2028 … $6,000"). */
+  senior?: { perPerson: number; magiOver: Record<FilingStatus, number | null>; phaseoutRate: number }
   calendar: Array<{ date: string; label: string; kind: 'estimate' | 'filing' | 'extension' | 'other' }>
 }
 const B = (s: number[], r = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]): Bracket[] => [...s.map((upTo, i) => ({ upTo, rate: r[i] })), { upTo: null, rate: r[6] }]
+const SENIOR_2025_2028: FederalYear['senior'] = { perPerson: 6000, magiOver: { single: 75000, mfj: 150000, mfs: null, hoh: 75000 }, phaseoutRate: 0.06 }
 export const FEDERAL: Record<number, FederalYear> = {
+  // 2025 sources (checked 2026-11-07):
+  //   brackets, long-term gains 0% / 15% ceilings, 65+ add-on ($1,600 married, $2,000 unmarried) — Rev. Proc. 2024-40 §§ 2.01, 2.03, 2.15(3), https://www.irs.gov/pub/irs-drop/rp-24-40.pdf
+  //   standard deduction $15,750 / $31,500 / $23,625 (raised from Rev. Proc. 2024-40's $15,000 / $30,000 / $22,500 by P.L. 119-21, the One Big Beautiful Bill Act) —
+  //     https://www.irs.gov/newsroom/working-families-tax-cuts-individuals-and-workers and https://www.irs.gov/newsroom/new-and-enhanced-deductions-for-individuals
+  //   child tax credit $2,200 per child, phase-out above $400,000 joint / $200,000 others — https://www.irs.gov/instructions/i1040s8 (2025 Schedule 8812 instructions),
+  //     https://www.irs.gov/credits-deductions/individuals/child-tax-credit
+  //   Social Security wage base $176,100 — https://www.ssa.gov/oact/cola/cbb.html
+  //   NIIT 3.8% above $200,000 single / HoH, $250,000 joint, $125,000 separate — https://www.irs.gov/individuals/net-investment-income-tax
+  //   Additional Medicare 0.9% above the same thresholds — https://www.irs.gov/taxtopics/tc560
+  //   underpayment rate 7% in every quarter of 2025 — https://www.irs.gov/payments/quarterly-interest-rates and https://www.irs.gov/pub/irs-pdf/i2210.pdf (2025 Form 2210 instructions)
+  //   estimate dates — the 2025 Form 2210 instructions' installments 04/15/25, 06/15/25, 09/15/25, 01/15/26; June 15, 2025 was a Sunday, so that payment was due
+  //     Monday June 16 (next business day). W-2s to employees by February 2, 2026 — https://www.irs.gov/instructions/i1040sh. Return due April 15, 2026 (Form 2210 instructions).
+  2025: {
+    year: 2025,
+    brackets: { single: B([11925, 48475, 103350, 197300, 250525, 626350]), mfj: B([23850, 96950, 206700, 394600, 501050, 751600]), mfs: B([11925, 48475, 103350, 197300, 250525, 375800]), hoh: B([17000, 64850, 103350, 197300, 250500, 626350]) },
+    standardDeduction: { single: 15750, mfj: 31500, mfs: 15750, hoh: 23625 }, additionalDeduction65: { single: 2000, mfj: 1600, mfs: 1600, hoh: 2000 },
+    ltcg: { single: { zeroUpTo: 48350, fifteenUpTo: 533400 }, mfj: { zeroUpTo: 96700, fifteenUpTo: 600050 }, mfs: { zeroUpTo: 48350, fifteenUpTo: 300000 }, hoh: { zeroUpTo: 64750, fifteenUpTo: 566700 } },
+    childTaxCredit: 2200, ctcPhaseoutStart: { single: 200000, mfj: 400000, mfs: 200000, hoh: 200000 },
+    ssWageBase: 176100, seRate: 0.124 + 0.029, seTaxableShare: 0.9235, medicareRate: 0.029, additionalMedicareRate: 0.009, additionalMedicareThreshold: { single: 200000, mfj: 250000, mfs: 125000, hoh: 200000 },
+    niitRate: 0.038, niitThreshold: { single: 200000, mfj: 250000, mfs: 125000, hoh: 200000 },
+    safeHarborPct: 0.9, safeHarborHighPct: 1.1, safeHarborHighAgi: 150000, underpaymentRate: 0.07,
+    senior: SENIOR_2025_2028,
+    calendar: [
+      { date: '2025-04-15', label: 'Q1 2025 estimated payment (Form 1040-ES) · 2024 return due', kind: 'estimate' }, { date: '2025-06-16', label: 'Q2 2025 estimated payment', kind: 'estimate' }, { date: '2025-09-15', label: 'Q3 2025 estimated payment', kind: 'estimate' },
+      { date: '2026-01-15', label: 'Q4 2025 estimated payment', kind: 'estimate' }, { date: '2026-02-02', label: 'W-2s and 1099s due to you', kind: 'other' }, { date: '2026-04-15', label: '2025 federal & Ohio returns due · extension request (Form 4868) · Q1 2026 estimate', kind: 'filing' }, { date: '2026-10-15', label: 'Extended 2025 return due', kind: 'extension' },
+    ],
+  },
   2026: {
     year: 2026,
     brackets: { single: B([12400, 50400, 105700, 201775, 256225, 640600]), mfj: B([24800, 100800, 211400, 403550, 512450, 768700]), mfs: B([12400, 50400, 105700, 201775, 256225, 384350]), hoh: B([17700, 67450, 105700, 201750, 256200, 640600]) },
@@ -24,6 +63,7 @@ export const FEDERAL: Record<number, FederalYear> = {
     ssWageBase: 184500, seRate: 0.124 + 0.029, seTaxableShare: 0.9235, medicareRate: 0.029, additionalMedicareRate: 0.009, additionalMedicareThreshold: { single: 200000, mfj: 250000, mfs: 125000, hoh: 200000 },
     niitRate: 0.038, niitThreshold: { single: 200000, mfj: 250000, mfs: 125000, hoh: 200000 },
     safeHarborPct: 0.9, safeHarborHighPct: 1.1, safeHarborHighAgi: 150000, underpaymentRate: 0.07,
+    senior: SENIOR_2025_2028,
     calendar: [
       { date: '2026-04-15', label: 'Q1 2026 estimated payment (Form 1040-ES) · 2025 return due', kind: 'estimate' }, { date: '2026-06-15', label: 'Q2 2026 estimated payment', kind: 'estimate' }, { date: '2026-09-15', label: 'Q3 2026 estimated payment', kind: 'estimate' },
       { date: '2027-01-15', label: 'Q4 2026 estimated payment', kind: 'estimate' }, { date: '2027-01-31', label: 'W-2s and 1099s due to you', kind: 'other' }, { date: '2027-04-15', label: '2026 federal & Ohio returns due · extension request (Form 4868) · Q1 2027 estimate', kind: 'filing' }, { date: '2027-10-15', label: 'Extended 2026 return due', kind: 'extension' },

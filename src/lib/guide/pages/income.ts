@@ -23,7 +23,7 @@ export const income: GuidePage = {
       how: [
         'Click + Add income source to add a row named Paycheck (paid at the default pay frequency from Settings, with today as the known pay date), then click each cell to fill it in.',
         'Type any real payday in A known pay date; every other payday is counted from it.',
-        'When the income stops, set Status to Ended (or Paused if it will restart), or type the last payday in Ends.',
+        'When the income stops, type the last payday in Ends and set Status to Ended (or Paused if it will restart). With a last payday in Ends, the tax estimate still counts what it paid that year.',
         'Use ✕ at the end of a row to delete a source.',
       ],
       fields: [
@@ -32,12 +32,12 @@ export const income: GuidePage = {
         { term: 'Paid', text: 'How often: Weekly, Every 2 weeks, Twice a month, Monthly, Quarterly, Yearly, or Irregular (a one-off, paid only on the known pay date).' },
         { term: 'A known pay date', text: 'Any date you were or will be paid. Weekly and every-2-weeks schedules count forward and back from it in 7- or 14-day steps; monthly, quarterly and yearly schedules keep its day of the month (the last day in shorter months); twice a month pays on the 15th and the last day of the month.' },
         { term: 'Take-home', text: 'The net amount that lands in the account each payday. The totals, the budget and the forecast use it.' },
-        { term: 'Gross', text: 'Pay before tax and deductions. The tax planner uses gross × paychecks a year; with no gross entered it uses take-home.' },
+        { term: 'Gross', text: 'Pay before tax and deductions. The tax planner uses gross × the paychecks the source pays in the tax year (only its paydays between Starts and Ends); with no gross entered it uses take-home.' },
         { term: 'Per month', text: 'Take-home × paychecks a year ÷ 12. For example, every 2 weeks is take-home × 26 ÷ 12.' },
         { term: 'Next pay / Last pay', text: 'The next payday from today with the days until it, and the most recent scheduled payday before today. Both come from the schedule, not from deposits.' },
         { term: 'Deposited to / Income category', text: 'The account the money lands in and the income category it counts under. The Received buttons and the forecast use them.' },
-        { term: 'Starts / Ends', text: 'Optional first and last pay dates. No paydays are counted outside them.' },
-        { term: 'Status', text: 'Active sources count everywhere. Paused and Ended sources stay on the list, greyed out, but drop out of every total, the paychecks ahead and the forecast.' },
+        { term: 'Starts / Ends', text: 'Optional first and last pay dates. No paydays are counted outside them — in the tax estimate too, so a job that starts or ends during the year counts only the paychecks it actually pays.' },
+        { term: 'Status', text: 'Active sources count everywhere. Paused and Ended sources stay on the list, grayed out, but drop out of every total, the paychecks ahead and the forecast. The one exception: the tax estimate still counts what an Ended source paid in the tax year up to its Ends date.' },
         { term: 'Notes / ID', text: 'Your own notes, and a short reference you can quote or search for.' },
       ],
       tips: [
@@ -103,7 +103,7 @@ export const income: GuidePage = {
     { q: 'How do I add my paycheck?', steps: ['Click + Add income source.', 'Type a Name and the Payer / employer, pick how often you are Paid, type a recent payday in A known pay date and your Take-home.', 'Pick Deposited to and the Income category. Every payday now appears under Paychecks ahead.'] },
     { q: 'How do I log a paycheck when it lands?', steps: ['Under Paychecks ahead, click Received beside the payday.', 'Check the amount and the date in Add transaction, then click Save.'] },
     { q: 'How do I decide where a paycheck should go?', steps: ['Under Recent paychecks, click Allocate… beside it.', 'Review what is due before the next payday and the amount left over or short.', 'Adjust the goal amounts and click Log $X to goals, or Close.'] },
-    { q: 'How do I record that a job or benefit ended?', steps: ['Type the last payday in Ends, or set Status to Ended.', 'The totals, the budget and the forecast stop counting it; the row stays for the record.'] },
+    { q: 'How do I record that a job or benefit ended?', steps: ['Type the last payday in Ends, and set Status to Ended if you like.', 'The totals, the budget and the forecast stop counting it after that date; the row stays for the record.', 'The tax estimate keeps what it paid this year — that needs the date in Ends.'] },
     { q: 'Why does a month show more income than expected?', steps: ['If you are paid every 2 weeks, two months a year have three paydays.', 'Income received by month shows those months above the expected line.'] },
   ],
   glossary: [

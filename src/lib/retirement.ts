@@ -6,24 +6,44 @@ import { round2 } from './money'
 export const RETIREMENT_DEFAULTS: RetirementInputs = { currentAge: 40, retireAge: 65, lifeExpectancy: 92, annualContribution: 12000, expectedReturn: 0.07, inflation: 0.025, returnStdDev: 0.12, desiredIncome: 60000, socialSecurity: 24000, currentIncome: 90000, ssMonthly: null, ssStartAge: 67, ssHaircut: 0, pensions: [] }
 
 // ---------------- guaranteed income (0.20.0) ----------------
-/** Social Security per year in today's dollars: the monthly SSA figure when given, else the legacy annual field. */
+/** Social Security full retirement age: 67 for anyone born in 1960 or later. The planner's benefit is the amount at this age. */
+export const SS_FULL_AGE = 67
+/** Share of the full-retirement-age benefit paid for life when Social Security is claimed at `claimAge` (62–70; outside that, the nearest end).
+ *  Early: 5/9 of 1% less for each of the first 36 months before full retirement age and 5/12 of 1% for each month before that — 70% at 62 with a
+ *  full retirement age of 67. Late: delayed retirement credits of 2/3 of 1% a month (8% a year), which stop at 70 — 124% at 70.
+ *  Sources (checked 2026-11-07): https://www.ssa.gov/benefits/retirement/planner/agereduction.html (full retirement age 67 for 1960 and later;
+ *  60 months early at 62 = 30% less), https://www.ssa.gov/oact/quickcalc/earlyretire.html (5/9 of 1% for the first 36 months, 5/12 of 1% for each
+ *  additional month), https://www.ssa.gov/benefits/retirement/planner/delayret.html (2/3 of 1% a month for 1943 or later; the increase stops at 70). */
+export function ssClaimFactor(claimAge: number, fullAge = SS_FULL_AGE): number {
+  const months = Math.round((Math.min(70, Math.max(62, claimAge)) - fullAge) * 12)
+  // counted in 3600ths so 70% and 124% come out exact: 5/9 of 1% = 20/3600, 5/12 of 1% = 15/3600, 2/3 of 1% = 24/3600
+  return months >= 0 ? (3600 + 24 * months) / 3600 : (3600 - 20 * Math.min(36, -months) - 15 * Math.max(0, -months - 36)) / 3600
+}
+/** Social Security per year at full retirement age, in today's dollars: the monthly SSA figure when given, else the legacy annual field. */
 export const ssAnnual = (i: RetirementInputs) => i.ssMonthly != null && i.ssMonthly > 0 ? i.ssMonthly * 12 : (+i.socialSecurity || 0)
-/** Age Social Security starts (defaults to the later of 67 and the retirement age when unset). */
-export const ssStart = (i: RetirementInputs) => i.ssStartAge && i.ssStartAge > 0 ? i.ssStartAge : Math.max(67, i.retireAge)
-/** Guaranteed income at `age`, $/yr in today's dollars: Social Security (less the haircut scenario) once claimed, plus pensions that have started.
- *  A pension without COLA loses purchasing power: its real value shrinks by inflation every year after it starts. */
+/** Age Social Security starts: the claiming age entered, else the later of 67 and the retirement age; never before 62. */
+export const ssStart = (i: RetirementInputs) => Math.max(62, i.ssStartAge && i.ssStartAge > 0 ? i.ssStartAge : Math.max(SS_FULL_AGE, i.retireAge))
+/** The monthly benefit at the claiming age, today's dollars, before any benefit-cut scenario: the full-retirement-age amount × ssClaimFactor. */
+export const ssMonthlyAtClaim = (i: RetirementInputs) => round2(ssAnnual(i) / 12 * ssClaimFactor(ssStart(i)))
+/** The first age the portfolio pays out: the retirement age, or the current age when that is already past (earlier years are not drawn again). */
+const drawStart = (i: RetirementInputs) => Math.max(i.currentAge, i.retireAge)
+/** Guaranteed income at `age`, $/yr in today's dollars: Social Security at the claiming age's rate (less the haircut scenario) once claimed, plus
+ *  pensions that have started. A pension without COLA loses purchasing power: its real value shrinks by inflation every year after it starts. */
 export function guaranteedIncome(i: RetirementInputs, age: number, haircut = i.ssHaircut || 0): number {
-  const ss = age >= ssStart(i) ? ssAnnual(i) * (1 - Math.max(0, Math.min(1, haircut))) : 0
+  const ss = age >= ssStart(i) ? ssAnnual(i) * ssClaimFactor(ssStart(i)) * (1 - Math.max(0, Math.min(1, haircut))) : 0
   const pen = (i.pensions || []).filter(p => +p.monthly > 0 && age >= +p.startAge).reduce((n, p) => n + (+p.monthly * 12) * (p.cola === false ? Math.pow(1 + i.inflation, -(age - +p.startAge)) : 1), 0)
   return round2(ss + pen)
 }
 /** Guaranteed income once every line has started (the steady state the 4% rule is measured against). */
 export const steadyGuaranteed = (i: RetirementInputs, haircut = i.ssHaircut || 0) => guaranteedIncome(i, Math.max(ssStart(i), ...(i.pensions || []).map(p => +p.startAge || 0), i.retireAge), haircut)
 export interface Drawdown { path: Array<{ age: number; guaranteed: number; draw: number; balance: number }>; depletionAge: number | null; endingBalance: number; bridgeYears: number; bridgeDraw: number; totalDraw: number; totalGuaranteed: number }
-/** Year by year from retirement to the plan age, today's dollars at the expected real return: what guaranteed income covers, what the portfolio must supply, and what is left. */
+/** Year by year from retirement (or now, if retired already) to the plan age, today's dollars at the expected real return: what guaranteed income
+ *  covers, what the portfolio must supply, and what is left. Each row is the year of that age: its draw comes out after the year's growth, and
+ *  `balance` is what is left at the end of it. The Monte Carlo follows the same timing (see monteCarlo). */
 export function drawdown(balanceAtRet: number, i: RetirementInputs, haircut = i.ssHaircut || 0): Drawdown {
   const realRate = (1 + i.expectedReturn) / (1 + i.inflation) - 1; const path: Drawdown['path'] = []; let b = balanceAtRet, depletion: number | null = null, totalDraw = 0, totalG = 0, bridgeYears = 0, bridgeDraw = 0
-  for (let age = i.retireAge; age < Math.max(i.retireAge + 1, i.lifeExpectancy); age++) {
+  const start = drawStart(i)
+  for (let age = start; age < Math.max(start + 1, i.lifeExpectancy); age++) {
     const g = guaranteedIncome(i, age, haircut); const draw = Math.max(0, i.desiredIncome - g); if (age < ssStart(i)) { bridgeYears++; bridgeDraw += draw }
     totalDraw += draw; totalG += Math.min(g, i.desiredIncome)
     b = b * (1 + realRate) - draw; if (b <= 0 && depletion == null) depletion = age; b = Math.max(0, b)
@@ -42,7 +62,8 @@ export function projectRetirement(balance: number, i: RetirementInputs, swr = 0.
   // the portfolio must fund (income wanted − guaranteed income) at the withdrawal rate once every guaranteed line has started, plus the bridge
   // years before Social Security begins, which it funds in full (discounted at the real rate)
   const steady = steadyGuaranteed(i); const needFromPortfolio = Math.max(0, i.desiredIncome - steady)
-  let bridge = 0; for (let age = i.retireAge; age < ssStart(i) && age < i.lifeExpectancy; age++) { const extra = Math.max(0, i.desiredIncome - guaranteedIncome(i, age)) - needFromPortfolio; bridge += Math.max(0, extra) / Math.pow(1 + realRate, age - i.retireAge) }
+  const start = drawStart(i)
+  let bridge = 0; for (let age = start; age < ssStart(i) && age < i.lifeExpectancy; age++) { const extra = Math.max(0, i.desiredIncome - guaranteedIncome(i, age)) - needFromPortfolio; bridge += Math.max(0, extra) / Math.pow(1 + realRate, age - start) }
   const needed = round2(needFromPortfolio / swr + bridge)
   const sustainableIncome = round2(real * swr + steady)
   const readiness = Math.max(0, Math.min(100, Math.round(needed > 0 ? real / needed * 100 : 100)))
@@ -51,7 +72,7 @@ export function projectRetirement(balance: number, i: RetirementInputs, swr = 0.
   // contribution (today's dollars, growing with inflation) that would close the gap: solve FV of growing annuity in real terms
   let contributionForTarget: number | null = null
   if (shortfall > 0 && years > 0) { const fvFactor = realRate !== 0 ? (Math.pow(1 + realRate, years) - 1) / realRate : years; const have = balance * Math.pow(1 + realRate, years); contributionForTarget = round2(Math.max(0, (needed - have) / fvFactor)) }
-  return { years, nominal: round2(nominal), real, realRate: round2(realRate * 10000) / 10000, path, needed, guaranteed: steady, bridgeYears: Math.max(0, Math.min(i.lifeExpectancy, ssStart(i)) - i.retireAge), readiness, replacementRatio, sustainableIncome, shortfall, contributionForTarget }
+  return { years, nominal: round2(nominal), real, realRate: round2(realRate * 10000) / 10000, path, needed, guaranteed: steady, bridgeYears: Math.max(0, Math.min(i.lifeExpectancy, ssStart(i)) - start), readiness, replacementRatio, sustainableIncome, shortfall, contributionForTarget }
 }
 
 /** Deterministic PRNG (mulberry32) so simulations are reproducible in tests and across re-renders. */
@@ -60,16 +81,19 @@ export function rng(seed: number) { let a = seed >>> 0; return () => { a = (a + 
 export const normal = (u: () => number) => { let a = 0; while (a === 0) a = u(); return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * u()) }
 
 export interface MonteCarlo { runs: number; successRate: number; median: number; p10: number; p90: number; medianAtRetirement: number; worst: number; years: number; bands: Array<{ age: number; p10: number; p50: number; p90: number }>; depletionAges: number[] }
-/** Accumulate to retirement, then withdraw `desiredIncome − guaranteed income at that age` (inflation-adjusted) until life expectancy. Returns are lognormal-ish: normal(mean, sd) each year, floored at −95%. Values in today's dollars. */
+/** Accumulate to retirement, then withdraw `desiredIncome − guaranteed income at that age` (inflation-adjusted) until life expectancy. Returns are lognormal-ish: normal(mean, sd) each year, floored at −95%. Values in today's dollars.
+ *  Year y runs from age currentAge + y − 1 to currentAge + y: the first withdrawal is in the year of the retirement age, the same timing as drawdown,
+ *  so with no volatility every run equals the drawdown path (bands[y] at age a + 1 = drawdown's balance for the year of age a) and runs out at the
+ *  same age. A run that runs out stays at $0 — it never borrows. */
 export function monteCarlo(balance: number, i: RetirementInputs, runs = 1000, seed = 42): MonteCarlo {
-  const u = rng(seed); const accYears = Math.max(0, i.retireAge - i.currentAge), drawYears = Math.max(1, i.lifeExpectancy - i.retireAge); const total = accYears + drawYears
+  const u = rng(seed); const accYears = Math.max(0, i.retireAge - i.currentAge), drawYears = Math.max(1, i.lifeExpectancy - drawStart(i)); const total = accYears + drawYears
   const needAt = (age: number) => Math.max(0, i.desiredIncome - guaranteedIncome(i, age)); const finals: number[] = [], atRet: number[] = [], depletion: number[] = []; const byYear: number[][] = Array.from({ length: total + 1 }, () => [])
   for (let k = 0; k < runs; k++) {
     let v = balance, contrib = i.annualContribution; let dead = -1
     byYear[0].push(v)
     for (let y = 1; y <= total; y++) {
-      const ret = Math.max(-0.95, i.expectedReturn + i.returnStdDev * normal(u))
-      if (y <= accYears) { v = v * (1 + ret) + contrib; contrib *= 1 + i.inflation } else { const draw = needAt(i.currentAge + y) * Math.pow(1 + i.inflation, y); v = v * (1 + ret) - draw; if (v <= 0 && dead < 0) { dead = i.currentAge + y; v = 0 } }
+      const ret = Math.max(-0.95, i.expectedReturn + i.returnStdDev * normal(u)); const age = i.currentAge + y - 1   // the age this year starts at
+      if (y <= accYears) { v = v * (1 + ret) + contrib; contrib *= 1 + i.inflation } else { const draw = needAt(age) * Math.pow(1 + i.inflation, y); v = v * (1 + ret) - draw; if (v <= 0) { if (dead < 0) dead = age; v = 0 } }
       byYear[y].push(v / Math.pow(1 + i.inflation, y))   // today's dollars
       if (y === accYears) atRet.push(v / Math.pow(1 + i.inflation, y))
     }

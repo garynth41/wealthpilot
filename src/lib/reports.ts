@@ -188,10 +188,12 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
       table: { headers: ['Asset class', 'Value', 'Share', 'Holdings'], rows: pf.byClass.map(c => [c.label, c.value, c.pct, c.count]) }, notes: pf.concentrationWarning ? [pf.concentrationWarning] : [] })
   }
   if (sections.includes('tax')) {
-    const yr = +r.to.slice(0, 4); const e = estimateTax(d, s, { year: yr }, asOf)
-    out.push({ id: 'tax', title: `Tax estimate ${e.year}`, kpis: [{ label: 'Total tax', value: e.totalTax, fmt: 'money' }, { label: e.refund > 0 ? 'Projected refund' : 'Projected due', value: e.refund > 0 ? e.refund : e.due, fmt: 'money' }, ...(e.federal.effective != null ? [{ label: 'Federal effective rate', value: e.federal.effective, fmt: 'pct' as const }] : []), { label: 'Marginal rate', value: e.federal.marginal, fmt: 'pct' }],
+    // a year with no table of its own is estimated with the nearest year's — the heading and the first note say so instead of passing it off as that year's
+    const yr = +r.to.slice(0, 4); const e = estimateTax(d, s, { year: yr }, asOf); const borrowed = e.tableYear !== e.year
+    out.push({ id: 'tax', title: `Tax estimate ${e.year}${borrowed ? ` (with ${e.tableYear} tax rules)` : ''}`, kpis: [{ label: 'Total tax', value: e.totalTax, fmt: 'money' }, { label: e.refund > 0 ? 'Projected refund' : 'Projected due', value: e.refund > 0 ? e.refund : e.due, fmt: 'money' }, ...(e.federal.effective != null ? [{ label: 'Federal effective rate', value: e.federal.effective, fmt: 'pct' as const }] : []), { label: 'Marginal rate', value: e.federal.marginal, fmt: 'pct' }],
       table: { headers: ['Line', 'Amount'], rows: [['Total income', e.income.total], ['AGI', e.agi], ['Taxable income', e.taxableIncome], ['Federal tax', e.federal.total], [e.state.name.split(' (')[0], e.state.tax], ['Local', e.local.total], ['Paid / planned (federal)', e.paid.total]] },
-      notes: [e.safeHarbor.met ? 'Safe harbor met.' : `Short of the safe harbor by ${e.safeHarbor.shortfall.toFixed(2)} (${e.safeHarbor.basis}).`, 'Planning estimate, not a return.'] })
+      notes: [...(borrowed ? [`No ${e.year} tax tables are built in, so this uses the ${e.tableYear} tax brackets, standard deduction, credits and limits. Treat it as a rough guide for ${e.year}.`] : []),
+        e.safeHarbor.met ? 'Safe harbor met.' : `Short of the safe harbor by ${e.safeHarbor.shortfall.toFixed(2)} (${e.safeHarbor.basis}).`, 'Planning estimate, not a return.'] })
   }
   if (period('transactions')) {
     const tx = d.transactions.filter(t => live(t) && inRange(t, r.from, r.to)).sort((a, b) => a.date.localeCompare(b.date) || a.amount - b.amount)

@@ -6,7 +6,7 @@ import { Card, KPI, Btn, Pill, Note, Field, Seg, Empty, useConfirm, useModal } f
 import { Table, type Col } from '../components/Table'
 import { Chart, C, PALETTE, Gauge, cssVar } from '../components/Chart'
 import { portfolio, holdingValue, holdingGain, retirementAssets } from '../lib/portfolio'
-import { projectRetirement, safeWithdrawal, RETIREMENT_DEFAULTS, drawdown, guaranteedIncome, ssAnnual, ssStart, type MonteCarlo } from '../lib/retirement'
+import { projectRetirement, safeWithdrawal, RETIREMENT_DEFAULTS, drawdown, guaranteedIncome, ssAnnual, ssStart, ssClaimFactor, ssMonthlyAtClaim, SS_FULL_AGE, type MonteCarlo } from '../lib/retirement'
 import { isAutoPriced, priceFreshness, priceAgeDays } from '../lib/prices'
 import { ScenarioBar } from '../components/Scenarios'
 import { normalize } from '../lib/scenarios'
@@ -67,7 +67,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
   const set = (k: keyof RetirementInputs, v: string) => { const n = parseNum(v); if (n == null) return; setI(x => ({ ...x, [k]: ['expectedReturn', 'inflation', 'returnStdDev'].includes(k) ? n / 100 : n })) }
   const pct = (k: 'expectedReturn' | 'inflation' | 'returnStdDev') => (i[k] * 100).toFixed(1)
   const setPen = (k: number, p: Partial<Pension>) => setI(x => ({ ...x, pensions: (x.pensions || []).map((y, j) => j === k ? { ...y, ...p } : y) }))
-  const dd = useMemo(() => drawdown(proj.real, i), [proj.real, i])
+  const dd = useMemo(() => drawdown(proj.real, i), [proj.real, i]); const firstDraw = dd.path[0]?.age ?? i.retireAge   // the first year the portfolio pays out
   const simulate = () => { setBusy(true); worker.current?.terminate(); const w = new Worker(new URL('../lib/mc.worker.ts', import.meta.url), { type: 'module' }); worker.current = w
     w.onmessage = (e: MessageEvent<MonteCarlo>) => { setMc(e.data); setBusy(false); w.terminate() }; w.onerror = () => { setBusy(false); w.terminate() }; w.postMessage({ balance, inputs: i, runs: +runs, seed: Date.now() % 100000 }) }
   useEffect(() => () => worker.current?.terminate(), [])
@@ -82,8 +82,8 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
       <div className="grid3">{num('Income wanted / yr', 'desiredIncome', 'in retirement, today\'s $')}{num('Income today / yr', 'currentIncome', 'for the replacement ratio')}{num('Return volatility %', 'returnStdDev', 'std dev, for Monte Carlo', true)}</div>
       <h3 style={{ margin: '10px 0 4px', fontSize: 14 }}>Guaranteed income</h3>
       <div className="grid3">
-        <Field label="Social Security / month" hint="from your SSA statement, today's $"><input className="inp" inputMode="decimal" key={`ss-${ssAnnual(i)}`} defaultValue={String(Math.round(ssAnnual(i) / 12))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssMonthly: n, socialSecurity: n * 12 })) }} /></Field>
-        <Field label="Claim at age" hint="62 – 70"><input className="inp" inputMode="numeric" key={`ssa-${ssStart(i)}`} defaultValue={String(ssStart(i))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssStartAge: Math.min(70, Math.max(62, Math.round(n))) })) }} /></Field>
+        <Field label={`Social Security at ${SS_FULL_AGE} / month`} hint="full-retirement-age amount on your SSA statement, today's $"><input className="inp" inputMode="decimal" key={`ss-${ssAnnual(i)}`} defaultValue={String(Math.round(ssAnnual(i) / 12))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssMonthly: n, socialSecurity: n * 12 })) }} /></Field>
+        <Field label="Claim at age" hint={`62 – 70 · pays ${fmtMoney(ssMonthlyAtClaim(i))}/mo (${Math.round(ssClaimFactor(ssStart(i)) * 100)}%)`}><input className="inp" inputMode="numeric" key={`ssa-${ssStart(i)}`} defaultValue={String(ssStart(i))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssStartAge: Math.min(70, Math.max(62, Math.round(n))) })) }} /></Field>
         <Field label="Plan on" hint="benefit-cut scenario"><select className="inp" value={String(i.ssHaircut || 0)} onChange={e => setI(x => ({ ...x, ssHaircut: +e.target.value }))}><option value="0">Full benefit</option><option value="0.25">75% (shortfall)</option><option value="1">None</option></select></Field>
       </div>
       <div className="note" style={{ margin: '2px 0 4px' }}>Pensions and annuities</div>
@@ -96,7 +96,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
       </div>)}
       {(i.pensions || []).length > 0 && <div className="pens note" style={{ margin: 0 }}><span>name</span><span>per month</span><span>from age</span><span /><span /></div>}
       <Btn sm onClick={() => setI(x => ({ ...x, pensions: [...(x.pensions || []), { id: 'pen' + Date.now().toString(36), name: 'Pension', monthly: 500, startAge: x.retireAge, cola: true }] }))}>+ Add a pension</Btn>
-      <Note>Starting balance: <b>{fmtMoney(balance)}</b> — your retirement + investment accounts. Readiness = projected portfolio ÷ what it must hold: (income wanted − guaranteed income) at a 4% withdrawal rate, plus the bridge years before Social Security starts, which the portfolio funds in full.</Note>
+      <Note>Starting balance: <b>{fmtMoney(balance)}</b> — your retirement + investment accounts. Readiness = projected portfolio ÷ what it must hold: (income wanted − guaranteed income) at a 4% withdrawal rate, plus the bridge years before Social Security starts, which the portfolio funds in full. Social Security: enter your benefit at {SS_FULL_AGE}, full retirement age for anyone born in 1960 or later. Claiming earlier pays less for life (70% at 62); each year you wait past {SS_FULL_AGE} adds 8%, up to 124% at 70.</Note>
     </Card>
     <Card span={7} title="Projection" hint={`${proj.years} years to retirement · real return ${(proj.realRate * 100).toFixed(1)}%/yr`}>
       <div className="kpis" style={{ marginBottom: 10 }}>
@@ -117,7 +117,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
           {mc.depletionAges.length > 0 && <KPI l="Typical run-out age" v={String(Math.round(mc.depletionAges.reduce((a, b) => a + b, 0) / mc.depletionAges.length))} cls="warn" s={`earliest ${Math.min(...mc.depletionAges)}`} />}
         </div>
         <Chart title="Monte Carlo bands" data={[{ type: 'scatter', mode: 'lines', name: '90th percentile', x: mc.bands.map(b => b.age), y: mc.bands.map(b => b.p90), line: { color: c.good, width: 1 }, hovertemplate: 'age %{x}: $%{y:,.0f}<extra>90th</extra>' }, { type: 'scatter', mode: 'lines', name: 'Median', x: mc.bands.map(b => b.age), y: mc.bands.map(b => b.p50), line: { color: c.accent, width: 2 }, fill: 'tonexty', fillcolor: c.accentSoft, hovertemplate: 'age %{x}: $%{y:,.0f}<extra>median</extra>' }, { type: 'scatter', mode: 'lines', name: '10th percentile', x: mc.bands.map(b => b.age), y: mc.bands.map(b => b.p10), line: { color: c.crit, width: 1 }, fill: 'tonexty', fillcolor: cssVar('--crit-soft'), hovertemplate: 'age %{x}: $%{y:,.0f}<extra>10th</extra>' }, { type: 'scatter', mode: 'lines', name: 'Retirement', x: [i.retireAge, i.retireAge], y: [0, Math.max(...mc.bands.map(b => b.p90))], line: { color: c.ink3, width: 1, dash: 'dot' }, hoverinfo: 'skip' }]} layout={{ showlegend: true, yaxis: { tickprefix: '$', rangemode: 'tozero' }, xaxis: { title: { text: 'Age' } } }} height={280} />
-        <Note>Each run draws a return every year from a normal distribution (mean {pct('expectedReturn')}%, std dev {pct('returnStdDev')}%), adds contributions until age {i.retireAge}, then withdraws what guaranteed income does not cover — {fmtMoney(Math.max(0, i.desiredIncome - guaranteedIncome(i, i.retireAge)))}/yr at {i.retireAge}, {fmtMoney(Math.max(0, i.desiredIncome - guaranteedIncome(i, Math.max(i.retireAge, ssStart(i)))))}/yr once Social Security starts (inflation-adjusted) — to age {i.lifeExpectancy}.</Note></>}
+        <Note>Each run draws a return every year from a normal distribution (mean {pct('expectedReturn')}%, std dev {pct('returnStdDev')}%), adds contributions until age {i.retireAge}, then, from the year of age {firstDraw}, withdraws what guaranteed income does not cover — {fmtMoney(Math.max(0, i.desiredIncome - guaranteedIncome(i, firstDraw)))}/yr at {firstDraw}, {fmtMoney(Math.max(0, i.desiredIncome - guaranteedIncome(i, Math.max(firstDraw, ssStart(i)))))}/yr once Social Security starts (inflation-adjusted) — to age {i.lifeExpectancy}. A run that runs out of money stays at $0.</Note></>}
     </Card>
     <Card span={5} title="Safe withdrawal rate" hint={`starting from ${fmtMoney(proj.real)} at retirement · income includes ${fmtMoney(proj.guaranteed)}/yr guaranteed`}>
       <div className="tblwrap"><table className="tbl"><thead><tr><th>Rate</th><th className="num">Income / yr</th><th>Lasts</th><th className="num">Left at {i.lifeExpectancy}</th></tr></thead><tbody>
