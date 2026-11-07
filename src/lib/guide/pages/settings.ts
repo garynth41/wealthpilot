@@ -403,7 +403,7 @@ export const settings: GuidePage = {
         { term: 'Download JSON backup', text: 'Every account, transaction, budget, bill, goal and the rest as one file named with today\'s date. Load it back through Restore.' },
         { term: 'Transactions as CSV', text: 'Every transaction for a spreadsheet: date, kind, amount, payee, category, account, to_account, status, source and memo.' },
       ],
-      tips: ['Keep a backup before big changes.', 'The JSON restores into any household; records get new ids so nothing clashes.'],
+      tips: ['Keep a backup before big changes.', 'The JSON restores into any household. Records keep their ids where they can; when an id is already used elsewhere the record gets a new one, so nothing clashes.'],
     },
     {
       title: 'Nightly backups',
@@ -420,15 +420,15 @@ export const settings: GuidePage = {
       what: 'On the Backup & data tab: loads a JSON backup — from Backup or Nightly backups — into this household.',
       how: [
         'Click the file box and choose the backup file.',
-        'Click Merge into this household to add its records to what is here, or Replace everything to wipe this household\'s data first.',
+        'Click Merge into this household to add what is missing and keep what is already here, or Replace everything to wipe this household\'s data first.',
       ],
       fields: [
         { term: 'File box', text: 'Choose a .json backup file.' },
-        { term: 'Merge into this household', text: 'Adds every record in the file to what is already here. It does not match them against existing records, so merging the same backup twice adds everything twice.' },
+        { term: 'Merge into this household', text: 'Adds the records in the file that are not here yet. A record that is already here — the same record, or one that matches it (the same bank transaction, an account with the same name, type, bank and last four digits, a category with the same name and group, a budget line for the same period and category, and so on) — is not copied: it is kept as it is, or updated when the file holds a newer version of it. Splits, budget lines, bill dates, goal contributions and statements are linked to the record that stays. Merging the same backup twice changes nothing the second time.' },
         { term: 'Replace everything', text: 'Deletes this household\'s data and loads the backup in its place. It asks first and cannot be undone.' },
       ],
       tips: [
-        'A message says how many rows were imported.',
+        'A message says how many records were added, how many were updated and how many were already here.',
         'Restore brings back your data — accounts, categories, transactions, budgets, bills, goals and so on — but not household settings such as thresholds, payee rules and alert choices, and not the member list.',
         'Download a fresh backup before you replace anything. Viewers cannot restore.',
       ],

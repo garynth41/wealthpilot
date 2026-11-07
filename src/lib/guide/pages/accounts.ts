@@ -65,7 +65,7 @@ export const accounts: GuidePage = {
     {
       title: 'Credit cards & loans',
       what: 'Every card and loan with what is on its latest statement. The app works out the available credit, utilization, interest, due status and what to pay.',
-      how: ['Use the + buttons to add a card or loan, then copy the statement balance, minimum payment, due date and APR into the row.', 'Click Record payment when you pay: it logs the transfer from your bank, lowers the balance and marks the statement paid.', 'Click New statement when a new statement arrives: the old one moves to Statement history and the due date resets.'],
+      how: ['Use the + buttons to add a card or loan, then copy the statement balance, minimum payment, due date and APR into the row.', 'Click Record payment when you pay: it logs the transfer from your bank, lowers the balance and marks the statement paid.', 'Click New statement when a new statement arrives: the old one moves to Statement history and the due date resets. The balance owed changes to the statement balance only when nothing newer is on file — not when the bank feed reports the balance or it was updated after the statement date.'],
       fields: [
         { term: 'Balance owed', text: 'What you owe today.' },
         { term: 'APR % / Promo APR % / Promo ends', text: 'The interest rate, and a promotional rate (for example a 0% balance transfer) with its end date. The payoff plan uses the promo rate until it ends.' },
