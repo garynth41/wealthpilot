@@ -19,7 +19,7 @@ const admin = createClient(url, service, { auth: { persistSession: false } })
 const APP_URL = Deno.env.get('APP_URL') || 'https://garynth41.github.io/wealthpilot/'
 let VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY') || '', VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY') || ''; const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:garynthomas@gmail.com'
 // read at send time (not module load) so a secret added after the instance booted is seen on the next call
-const resendKey = () => Deno.env.get('RESEND_API_KEY') || '', emailFrom = () => Deno.env.get('EMAIL_FROM') || 'WealthPilot <onboarding@resend.dev>'
+const resendKey = () => Deno.env.get('RESEND_API_KEY') || '', emailFrom = () => Deno.env.get('EMAIL_FROM') || 'Cresari <onboarding@resend.dev>'
 /** VAPID keys come from Vault (migration 0012, vapid_keys() is service-role only) unless set as function secrets. */
 async function vapid() {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) { const { data } = await admin.rpc('vapid_keys'); const row = Array.isArray(data) ? data[0] : data; if (row?.public_key && row?.private_key) { VAPID_PUBLIC = row.public_key; VAPID_PRIVATE = row.private_key } }
@@ -68,7 +68,7 @@ async function sendEmail(to: string, subject: string, html: string, text: string
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
 function alertEmail(name: string, alerts: Alert[]) {
   const rows = alerts.map(a => `<tr><td style="padding:8px 10px;border-bottom:1px solid #e6e9ed;color:${a.severity === 'crit' ? '#9a3412' : a.severity === 'warn' ? '#92400e' : '#3a4048'};font-weight:600">${esc(a.title)}</td><td style="padding:8px 10px;border-bottom:1px solid #e6e9ed;color:#5b6470">${esc(a.body)}</td><td style="padding:8px 10px;border-bottom:1px solid #e6e9ed"><a href="${APP_URL}#${a.url}" style="color:#b53a0a">Open</a></td></tr>`).join('')
-  const html = `<div style="font-family:'IBM Plex Sans',Segoe UI,Arial,sans-serif;color:#15181c;max-width:640px"><h2 style="font-weight:700;margin:0 0 4px">WealthPilot — ${alerts.length} thing${alerts.length === 1 ? '' : 's'} need${alerts.length === 1 ? 's' : ''} attention</h2><div style="color:#5b6470;margin-bottom:14px">${esc(name)} · ${todayET()}</div><table style="border-collapse:collapse;width:100%;font-size:14px">${rows}</table><p style="color:#8b949e;font-size:12px;margin-top:16px">Sent by your WealthPilot. Change what you receive under Settings → Notifications.</p></div>`
+  const html = `<div style="font-family:'IBM Plex Sans',Segoe UI,Arial,sans-serif;color:#15181c;max-width:640px"><h2 style="font-weight:700;margin:0 0 4px">Cresari — ${alerts.length} thing${alerts.length === 1 ? '' : 's'} need${alerts.length === 1 ? 's' : ''} attention</h2><div style="color:#5b6470;margin-bottom:14px">${esc(name)} · ${todayET()}</div><table style="border-collapse:collapse;width:100%;font-size:14px">${rows}</table><p style="color:#8b949e;font-size:12px;margin-top:16px">Sent by your Cresari. Change what you receive under Settings → Notifications.</p></div>`
   return { html, text: alerts.map(a => `• ${a.title} — ${a.body} (${APP_URL}#${a.url})`).join('\n') }
 }
 
@@ -93,7 +93,7 @@ async function runDaily(hh: string) {
   const sent: string[] = []
   for (const [to, list] of byAddr) {
     const fresh = list.map(x => x.a); const { html, text } = alertEmail(household.name, fresh)
-    const res = await sendEmail(to, `WealthPilot: ${fresh[0].title}${fresh.length > 1 ? ` + ${fresh.length - 1} more` : ''}`, html, text); sent.push(`${to}: ${res.detail}`)
+    const res = await sendEmail(to, `Cresari: ${fresh[0].title}${fresh.length > 1 ? ` + ${fresh.length - 1} more` : ''}`, html, text); sent.push(`${to}: ${res.detail}`)
     for (const { a, key } of list) await admin.from('notifications').insert({ household_id: hh, kind: a.kind, dedupe_key: key, title: a.title, body: a.body, url: a.url, channel: 'email', status: res.ok ? 'sent' : /not configured/.test(res.detail) ? 'skipped' : 'failed', detail: res.detail.slice(0, 300) })
   }
   return { household_id: hh, alerts: alerts.length, push: pushN, email: sent.length ? sent.join('; ') : 'nothing new' }
@@ -116,7 +116,7 @@ async function runDigest(hh: string) {
     ${d.topPayees.length ? `<h3 style="margin:14px 0 6px;font-size:15px">Where last week went</h3><ul>${d.topPayees.map(([n, v]) => `<li>${esc(n)} · ${money(v)}</li>`).join('')}</ul>` : ''}
     ${d.income ? `<div style="color:#5b6470">Income received last week: ${money(d.income)}</div>` : ''}${d.uncategorized ? `<div style="color:#5b6470">${d.uncategorized} transaction${d.uncategorized === 1 ? '' : 's'} from last week still uncategorized.</div>` : ''}
     ${notices.length ? `<h3 style="margin:14px 0 6px;font-size:15px">Worth a look</h3><ul>${notices.map(n => `<li><b>${esc(n.title)}</b> — ${esc(n.body)} <a href="${APP_URL}#${n.url}" style="color:#b53a0a">Open</a></li>`).join('')}</ul>` : ''}
-    <p style="margin-top:16px"><a href="${APP_URL}#/" style="color:#b53a0a">Open WealthPilot</a> · <a href="${APP_URL}#/reports" style="color:#b53a0a">Reports</a></p><p style="color:#8b949e;font-size:12px">Change what you receive under Settings → Notifications.</p></div>`
+    <p style="margin-top:16px"><a href="${APP_URL}#/" style="color:#b53a0a">Open Cresari</a> · <a href="${APP_URL}#/reports" style="color:#b53a0a">Reports</a></p><p style="color:#8b949e;font-size:12px">Change what you receive under Settings → Notifications.</p></div>`
   const text = `${title}\nCash ${money(d.cash)} (floor ${money(d.floor)}) · spent last week ${money(d.lastWeek)}\nDue this week:\n${d.week.map(w => `  ${w.due} ${w.name} ${money(w.amount)}`).join('\n') || '  nothing'}\n${d.overdue.length ? 'Overdue (' + money(d.overdueTotal) + ', taken off safe to spend): ' + d.overdue.map(o => o.name).join(', ') + '\n' : ''}${APP_URL}`
   const out: Record<string, unknown> = { household_id: hh, notices: notices.length }
   const r = recipientsFor(prefs, members, 'digest')
@@ -152,9 +152,9 @@ Deno.serve(async (req) => {
   if ((b.action === 'preview' || b.action === 'test') && isLimitedMember(m)) return json(403, { error: 'Alerts need full access' })
   if (b.action === 'preview') { try { const { input } = await loadHousehold(hh); return json(200, { today: input.today, alerts: computeAlerts(input), push: await vapid(), email: !!resendKey() }) } catch (e) { return json(500, { error: (e as Error).message }) } }
   if (b.action === 'test') {
-    const push = await sendPush(hh, [me.user.id], 'WealthPilot test', 'Push notifications are working on this device.', '/settings', 'test')
+    const push = await sendPush(hh, [me.user.id], 'Cresari test', 'Push notifications are working on this device.', '/settings', 'test')
     const { prefs } = await loadHousehold(hh); const mine = prefs.members?.[me.user.id]; const to = (mine?.email ? mine.email_to || m.email : null) || prefs.email_to || m.email
-    const email = to ? await sendEmail(to, 'WealthPilot test email', `<p>Email alerts are working. You will get bills due, low cash, large charges and the Monday digest here.</p><p><a href="${APP_URL}">Open WealthPilot</a></p>`, 'Email alerts are working.') : { ok: false, detail: 'no address' }
+    const email = to ? await sendEmail(to, 'Cresari test email', `<p>Email alerts are working. You will get bills due, low cash, large charges and the Monday digest here.</p><p><a href="${APP_URL}">Open Cresari</a></p>`, 'Email alerts are working.') : { ok: false, detail: 'no address' }
     await admin.from('notifications').insert([{ household_id: hh, kind: 'test', dedupe_key: 'test:' + Date.now(), title: 'Test', body: 'push', url: '/settings', channel: 'push', status: push.sent ? 'sent' : push.failed ? 'failed' : 'skipped', detail: push.detail.slice(0, 300) }, { household_id: hh, kind: 'test', dedupe_key: 'test:' + Date.now() + ':e', title: 'Test', body: 'email', url: '/settings', channel: 'email', status: email.ok ? 'sent' : /not configured/.test(email.detail) ? 'skipped' : 'failed', detail: email.detail.slice(0, 300) }])
     return json(200, { push, email })
   }

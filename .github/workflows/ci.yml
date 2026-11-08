@@ -1,4 +1,4 @@
-# WealthPilot CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards),
+# Cresari CI — every push and pull request: typecheck, unit tests, build, Playwright smoke (desktop + phone, contrast + axe guards),
 # every migration and the SQL tests on a plain Postgres (0.25.1), then the same app built against the staging database and driven end to
 # end (0.25.0). A push to main that passes all three publishes
 # dist/ to gh-pages (the same thing `npm run deploy` does by hand). The Android and iOS apps are built from the same web build on every
@@ -92,7 +92,7 @@ jobs:
       - name: Build against staging
         if: steps.gate.outputs.run == 'true'
         env: { STAGING_URL: "${{ secrets.STAGING_URL }}", STAGING_KEY: "${{ secrets.STAGING_KEY }}" }
-        run: VITE_SUPABASE_URL="$STAGING_URL" VITE_SUPABASE_KEY="$STAGING_KEY" VITE_APP_NAME=WealthPilot npx vite build --outDir dist-staging
+        run: VITE_SUPABASE_URL="$STAGING_URL" VITE_SUPABASE_KEY="$STAGING_KEY" VITE_APP_NAME=Cresari npx vite build --outDir dist-staging
       - run: npx playwright install --with-deps chromium
         if: steps.gate.outputs.run == 'true'
       - run: npm run e2e:db

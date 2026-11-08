@@ -1,6 +1,6 @@
 apply plugin: 'com.android.application'
 
-// WealthPilot (0.25.1): the version comes from package.json — 0.25.1 → versionName "0.25.1", versionCode 250100 (+ WP_BUILD_NUMBER, 0–99,
+// Cresari (0.25.1): the version comes from package.json — 0.25.1 → versionName "0.25.1", versionCode 250100 (+ WP_BUILD_NUMBER, 0–99,
 // for a rebuild of the same version, since Google Play needs a higher code for every upload; the iOS build number is the same figure).
 // Release signing reads the upload key from environment variables (CI secrets) and never from the repo; without them a release build
 // is simply unsigned. See docs/MOBILE.md.
@@ -13,10 +13,10 @@ def wpCode = wpParts[0] * 1000000 + wpParts[1] * 10000 + wpParts[2] * 100 + wpBu
 def wpKeystore = System.getenv('WP_UPLOAD_KEYSTORE')
 
 android {
-    namespace = "io.github.garynth41.wealthpilot"
+    namespace = "com.cresari.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "io.github.garynth41.wealthpilot"
+        applicationId "com.cresari.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode wpCode

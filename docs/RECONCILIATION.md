@@ -3,8 +3,8 @@
 Spec: "Cash & Account Operations Enhancement" (Nov 2026). Rules: `src/lib/reconcile.ts` (identical copy in the bank-sync function),
 built on the duplicate engine `src/lib/dedupe.ts`. Schema: `supabase/migrations/0008_checkbook_reconciliation.sql`.
 
-## Model (how the spec's three records map onto WealthPilot)
-| Spec | WealthPilot |
+## Model (how the spec's three records map onto Cresari)
+| Spec | Cresari |
 |---|---|
 | Check (`checkNumber`, `status`, `clearedDate`…) | a `transactions` row recorded by the household: `check_number`, `status` (`pending` = outstanding, `cleared`, `void`), `cleared_on`, `reconciliation_id` |
 | Bank Transaction (`referenceNumber`, `source`…) | a `transactions` row from the bank feed or a statement file: `external_id` (`sfin:…`, `ofx:…`, `csv:…`), `source = import` |

@@ -92,7 +92,7 @@ export class SupabaseRepo implements Repo {
     const { data, error } = await sb().functions.invoke('invite-member', { body: { household_id: this.hh, ...req } })
     if (error) { let msg = error.message; try { const ctx = (error as { context?: Response }).context; if (ctx && typeof ctx.json === 'function') { const j = await ctx.json(); if (j?.error) msg = j.error } } catch { /* keep message */ } throw new Error(msg) }
     if (!data?.ok) throw new Error(data?.error || 'Invitation failed'); return data as InviteResult }
-  async exportJson() { const all = await this.loadAll(); return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: all.household, ...all.data } }
+  async exportJson() { const all = await this.loadAll(); return { app: 'Cresari', exported_at: new Date().toISOString(), household: all.household, ...all.data } }
   /** Restore a JSON backup with the shared rules in lib/restore.ts: merge matches existing rows by id, then by natural key, updates a row in place
    *  only when the backup's copy is newer, and re-points every child at the surviving parent. A new row keeps its backup id unless that id is
    *  already taken (for example by the household the backup came from), in which case the database gives it a new one. */

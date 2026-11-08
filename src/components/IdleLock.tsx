@@ -56,7 +56,7 @@ function LockScreen({ onUnlock, minutes }: { onUnlock: () => void; minutes: numb
     else run(async () => { await (step === 'recovery' ? verifyRecoveryCode(code) : verifyMfa(code)); onUnlock() }) }
   const passkey = () => run(async () => { const before = user?.id; await signInWithPasskey(); const after = useStore.getState().user?.id; if (before && after !== before) { await signOut(); throw new Error('That passkey belongs to a different account — signed out.') } onUnlock() })
   return <div className="lockscreen" role="dialog" aria-modal="true" aria-labelledby="lock-h"><div className="box">
-    <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><Logo /></span><div><b style={{ fontSize: 16 }}>WealthPilot</b><small style={{ color: 'var(--ink-3)' }}>{email || 'offline demo'}</small></div></div>
+    <div className="brand" style={{ padding: 0, color: 'var(--ink)' }}><span className="mark"><Logo /></span><div><b style={{ fontSize: 16 }}>Cresari</b><small style={{ color: 'var(--ink-3)' }}>{email || 'offline demo'}</small></div></div>
     <h2 id="lock-h">Locked</h2>
     <p className="note">{minutes ? `Locked after ${minutes} minutes without activity, so nobody else can read your figures.` : 'Locked.'} {mode === 'demo' ? 'The offline demo has no password.' : 'Unlock to carry on where you were.'}</p>
     {mode === 'demo' ? <Btn primary block onClick={onUnlock}>Unlock</Btn> : <form onSubmit={submit}>

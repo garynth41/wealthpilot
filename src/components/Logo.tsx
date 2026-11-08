@@ -1,4 +1,4 @@
-// WealthPilot mark (Graphite, 0.17.0): a graphite tile, a white rising course line and a tangerine pilot's arrowhead. Same glyph as public/favicon.svg.
+// Cresari mark (Graphite, 0.17.0): a graphite tile, a white rising course line and a tangerine pilot's arrowhead. Same glyph as public/favicon.svg.
 export function Logo({ size = 22, tile = false }: { size?: number; tile?: boolean }) {
   return <svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true" focusable="false">
     {tile && <rect width="64" height="64" rx="10" fill="#15181c" />}

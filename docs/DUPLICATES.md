@@ -1,4 +1,4 @@
-# One row per real transaction — how WealthPilot prevents duplicates (since 0.13.0)
+# One row per real transaction — how Cresari prevents duplicates (since 0.13.0)
 
 Transactions arrive four ways: the **bank feed** (SimpleFIN), **statement files** (CSV / OFX / QFX), **email capture** and **typed by hand**.
 The same payment can arrive more than once — an email "payment received" plus the bank line two days later, a statement file that overlaps

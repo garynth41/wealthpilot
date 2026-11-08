@@ -202,7 +202,7 @@ export const settings: GuidePage = {
         { term: 'Preview the email', text: 'Shows the invitation as it will read.' },
       ],
       tips: [
-        'No password is made or sent. Someone new signs up with the invited address — signing up asks them to confirm it, which proves it is theirs — and someone who already has a WealthPilot account signs in as usual; either way they join with the access you chose.',
+        'No password is made or sent. Someone new signs up with the invited address — signing up asks them to confirm it, which proves it is theirs — and someone who already has a Cresari account signs in as usual; either way they join with the access you chose.',
         'Until they do, they are listed under Waiting to sign up on the Members card.',
         'The email carries nothing from your household\'s data.',
         'In the demo nobody is emailed.',
@@ -314,7 +314,7 @@ export const settings: GuidePage = {
       tips: [
         'A passkey is already two factors — the device you hold and its fingerprint, face or PIN — so signing in with one skips the authenticator code.',
         'Your password and two-factor keep working on every other device.',
-        'If the card says passkeys are not switched on for WealthPilot yet, they cannot be added until they are; your password and two-factor code keep working.',
+        'If the card says passkeys are not switched on for Cresari yet, they cannot be added until they are; your password and two-factor code keep working.',
         'A passkey also unlocks the idle lock (Unlock with a passkey).',
       ],
     },
@@ -440,7 +440,7 @@ export const settings: GuidePage = {
     },
     {
       title: 'Where your data is kept',
-      what: 'On the Backup & data tab: what is stored, where, and who can see it — in WealthPilot\'s online database, encrypted, and only for the members of this household (in the offline demo, in this browser only).',
+      what: 'On the Backup & data tab: what is stored, where, and who can see it — in Cresari\'s online database, encrypted, and only for the members of this household (in the offline demo, in this browser only).',
       tips: ['Every record is limited to the members of its household by the database itself, not just by the app.', 'Emails are never kept — only what you file from them.'],
     },
     {
@@ -464,7 +464,7 @@ export const settings: GuidePage = {
         { term: 'Paid bills', text: 'A due date already marked paid, or with a matching payment recorded near it, gets no reminder.' },
         { term: 'Kept up to date', text: 'The list is redone whenever bills or payments change on this phone, and each time the app opens.' },
       ],
-      tips: ['Low cash, large charges and bank-sync problems still come by email when Email me is on.', 'If notifications were turned off for WealthPilot in the phone\'s Settings, allow them there and tick the box again.'],
+      tips: ['Low cash, large charges and bank-sync problems still come by email when Email me is on.', 'If notifications were turned off for Cresari in the phone\'s Settings, allow them there and tick the box again.'],
     },
     {
       title: 'Delete my account',
@@ -490,11 +490,11 @@ export const settings: GuidePage = {
     },
     {
       title: 'About this app',
-      what: 'At the bottom of the General tab: which version of WealthPilot this is, and links to the privacy policy, the terms of use, support and how to delete an account.',
+      what: 'At the bottom of the General tab: which version of Cresari this is, and links to the privacy policy, the terms of use, support and how to delete an account.',
       how: ['Tap a link to read that page; in the iPhone and Android apps it opens in the phone\'s browser.'],
       fields: [
         { term: 'Version and build', text: 'Say these when you ask for help, so the answer matches the app you have.' },
-        { term: 'Website / iPhone app / Android app', text: 'Where you are using WealthPilot right now. All three use the same account and the same household.' },
+        { term: 'Website / iPhone app / Android app', text: 'Where you are using Cresari right now. All three use the same account and the same household.' },
       ],
       tips: ['The same links are on the sign-in screen, so they can be read before creating an account.'],
     },

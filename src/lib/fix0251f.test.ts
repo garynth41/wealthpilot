@@ -340,7 +340,7 @@ describe('B — one rule for what a due date asks for', () => {
   })
   it('the phone reminder names the filed amount instead of "amount varies"', () => {
     const r = billReminders({ today: '2026-12-10', recurring: d.recurring, occurrences: d.occurrences, transactions: [], horizonDays: 10 })
-    expect(r.map(x => x.body)).toEqual(['$160.10 on 2026-12-15', '$160.10 — mark it paid in WealthPilot once it is done'])
+    expect(r.map(x => x.body)).toEqual(['$160.10 on 2026-12-15', '$160.10 — mark it paid in Cresari once it is done'])
     expect(billReminders({ today: '2026-12-10', recurring: d.recurring, occurrences: [], transactions: [], horizonDays: 10 })[0].body).toBe('amount varies on 2026-12-15')
   })
 })

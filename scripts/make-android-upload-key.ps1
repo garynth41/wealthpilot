@@ -31,19 +31,19 @@ $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create(); $bytes = 
 $pw = (([Convert]::ToBase64String($bytes)) -replace '[^A-Za-z0-9]', '').Substring(0, 32)
 
 & $keytool -genkeypair -keystore $ks -storetype PKCS12 -alias $alias -keyalg RSA -keysize 4096 -validity 10000 `
-  -storepass $pw -keypass $pw -dname "CN=WealthPilot, O=WealthPilot, C=US" | Out-Null
+  -storepass $pw -keypass $pw -dname "CN=Cresari, O=Cresari, C=US" | Out-Null
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ks)) { Write-Host "keytool failed." -ForegroundColor Red; exit 1 }
 $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($ks))
 
 @"
-WealthPilot - Android upload key (made $(Get-Date -Format 'yyyy-MM-dd'))
+Cresari - Android upload key (made $(Get-Date -Format 'yyyy-MM-dd'))
 Keep this file and wealthpilot-upload.jks together and private. Move the password into a password manager, then delete this file.
 
 Keystore file: $ks
 Key alias:     $alias
 Password:      $pw   (the same for the keystore and the key)
 
-GitHub -> the wealthpilot repository -> Settings -> Secrets and variables -> Actions -> New repository secret:
+GitHub -> the cresari repository -> Settings -> Secrets and variables -> Actions -> New repository secret:
   ANDROID_UPLOAD_KEYSTORE_BASE64   = the long line below
   ANDROID_UPLOAD_KEYSTORE_PASSWORD = $pw
   ANDROID_UPLOAD_KEY_ALIAS         = $alias

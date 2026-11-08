@@ -27,13 +27,13 @@ export function publicUrl(path = '') { const base = isNative() ? SITE_URL : loca
 
 export const STORE = {
   ios: '',       // e.g. https://apps.apple.com/app/id1234567890 once App Store Connect has created the app
-  android: 'https://play.google.com/store/apps/details?id=io.github.garynth41.wealthpilot',
+  android: 'https://play.google.com/store/apps/details?id=com.cresari.app',
 }
 export const storeName = () => platform() === 'ios' ? 'the App Store' : 'Google Play'
 export const storeUrl = () => platform() === 'ios' ? STORE.ios : platform() === 'android' ? STORE.android : ''
 
 const toBase64 = (buf: ArrayBuffer) => { const b = new Uint8Array(buf); let s = ''; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s) }
-const safeName = (n: string) => n.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) || 'wealthpilot-file'
+const safeName = (n: string) => n.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) || 'cresari-file'
 
 /** Save a file the user asked for: a download in a browser, the share sheet in the apps. */
 export async function saveFile(name: string, data: Blob | string | ArrayBuffer, mime = 'application/octet-stream'): Promise<void> {
@@ -66,7 +66,7 @@ export async function biometryAvailable(): Promise<{ ok: boolean; label: string 
   } catch { return { ok: false, label: '' } }
 }
 export async function verifyBiometry(reason: string): Promise<boolean> {
-  try { const { NativeBiometric } = await import('@capgo/capacitor-native-biometric'); await NativeBiometric.verifyIdentity({ reason, title: 'Unlock WealthPilot', subtitle: reason, negativeButtonText: 'Use password' }); return true }
+  try { const { NativeBiometric } = await import('@capgo/capacitor-native-biometric'); await NativeBiometric.verifyIdentity({ reason, title: 'Unlock Cresari', subtitle: reason, negativeButtonText: 'Use password' }); return true }
   catch { return false }
 }
 

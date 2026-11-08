@@ -245,12 +245,12 @@ async function needsMfa() { try { const { data } = await sb().auth.mfa.getAuthen
 export function authMessage(e: { message?: string; code?: string; name?: string } | null | undefined): string {
   const m = String(e?.message || ''), c = String(e?.code || '')
   if (/ERROR_CEREMONY_ABORTED|NotAllowedError|abort|cancel|timed out/i.test(c + ' ' + m + ' ' + (e?.name || ''))) return 'The passkey prompt was closed or timed out — try again.'
-  if (/passkey.*(disabled|not enabled)|webauthn.*(disabled|not enabled)|feature.*disabled/i.test(m) || /passkey.*disabled/i.test(c)) return 'Passkeys are not switched on for WealthPilot yet — use your password for now.'
-  if (c === 'mfa_recovery_codes_enroll_not_enabled' || c === 'mfa_recovery_codes_verify_not_enabled') return 'Recovery codes are not switched on for WealthPilot yet — the authenticator app still works.'
+  if (/passkey.*(disabled|not enabled)|webauthn.*(disabled|not enabled)|feature.*disabled/i.test(m) || /passkey.*disabled/i.test(c)) return 'Passkeys are not switched on for Cresari yet — use your password for now.'
+  if (c === 'mfa_recovery_codes_enroll_not_enabled' || c === 'mfa_recovery_codes_verify_not_enabled') return 'Recovery codes are not switched on for Cresari yet — the authenticator app still works.'
   if (c === 'mfa_recovery_codes_sole_factor') return 'Set up the authenticator app first — recovery codes back it up and cannot be the only second step.'
   if (c === 'mfa_recovery_codes_locked') return 'Too many wrong recovery codes — wait a few minutes, then try again or use the authenticator app.'
   if (c === 'mfa_verification_failed' || /invalid.*code|code.*invalid/i.test(m)) return 'That code did not match. Each recovery code works once; check for typos.'
-  if (/credential.*not found|unknown credential|no passkey/i.test(m)) return 'This device has no passkey for WealthPilot. Sign in with your password, then add one under Settings → Security.'
+  if (/credential.*not found|unknown credential|no passkey/i.test(m)) return 'This device has no passkey for Cresari. Sign in with your password, then add one under Settings → Security.'
   return m || 'Something went wrong — try again.'
 }
 const need = (get: () => State) => { const r = get().repo; if (!r) throw new Error('Not signed in'); return r }

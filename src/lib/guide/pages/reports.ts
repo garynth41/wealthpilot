@@ -44,7 +44,7 @@ export const reports: GuidePage = {
         'A change reads as a percent when the previous amount was at least $100 and on the same side of zero; otherwise it is the dollar difference. Rates change in percentage points (pts).',
         'In the tables, Change, Variance and Net turn green when they went the right way and red when they did not. Status words are colored the same way.',
         'Click ⤢ on any chart to open it full size: hover for exact values, drag to zoom, double-click to reset, and the camera icon saves a picture.',
-        'Files are named after the report, for example wealthpilot-month-october-2026; the CSV adds today\'s date.',
+        'Files are named after the report, for example cresari-month-october-2026; the CSV adds today\'s date.',
       ],
     },
     {

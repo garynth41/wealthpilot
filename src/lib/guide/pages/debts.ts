@@ -73,7 +73,7 @@ export const debts: GuidePage = {
     },
     {
       title: 'Credit score',
-      what: 'A record of the credit scores you type in from a card issuer, a bank app or a bureau, with the trend, the band and what moves it. WealthPilot never pulls your credit.',
+      what: 'A record of the credit scores you type in from a card issuer, a bank app or a bureau, with the trend, the band and what moves it. Cresari never pulls your credit.',
       how: [
         'Fill in Whose, Date, Score, Bureau, Model and From (where you saw it), then click Save score or press Enter in Score.',
         'Add a score about once a month from the same place, so the trend compares like with like.',

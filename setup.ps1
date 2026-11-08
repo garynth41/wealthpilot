@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-  First-time setup of WealthPilot on Windows: extract -> install -> test (npm run check) -> production build -> start dev server.
+  First-time setup of Cresari on Windows: extract -> install -> test (npm run check) -> production build -> start dev server.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File setup.ps1 -Zip "C:\Users\garyn\OneDrive\Claude_Apps\WealthPilot\wealthpilot-v0.2.0.zip"
@@ -86,7 +86,7 @@ Ok 'Extracted'
 Step 'Environment file'
 Set-Location $Dest
 if ($keepEnv) { Set-Content -Path .env -Value $keepEnv -NoNewline; Ok 'Kept your existing .env' }
-elseif (-not (Test-Path .env)) { Copy-Item .env.example .env; Ok '.env created from .env.example (points at the WealthPilot Supabase project, named pocketledger in the dashboard)' }
+elseif (-not (Test-Path .env)) { Copy-Item .env.example .env; Ok '.env created from .env.example (points at the Cresari Supabase project, named pocketledger in the dashboard)' }
 else { Ok '.env already present' }
 
 # ---------- 5. install ----------
@@ -117,12 +117,12 @@ if (Test-Path (Join-Path $Dest 'dist\index.html')) {
   $size = [math]::Round(((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 2)
   Ok "dist\ is ready ($size MB) - this is what 'npm run deploy' publishes to GitHub Pages"
 } else { Warn 'dist\index.html not found - the build did not complete.' }
-if (Test-Path .git) { Ok 'Git repository present (commit history preserved from the zip)' } elseif ($git) { & git init -q; & git add -A; & git -c user.name=setup -c user.email=setup@local commit -q -m 'WealthPilot initial import'; Ok 'Initialised a git repository' }
+if (Test-Path .git) { Ok 'Git repository present (commit history preserved from the zip)' } elseif ($git) { & git init -q; & git add -A; & git -c user.name=setup -c user.email=setup@local commit -q -m 'Cresari initial import'; Ok 'Initialised a git repository' }
 
 # ---------- 8. start the dev server ----------
 if (-not $NoDev) {
   Step 'Starting the dev server (new window) and opening the app'
-  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', "Set-Location '$Dest'; `$host.UI.RawUI.WindowTitle = 'WealthPilot dev server - close this window to stop'; npm.cmd run dev"
+  Start-Process powershell -ArgumentList '-NoExit', '-ExecutionPolicy', 'Bypass', '-Command', "Set-Location '$Dest'; `$host.UI.RawUI.WindowTitle = 'Cresari dev server - close this window to stop'; npm.cmd run dev"
   $up = $false
   foreach ($i in 1..40) {
     Start-Sleep -Milliseconds 500
@@ -135,7 +135,7 @@ if (-not $NoDev) {
 Write-Host @"
 
 =====================================================================
- WealthPilot is set up at: $Dest
+ Cresari is set up at: $Dest
    dev server:   npm run dev      -> http://localhost:5173
    full check:   npm run check    (typecheck, tests, build, smoke)
    production:   npm run build    -> dist\   |   npm run deploy -> GitHub Pages

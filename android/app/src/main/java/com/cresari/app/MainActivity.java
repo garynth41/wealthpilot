@@ -1,4 +1,4 @@
-package io.github.garynth41.wealthpilot;
+package com.cresari.app;
 
 import com.getcapacitor.BridgeActivity;
 

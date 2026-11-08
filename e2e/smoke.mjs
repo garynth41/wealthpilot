@@ -115,7 +115,7 @@ for (const W of [1400, 390]) {
     // 0.9.0: treemap + heat map on Trends; sinking funds on Budget; manifest + service worker shipped
     await p.goto('http://localhost:4173/#/trends'); await p.waitForTimeout(900); ok((await p.locator('svg[aria-label="Treemap of spending by category"] rect').count()) >= 5, 'trends shows a category treemap'); ok((await p.locator('svg[aria-label="Heat map of daily spending"] rect').count()) > 100, 'trends shows a daily spending heat map')
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(900); ok(/Sinking funds/.test(await p.locator('main').textContent()) && /Home maintenance/.test(await p.locator('main').textContent()), 'budget shows sinking funds')
-    ok((await (await p.request.get('http://localhost:4173/manifest.webmanifest')).json()).name === 'WealthPilot', 'web app manifest is served'); ok((await (await p.request.get('http://localhost:4173/sw.js')).text()).includes('wealthpilot-v'), 'service worker is served')
+    ok((await (await p.request.get('http://localhost:4173/manifest.webmanifest')).json()).name === 'Cresari', 'web app manifest is served'); ok((await (await p.request.get('http://localhost:4173/sw.js')).text()).includes('cresari-v'), 'service worker is served')
     // 0.11.0: bank sync card on Bank Connections explains itself in the demo (no real connection possible there)
     await p.goto('http://localhost:4173/#/connections'); await p.waitForTimeout(700); const cx = await p.locator('main').textContent()
     ok(/Automatic bank sync/.test(cx) && /not available in the offline demo/.test(cx), 'Bank Connections shows the automatic-sync card with the demo notice')

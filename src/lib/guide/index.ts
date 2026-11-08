@@ -61,6 +61,6 @@ export const PAGE_TITLES: Record<string, string> = {
   '/email': 'Email Money Capture', '/investments': 'Investments & Retirement', '/tax': 'Tax Planning', '/plan': 'Plan', '/goals': 'Savings Goals', '/protection': 'Insurance & Estate',
   '/hardship': 'Hardship & Creditor Outreach', '/reports': 'Reports', '/trends': 'Trends & Analysis', '/settings': 'Settings', '/help': 'Help Center',
 }
-export const titleOf = (path: string | null) => (path ? PAGE_TITLES[path] || path : 'Using WealthPilot')
+export const titleOf = (path: string | null) => (path ? PAGE_TITLES[path] || path : 'Using Cresari')
 export { GENERAL }
 export type { GuideCard, GuidePage, GuideTask, GuideTerm }

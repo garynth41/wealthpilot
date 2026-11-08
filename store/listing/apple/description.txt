@@ -1,4 +1,4 @@
-WealthPilot puts your household's money in one place: what's coming in, what's going out, what's due, and the plan for what comes next. Share it with your partner or family, each with exactly the access you choose.
+Cresari puts your household's money in one place: what's coming in, what's going out, what's due, and the plan for what comes next. Share it with your partner or family, each with exactly the access you choose.
 
 EVERYDAY MONEY
 • Budgets by month, paycheck, week, every two weeks or twice a month, with rollover and a clear amount left to spend
@@ -35,4 +35,4 @@ PRIVATE BY DESIGN
 
 Try it first with the built-in sample data — no account needed.
 
-WealthPilot is a tool for tracking and planning. Its estimates are not financial, tax or legal advice.
+Cresari is a tool for tracking and planning. Its estimates are not financial, tax or legal advice.

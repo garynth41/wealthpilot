@@ -27,7 +27,7 @@ async function logError(household_id: string | null, message: string, context: R
 async function backupOne(household_id: string): Promise<{ ok: boolean; path?: string; bytes?: number; message?: string }> {
   try {
     const { data: household, error: he } = await admin.from('households').select('*').eq('id', household_id).single(); if (he) throw he
-    const out: Record<string, unknown> = { app: 'WealthPilot', exported_at: new Date().toISOString(), backup: 'nightly', household }
+    const out: Record<string, unknown> = { app: 'Cresari', exported_at: new Date().toISOString(), backup: 'nightly', household }
     for (const [k, t] of Object.entries(TABLES)) {
       const rows: unknown[] = []; let from = 0
       for (;;) { const { data, error } = await admin.from(t).select('*').eq('household_id', household_id).range(from, from + 999); if (error) throw error; rows.push(...(data || [])); if (!data || data.length < 1000) break; from += 1000 }

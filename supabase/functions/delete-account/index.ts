@@ -1,4 +1,4 @@
-// delete-account (0.25.1) — a signed-in person deletes their own WealthPilot account (Apple guideline 5.1.1(v), Google Play's account
+// delete-account (0.25.1) — a signed-in person deletes their own Cresari account (Apple guideline 5.1.1(v), Google Play's account
 // deletion policy). POST JSON with the caller's JWT:
 //   { action: "preview" }               what deleting would do: households deleted with the account (they are its only member),
 //                                       households left (others carry on), households that block it (they are the only owner and

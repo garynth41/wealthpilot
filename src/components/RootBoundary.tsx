@@ -15,7 +15,7 @@ export class RootBoundary extends Component<{ children: ReactNode }, { err: stri
   componentDidCatch(e: unknown, info: { componentStack?: string }) { if (isChunkError(e)) { reloadForNewVersion(); return } captureError(e, { kind: 'boundary', componentStack: (info.componentStack || '').slice(0, 2000) }) }
   render() {
     if (!this.state.err) return this.props.children
-    if (isChunkError(this.state.err)) return <div className="auth"><div className="box"><h2 style={{ marginTop: 0 }}>WealthPilot was updated</h2>
+    if (isChunkError(this.state.err)) return <div className="auth"><div className="box"><h2 style={{ marginTop: 0 }}>Cresari was updated</h2>
       <div className="note" style={{ marginTop: 0 }}>A new version was published while this tab was open, so this page needs a fresh copy. Loading it now — your data is safe.</div>
       <div className="btnrow" style={{ marginTop: 12 }}><button type="button" className="btn primary" onClick={() => location.reload()}>Load the new version</button></div></div></div>
     const demo = inDemo()

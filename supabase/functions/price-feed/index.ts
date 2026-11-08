@@ -11,7 +11,7 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 const url = Deno.env.get('SUPABASE_URL')!, anon = Deno.env.get('SUPABASE_ANON_KEY')!, service = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const admin = createClient(url, service, { auth: { persistSession: false } })
-const UA = 'Mozilla/5.0 (compatible; WealthPilot price feed)'
+const UA = 'Mozilla/5.0 (compatible; Cresari price feed)'
 const MAX_SYMBOLS = 250
 async function logError(household_id: string | null, message: string, context: Record<string, unknown> = {}) { try { await admin.from('app_errors').insert({ household_id, source: 'price-feed', message: message.slice(0, 2000), context }) } catch { /* */ } }
 
