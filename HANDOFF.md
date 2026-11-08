@@ -2,7 +2,9 @@
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.25.2)
+## State as of this handoff (v0.25.3)
+
+- **0.25.3:** `APP_VERSION` in `src/app/config.ts` was left at 0.25.1 by the rename; it is now 0.25.3 and must be bumped with `package.json` each release. The look stays **Graphite** (a new "Crescent" theme was tried on 2026-11-07 and rejected by Gary).
 
 - **0.25.2 (rename):** the app is now **Cresari** (was WealthPilot). User-facing text, app IDs (`com.cresari.app`), store listing text and download file names changed; internal keys, database job/secret names, the GitHub repo name and the Pages URL (`/wealthpilot/`) did NOT, on purpose — see the README changelog. After merging: redeploy the six edge functions that changed wording, set `app_meta.latest_version` to 0.25.2 on production, register the Cresari domain, and (when ready) rename the GitHub repo, which changes the Pages URL and needs `site_url` in `app_meta`, Supabase Auth redirect URLs and the store pages' links updated together.
 

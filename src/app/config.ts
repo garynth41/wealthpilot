@@ -1,5 +1,5 @@
 export const APP_NAME = import.meta.env.VITE_APP_NAME || 'Cresari'
-export const APP_VERSION = '0.25.1'
+export const APP_VERSION = '0.25.3'
 export const APP_BUILD = typeof __APP_BUILD__ !== 'undefined' ? __APP_BUILD__ : 'dev'
 export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 export const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY || ''
