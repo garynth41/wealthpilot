@@ -60,7 +60,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules, offlineAt } = useStore()
   const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path)) }, [mode, modules])
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS('rail')) === 'collapsed' } catch { return false } })
-  // sections fold; the one holding the current page is always open; the choice is remembered per browser
+  // sections fold; going to a page opens its section (which can then be folded again); the choice is remembered per browser
   const [closedZones, setClosedZones] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(LS('navClosed')) || '[]')) } catch { return new Set() } })
   const toggleZone = (z: string) => setClosedZones(s => { const n = new Set(s); if (n.has(z)) n.delete(z); else n.add(z); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
   const setAllZones = (open: boolean) => setClosedZones(() => { const n = new Set(open ? [] : zonesRef.current); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
@@ -127,7 +127,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const focusId = focusIdFrom(loc.search)
   useEffect(() => { if (focusId) setTimeout(() => highlight(focusId), 120) }, [focusId, loc.pathname])
   const activeZone = visible.find(v => v.path === loc.pathname)?.zone
-  const allOpen = zones.every(z => !closedZones.has(z) || z === activeZone)
+  const allOpen = zones.every(z => !closedZones.has(z))
+  // arriving on a page opens its section once; before, the section holding the current page could never be folded
+  useEffect(() => { if (activeZone) setClosedZones(s => { if (!s.has(activeZone)) return s; const n = new Set(s); n.delete(activeZone); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n }) }, [loc.pathname]) // eslint-disable-line react-hooks/exhaustive-deps
   const resetDemoAsk = async () => { if (await confirm('Reset the demo? Every change you made in the demo is replaced by fresh sample data. This cannot be undone.', 'Reset sample data')) resetDemo() }
   const about = () => open(<><MHead title={`About ${APP_NAME}`} /><MBody><p><b>{APP_NAME}</b> v{APP_VERSION} · build <code>{APP_BUILD}</code></p><StatusPanel /><p className="note">Personal budgeting, savings and financial planning. Data lives in your own Supabase project; email bodies are never stored — only amounts, dates, payees and the last four digits of an account.</p></MBody></>)
   const tabs = visible.filter(v => v.tab)
@@ -144,7 +146,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <div className="brand"><span className="mark" onClick={() => collapsed && setCollapsed(false)}><Logo size={28} /></span><div><b>{APP_NAME}</b><small>{mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</small></div><button type="button" className="railToggle" onClick={() => setCollapsed(c => !c)} title={collapsed ? 'Expand menu' : 'Collapse menu'} aria-label={collapsed ? 'Expand menu' : 'Collapse menu'} aria-expanded={!collapsed}>{collapsed ? '›' : '‹'}</button></div>
       <nav className="nav" aria-label="Main">
         <div className="navtools"><button type="button" onClick={() => setAllZones(!allOpen)} title={allOpen ? 'Collapse all sections' : 'Expand all sections'}>{allOpen ? '⊟ Collapse all' : '⊞ Expand all'}</button></div>
-        {zones.map(z => { const items = visible.filter(v => v.zone === z); const open = collapsed || !closedZones.has(z) || z === activeZone
+        {zones.map(z => { const items = visible.filter(v => v.zone === z); const open = collapsed || !closedZones.has(z)
           return <div key={z} className={`zoneblock ${open ? 'open' : 'closed'}`}>
             <button type="button" className="zone" onClick={() => toggleZone(z)} aria-expanded={open} title={open ? 'Collapse' : 'Expand'}><span className="chev">{open ? '▾' : '▸'}</span><span className="zt">{z}</span></button>
             {open && items.map(v => <NavLink key={v.path} to={v.path} className={({ isActive }) => (isActive ? 'active' : '')} title={collapsed ? `${v.title} — ${v.sub}` : v.sub}><Icon n={v.icon} /><span className="t">{v.title}</span></NavLink>)}
