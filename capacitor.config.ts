@@ -4,8 +4,8 @@
 import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: 'io.github.garynth41.wealthpilot',
-  appName: 'WealthPilot',
+  appId: 'com.cresari.app',
+  appName: 'Cresari',
   webDir: 'dist',
   backgroundColor: '#15181c',
   ios: { contentInset: 'never', backgroundColor: '#15181c', limitsNavigationsToAppBoundDomains: false },
@@ -13,7 +13,7 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: { launchAutoHide: false, launchShowDuration: 3000, backgroundColor: '#15181c', showSpinner: false, androidScaleType: 'CENTER_CROP' },
     SystemBars: { insetsHandling: 'css', initialViewportFitValueHint: 'cover' },
-    LocalNotifications: { smallIcon: 'ic_stat_wealthpilot', iconColor: '#f97316' },
+    LocalNotifications: { smallIcon: 'ic_stat_cresari', iconColor: '#f97316' },
   },
 }
 

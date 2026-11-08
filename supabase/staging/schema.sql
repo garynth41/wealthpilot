@@ -1,4 +1,4 @@
--- WealthPilot staging schema: 19 migration(s) from 0001_init.sql to 0019_accounts_and_speed.sql, production-only jobs removed
+-- Cresari staging schema: 19 migration(s) from 0001_init.sql to 0019_accounts_and_speed.sql, production-only jobs removed
 
 -- ===== 0001_init.sql =====
 -- PocketLedger — initial schema (v0.1)

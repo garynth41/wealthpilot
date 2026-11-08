@@ -1,4 +1,4 @@
-# Putting WealthPilot in the App Store and Google Play
+# Putting Cresari in the App Store and Google Play
 
 Everything the apps need is built: the iPhone and Android projects, icons and launch screens, a privacy policy, terms, support and
 account-deletion pages, "delete my account" inside the app, the store listing text, screenshots, and a GitHub workflow that builds and
@@ -12,12 +12,15 @@ the Android app can go public (Google's 14-day testing rule, below). Apple usual
 
 ## 0. Decide these first
 
-1. **The store name.** "WealthPilot" is already used by other finance apps: *WealthPilot: AI Money Manager* on the App Store (another
-   developer, 2026) and the German company *wealthpilot GmbH*, which publishes wealth-management apps. Each store requires a unique name,
-   and a name that matches someone else's finance brand invites a rejection or a trademark complaint. Pick a distinct name for the
-   stores (it can differ from the name under the icon, but simplest is to rename the app everywhere — tell Claude the new name and it
-   updates the app, the website pages and the listing text). The app ID `io.github.garynth41.wealthpilot` can stay; only the stores'
-   web addresses show it.
+1. **The store name: Cresari (chosen 2026-11-07).** The app was renamed from WealthPilot because that name was already used by other
+   finance apps (another developer's *WealthPilot: AI Money Manager* on the App Store, and a German company that publishes
+   wealth-management apps). A web search for "Cresari" found no app, company or trademark with that exact name, and `cresari.com`,
+   `.net`, `.org` and `.io` were unregistered on 2026-11-07. Still to do before you submit: **register the domain(s) now** (a free
+   domain can be taken at any time), search the App Store, Google Play and the USPTO trademark database yourself (a web search cannot
+   see them all), and ideally have a trademark attorney confirm. Near-misses to know about: CRESA (a commercial real-estate firm,
+   different field) and similar-sounding names. The app ID is now `com.cresari.app` (it is permanent once published; only the
+   stores' web addresses show it) — change it in `capacitor.config.ts`, `android/app/build.gradle` and the Xcode project together
+   if you ever want a different one, before the first upload.
 2. **Personal or organization developer accounts.** Both stores offer either.
    - *Personal (individual):* quickest. Apple shows your legal name as the seller. Google requires the 14-day test with 12 testers before
      the first public release (section A7), and shows your name and country on the listing.
@@ -25,7 +28,7 @@ the Android app can go public (Google's 14-day testing rule, below). Apple usual
      weeks). Shows the business name, skips Google's 12-tester rule, and is the safer footing for a finance app: Apple's guideline
      5.1.1(ix) says apps in "highly regulated fields such as banking and financial services" should come from a legal entity, and
      Google requires organization accounts for apps that provide "financial products and services, including but not limited to
-     banking, loans, stock trading, investment funds". WealthPilot is a budgeting and planning tool that moves no money and gives no
+     banking, loans, stock trading, investment funds". Cresari is a budgeting and planning tool that moves no money and gives no
      advice, which both stores generally allow from individuals — but an organization account removes the question entirely.
 3. **The support email** shown on both listings (it is public). A dedicated address (for example a new Gmail just for the app) keeps your
    personal inbox private. Tell Claude which address to use and it adds it to the support, privacy and account-deletion pages.
@@ -38,7 +41,7 @@ the Android app can go public (Google's 14-day testing rule, below). Apple usual
    if custom SMTP is off, turn it on with a real email provider. Two ways:
    - *Best:* buy a domain for the app's name (about $10–15 a year), verify it in **Resend** (already used for the alert emails), and use
      Resend's SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = a Resend API key, sender `no-reply@<your domain>`. Then set
-     the edge-function secrets `EMAIL_FROM` and `INVITE_FROM` to `WealthPilot <alerts@<your domain>>` too — Resend's test sender
+     the edge-function secrets `EMAIL_FROM` and `INVITE_FROM` to `Cresari <alerts@<your domain>>` too — Resend's test sender
      (`onboarding@resend.dev`) only delivers to your own address, so today alert and invitation emails reach only you. The domain also gives
      you a support address (`support@<your domain>` forwarded to your inbox) and a home for the website.
    - *Quick:* a dedicated Gmail account with 2-Step Verification and an **App password**: host `smtp.gmail.com`, port `465`, user and
@@ -54,7 +57,7 @@ physical Android phone with the Play Console app when asked (new accounts must).
 **A2. Create the app** — Play Console → **Create app**: name (section 0), default language English (United States), **App**, **Free**;
 accept the declarations.
 
-**A3. Make the upload key** (once). On your Windows computer, in the WealthPilot folder, run:
+**A3. Make the upload key** (once). On your Windows computer, in the Cresari folder, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\make-android-upload-key.ps1
@@ -68,7 +71,7 @@ repository secret**): `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE
 (If the bridge to your computer is connected, Claude can run this for you.)
 
 **A4. Build the first bundle** — GitHub → **Actions → release apps → Run workflow**: platform `android`, rebuild `0`, Play track `none`.
-When it finishes, download **wealthpilot-android-…** from the run's Artifacts and unzip it: inside is `wealthpilot-0.25.1-250100.aab`.
+When it finishes, download **cresari-android-…** from the run's Artifacts and unzip it: inside is `cresari-0.25.1-250100.aab`.
 
 **A5. Upload it by hand** (Google only accepts the very first bundle through Play Console). Play Console → **Test and release → Testing →
 Closed testing** → create a track (for example "Friends and family") → **Create new release** → accept **Play App Signing** (Google keeps
@@ -127,7 +130,7 @@ opted in), then Play Console → **Dashboard → Apply for production**. Google 
 
 **A9. (Optional) Let GitHub upload future versions** — Google Cloud console (https://console.cloud.google.com): create a project →
 enable **Google Play Android Developer API** → **IAM & Admin → Service accounts → Create** → open it → **Keys → Add key → JSON** (a file
-downloads). Play Console → **Users and permissions → Invite new users** → the service account's email → **App permissions**: WealthPilot →
+downloads). Play Console → **Users and permissions → Invite new users** → the service account's email → **App permissions**: Cresari →
 "Release to testing tracks" (and "Release to production" if you want). Then save the file as the `PLAY_SERVICE_ACCOUNT_JSON` secret:
 
 ```powershell
@@ -145,10 +148,10 @@ Play Console.
 year. Individuals are usually approved within a day or two.
 
 **B2. Register the app ID** — https://developer.apple.com/account/resources/identifiers/list → **+** → App IDs → App → description
-"WealthPilot", **Explicit** bundle ID `io.github.garynth41.wealthpilot`. No capabilities are needed.
+"Cresari", **Explicit** bundle ID `com.cresari.app`. No capabilities are needed.
 
 **B3. Create the app record** — https://appstoreconnect.apple.com → **Apps → + → New App**: platform iOS, name (section 0), primary
-language English (U.S.), the bundle ID above, SKU `wealthpilot-ios`, full access. Open **App Information** and note the **Apple ID**
+language English (U.S.), the bundle ID above, SKU `cresari-ios`, full access. Open **App Information** and note the **Apple ID**
 number — tell Claude, so the app's "update available" button can link to the listing.
 
 **B4. The App Store Connect key for GitHub** — App Store Connect → **Users and Access → Integrations → App Store Connect API → Team Keys →
@@ -171,7 +174,7 @@ yourself; open the invitation on the phone. Answer the export-compliance questio
 (HTTPS), which is exempt — the app already declares this.
 
 **B7. The listing** — App Store Connect → your app → the version page (**1.0 Prepare for Submission**). First change the version number
-at the top to **0.25.1**, so it matches the build:
+at the top to **0.25.2**, so it matches the build:
 - Name, subtitle, promotional text, description, keywords: `store/listing/apple/*.txt`
 - What's New: `store/listing/apple/release_notes.txt`
 - Screenshots: **iPhone 6.9″** ← `store/screenshots/iphone-6.9/01…06.png`; **iPhone 6.3″** ← `store/screenshots/iphone-6.3/…`
@@ -202,7 +205,7 @@ members of their own household, whom an owner invited; nothing is public and str
 
 **B10. App Review information** — sign-in required: **Yes**, with the review account (section C). Notes (paste):
 
-> WealthPilot is a household budgeting and planning app. Sign in with the account above — it has two-factor sign-in off and a sample
+> Cresari is a household budgeting and planning app. Sign in with the account above — it has two-factor sign-in off and a sample
 > household. You can also tap "Open the offline demo" on the sign-in screen to explore sample data without an account.
 > • Delete an account: Settings → Security → Delete my account (or, signed in with no household yet, Delete my account on the welcome screen).
 > • Bill reminders (local notifications): Settings → Notifications → Reminders on this phone.
@@ -227,7 +230,7 @@ Enter the email and password only in App Store Connect and Play Console — neve
 ## D. After launch
 
 - **Tell the app a new version exists** (after a store has released it):
-  `update public.app_meta set value = '0.25.1' where key = 'latest_native_version';` — app users then see "A new version is available".
+  `update public.app_meta set value = '0.25.2' where key = 'latest_native_version';` — app users then see "A new version is available".
   Only for changes an older app would break (such as a database change) also set `min_native_version`, which blocks older apps until
   they update.
 - **Each new version:** raise the version as usual (every release already does), then run **release apps** (`both`). Android lands as a

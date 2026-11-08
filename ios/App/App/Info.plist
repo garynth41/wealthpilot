@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>WealthPilot</string>
+        <string>Cresari</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,11 +25,11 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>WealthPilot uses the camera only when you take a photo of a receipt or statement to attach it.</string>
+	<string>Cresari uses the camera only when you take a photo of a receipt or statement to attach it.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>WealthPilot opens your photos only when you choose a receipt or statement to attach.</string>
+	<string>Cresari opens your photos only when you choose a receipt or statement to attach.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Unlock WealthPilot with Face ID instead of typing your password.</string>
+	<string>Unlock Cresari with Face ID instead of typing your password.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

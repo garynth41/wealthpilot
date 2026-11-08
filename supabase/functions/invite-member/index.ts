@@ -6,7 +6,7 @@
 // note), and it never says whether the address already has an account. Limits, over the last 24 hours: 20 invitations per household,
 // 30 per person inviting (across all their households), and 3 to any one address (from anyone) — each invitation is logged before
 // anything is sent, and nothing is sent when it cannot be logged.
-// Secrets (optional): RESEND_API_KEY, INVITE_FROM ("WealthPilot <invites@yourdomain>"), APP_URL
+// Secrets (optional): RESEND_API_KEY, INVITE_FROM ("Cresari <invites@yourdomain>"), APP_URL
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
@@ -66,11 +66,11 @@ Deno.serve(async (req) => {
   if (key && from && b.send) {
     const access = role === 'owner' ? 'owner' : `${read_only ? 'read-only' : 'full'} access${modules ? ' to ' + modules.join(', ') : ''}`
     const note = clean(b.note, 500)
-    const text = [`Hi${display_name ? ' ' + display_name : ''},`, '', `${user.email} has invited you to the "${clean(hh?.name, 80) || 'Household'}" household on WealthPilot (${access}).`, '',
+    const text = [`Hi${display_name ? ' ' + display_name : ''},`, '', `${user.email} has invited you to the "${clean(hh?.name, 80) || 'Household'}" household on Cresari (${access}).`, '',
       `To join, open ${APP_URL} and sign in with this email address — or create your account with it if you do not have one yet. The household appears as soon as you are signed in.`,
       ...(note ? ['', `A note from ${user.email}:`, note] : []), '', 'If you were not expecting this, you can ignore it.'].join('\n')
     try {
-      const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [email], subject: `You're invited to a household on WealthPilot`, text }) })
+      const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to: [email], subject: `You're invited to a household on Cresari`, text }) })
       if (r.ok) { sent = true; inviteRow.sent_at = new Date().toISOString() } else sendError = `Email provider replied ${r.status}`
     } catch (e) { sendError = (e as Error).message }
   }

@@ -1,5 +1,5 @@
 // SimpleFIN Bridge (https://www.simplefin.org/protocol.html) — the pure parts of automatic bank sync: setup-token decoding, response normalisation,
-// matching a bank's accounts to WealthPilot accounts, mapping transactions, and de-duplication.
+// matching a bank's accounts to Cresari accounts, mapping transactions, and de-duplication.
 // NO imports: this exact file is copied next to the edge function (supabase/functions/sync-simplefin/simplefin.ts) and a unit test fails if the two differ.
 // Nothing here talks to the network or the database.
 
@@ -125,7 +125,7 @@ export function autoMatch(sf: SfinAccount[], locals: Local[]): Record<string, st
   return out
 }
 
-/** A reasonable WealthPilot account type for a bank account that has no match yet, from its name — the owner can change it afterwards. */
+/** A reasonable Cresari account type for a bank account that has no match yet, from its name — the owner can change it afterwards. */
 export function guessKind(name: string, balance = 0): string {
   // drop the account's last four digits first — "Checking (4019)" must not read as a 401(k)
   const n = String(name || '').toLowerCase().replace(/\(?\s*(?:x+|\*+|…|\.{2,}|#|ending in\s*)?\d{4}\s*\)?\s*$/, '').trim()
@@ -142,7 +142,7 @@ export function guessKind(name: string, balance = 0): string {
   return balance < 0 ? 'credit_card' : 'checking'
 }
 
-/** What WealthPilot stores as the balance: assets as reported; liabilities as the positive amount owed (SimpleFIN reports debt as a negative balance; a positive card balance is a credit, owed 0). */
+/** What Cresari stores as the balance: assets as reported; liabilities as the positive amount owed (SimpleFIN reports debt as a negative balance; a positive card balance is a credit, owed 0). */
 export function balanceFor(sf: Pick<SfinAccount, 'balance'>, kind: string): number {
   return isLiabilityKind(kind) ? r2(Math.max(0, -sf.balance)) : sf.balance
 }

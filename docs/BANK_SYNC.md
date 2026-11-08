@@ -2,7 +2,7 @@
 
 Goal: pull balances and transactions automatically instead of statement files / email, for one household, without running our own server.
 
-| Option | Cost (as published) | What you get | Fit for WealthPilot |
+| Option | Cost (as published) | What you get | Fit for Cresari |
 |---|---|---|---|
 | **SimpleFIN Bridge** | **$1.50/mo or $15/yr**, paid by the account holder | balances + transactions for the banks you link; refreshed **once a day**; first sync up to **90 days** of history | **Best fit.** One setup token → one access URL; a single Supabase edge function can fetch `/accounts` daily and upsert transactions with `external_id = sfin:<id>` — the existing import de-duplication and payee rules apply unchanged. Used by Actual Budget the same way. |
 | **Plaid** | Trial plan (US/Canada teams created on/after Apr 15 2026): **free, 10 production Items**; then pay-as-you-go (no minimum, prices shown only after applying for Production). Transactions is a monthly subscription per Item; Balance is per request | broadest bank coverage, near-real-time transactions, investments and liabilities products | Works, but needs Plaid Link in the page plus an edge function for token exchange and webhooks, and production approval. Good fallback for a bank SimpleFIN cannot reach. |
@@ -35,4 +35,4 @@ SimpleFIN recommends at most **45 days** per request ("Requested date range exce
 SimpleFIN refreshes banks about once a day and allows roughly 24 requests a day, so one daily run plus the odd **Sync now** is well inside the limit.
 
 ### Limits worth knowing
-SimpleFIN reports a card balance as a negative number; WealthPilot stores the positive amount owed (a positive card balance is treated as 0 owed). Pending items are skipped until they post. Categories are not assigned during sync — use **Auto-categorize** on Transactions.
+SimpleFIN reports a card balance as a negative number; Cresari stores the positive amount owed (a positive card balance is treated as 0 owed). Pending items are skipped until they post. Categories are not assigned during sync — use **Auto-categorize** on Transactions.

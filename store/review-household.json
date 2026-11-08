@@ -1,5 +1,5 @@
 {
- "app": "WealthPilot",
+ "app": "Cresari",
  "exported_at": "2026-11-07T06:46:19.557Z",
  "household": {
   "id": "demo-household",
@@ -4598,7 +4598,7 @@
   {
    "id": 1,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "update",
    "table_name": "accounts",
    "record_id": null,
@@ -4608,7 +4608,7 @@
   {
    "id": 2,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "insert",
    "table_name": "transactions",
    "record_id": null,
@@ -4618,7 +4618,7 @@
   {
    "id": 3,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "update",
    "table_name": "goals",
    "record_id": null,
@@ -4628,7 +4628,7 @@
   {
    "id": 4,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "insert",
    "table_name": "transactions",
    "record_id": null,
@@ -4638,7 +4638,7 @@
   {
    "id": 5,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "update",
    "table_name": "accounts",
    "record_id": null,
@@ -4648,7 +4648,7 @@
   {
    "id": 6,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "insert",
    "table_name": "holdings",
    "record_id": null,
@@ -4658,7 +4658,7 @@
   {
    "id": 7,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "update",
    "table_name": "categories",
    "record_id": null,
@@ -4668,7 +4668,7 @@
   {
    "id": 8,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "insert",
    "table_name": "email_items",
    "record_id": null,
@@ -4678,7 +4678,7 @@
   {
    "id": 9,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "delete",
    "table_name": "transactions",
    "record_id": null,
@@ -4688,7 +4688,7 @@
   {
    "id": 10,
    "household_id": "demo-household",
-   "user_email": "demo@wealthpilot.app",
+   "user_email": "demo@cresari.app",
    "action": "update",
    "table_name": "households",
    "record_id": null,

@@ -64,7 +64,7 @@ for (const d of DEVICES) {
   await p.reload(); await p.waitForTimeout(1200)
   if (d === DEVICES[0]) {   // the review account's starting data: the renamed sample household, in the backup file format
     const demo = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo') || 'null'))
-    writeFileSync('store/review-household.json', JSON.stringify({ app: 'WealthPilot', exported_at: new Date().toISOString(), household: { ...(demo.household || {}), name: 'Our household' }, ...demo.data }, null, 1))
+    writeFileSync('store/review-household.json', JSON.stringify({ app: 'Cresari', exported_at: new Date().toISOString(), household: { ...(demo.household || {}), name: 'Our household' }, ...demo.data }, null, 1))
   }
   for (const [i, [path, name]] of SCREENS.entries()) {
     await p.goto(`http://localhost:${PORT}/#${path}`); await p.waitForTimeout(1400)

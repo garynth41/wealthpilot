@@ -40,7 +40,7 @@ describe('in a browser nothing changes', () => {
   })
   it('saves files as a download', async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {}); const url = vi.fn(() => 'blob:x'); (URL as unknown as { createObjectURL: unknown }).createObjectURL = url
-    await saveFile('wealthpilot-backup.json', '{"a":1}', 'application/json')
+    await saveFile('cresari-backup.json', '{"a":1}', 'application/json')
     expect(click).toHaveBeenCalledTimes(1); expect(url).toHaveBeenCalledTimes(1); click.mockRestore()
   })
   it('the store-update prompts never show in a browser; the reload bar still does', () => {

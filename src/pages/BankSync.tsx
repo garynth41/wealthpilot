@@ -43,11 +43,11 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     <ol className="note" style={{ margin: '0 0 10px', paddingLeft: 18 }}>
       {isNative() ? <li>Set up <b>SimpleFIN Bridge</b>, a separate bank-connection service, and link your banks there.</li> : <li>Subscribe at <a href="https://bridge.simplefin.org" target="_blank" rel="noreferrer">bridge.simplefin.org</a> and link your banks there.</li>}
       <li>In SimpleFIN choose <b>New Connection</b> (an app connection) and copy the <b>setup token</b>.</li>
-      <li>Paste it below. The token is single-use; WealthPilot exchanges it for an access key kept on the server, never in your browser.</li>
+      <li>Paste it below. The token is single-use; Cresari exchanges it for an access key kept on the server, never in your browser.</li>
     </ol>
     {isOwner ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}><div style={{ flex: '1 1 320px' }}><Field label="Setup token"><input className="inp" value={token} onChange={e => setToken(e.target.value)} placeholder="aHR0cHM6Ly9icmlkZ2Uuc2ltcGxlZmluLm9yZy9…" autoComplete="off" spellCheck={false} /></Field></div>
       <Btn primary disabled={busy || token.trim().length < 20} onClick={() => run(async () => { await repo!.syncConnect(token.trim()); setToken(''); await load() }, 'Connected — now match your accounts')}>{busy ? 'Connecting…' : 'Connect'}</Btn></div> : <Note>Only an owner can connect a bank.</Note>}
-    <Note>Nothing is imported until you match each bank account to one of yours. Only balances, dates, amounts and descriptions are kept; the bank login never touches WealthPilot (SimpleFIN holds it).</Note>
+    <Note>Nothing is imported until you match each bank account to one of yours. Only balances, dates, amounts and descriptions are kept; the bank login never touches Cresari (SimpleFIN holds it).</Note>
   </Card>
 
   const mappedCount = Object.values(map).filter(Boolean).length, newCount = Object.values(map).filter(v => v === NEW).length
@@ -78,7 +78,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
       <span className="note" style={{ margin: 0 }}>{c.last_sync_at ? `Last sync ${fmtDT(c.last_sync_at)}` : 'Not synced yet'}</span>
       {limitMsg ? <span className="note" role="status" data-testid="sync-limit" style={{ margin: 0, color: 'var(--warn-ink)' }}>{limitMsg}</span> : (st.requests?.length ? <span className="note" style={{ margin: 0 }}>{st.requests.length} of {slot.limit} on-demand syncs used in the last 24 hours</span> : null)}
     </div>
-    {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.status === 'error' ? <b>Last sync failed: </b> : <b>Note from SimpleFIN (sync still worked): </b>}{c.last_error}{/45 days/i.test(c.last_error) && c.status !== 'error' ? ' — WealthPilot now asks for at most 44 days at a time, so this note clears on the next sync.' : ''}</div>}
+    {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.status === 'error' ? <b>Last sync failed: </b> : <b>Note from SimpleFIN (sync still worked): </b>}{c.last_error}{/45 days/i.test(c.last_error) && c.status !== 'error' ? ' — Cresari now asks for at most 44 days at a time, so this note clears on the next sync.' : ''}</div>}
     <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>At the bank</th><th className="num">Balance</th><th>Goes into</th></tr></thead><tbody>
       {c.discovered.length === 0 && <tr><td colSpan={3} className="note">No accounts reported by the bank yet — press Sync now once, or check the accounts are linked in SimpleFIN.</td></tr>}
       {c.discovered.map(d => <tr key={d.id}><td><b>{d.org || '—'}</b> · {d.name}{d.last4 ? <span className="note" style={{ margin: 0, display: 'inline' }}> · …{d.last4}</span> : null}</td><td className="num">{fm2(d.balance)}</td>

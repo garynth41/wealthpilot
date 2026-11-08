@@ -23,11 +23,11 @@ export const connections: GuidePage = {
     },
     {
       title: 'Automatic bank sync (SimpleFIN)',
-      what: 'Connects your banks through SimpleFIN Bridge so balances and posted transactions come in once a day and whenever you click Sync now. SimpleFIN costs about $15 a year, paid to SimpleFIN, and holds your bank logins; they never touch WealthPilot.',
+      what: 'Connects your banks through SimpleFIN Bridge so balances and posted transactions come in once a day and whenever you click Sync now. SimpleFIN costs about $15 a year, paid to SimpleFIN, and holds your bank logins; they never touch Cresari.',
       how: [
         'Subscribe at bridge.simplefin.org and link your banks there.',
         'In SimpleFIN choose New Connection (an app connection) and copy the setup token.',
-        'Paste it into Setup token and click Connect. The token works once; WealthPilot exchanges it for an access key kept on the server, never in your browser.',
+        'Paste it into Setup token and click Connect. The token works once; Cresari exchanges it for an access key kept on the server, never in your browser.',
         'Under Goes into, choose where each bank account should go: one of your accounts, + Create a new account from this, or — don\'t import —. Auto-match fills these in for you.',
         'Click Save matching & sync now. After that, Sync now fetches anything new.',
       ],
@@ -170,7 +170,7 @@ export const connections: GuidePage = {
     { q: 'How do I fix a bank sync that says Needs attention?', steps: ['Read the message under Last sync failed.', 'Open SimpleFIN Bridge and reconnect the bank it names.', 'Come back and click Sync now.'] },
   ],
   glossary: [
-    { term: 'SimpleFIN Bridge', def: 'The service that reads your banks for WealthPilot. You subscribe there (about $15 a year) and link your banks; it holds the bank logins.' },
+    { term: 'SimpleFIN Bridge', def: 'The service that reads your banks for Cresari. You subscribe there (about $15 a year) and link your banks; it holds the bank logins.' },
     { term: 'Setup token', def: 'A one-time code from SimpleFIN that connects it to your household.' },
     { term: 'Statement file', def: 'A download of an account\'s activity from your bank\'s website: CSV, Excel, OFX or QFX.' },
     { term: 'OFX / QFX', def: 'The Quicken / Money download format. Each row carries the bank\'s own transaction id, which makes re-imports exact.' },

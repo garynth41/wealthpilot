@@ -153,7 +153,7 @@ export class MemoryRepo implements Repo {
   async inviteWithPassword(req: InviteRequest) { const email = req.email.trim().toLowerCase()
     this.data.invites = [...this.data.invites.filter(x => x.email !== email), { id: demoId(), household_id: this.household.id, email, role: req.role, read_only: req.read_only, modules: req.modules, display_name: req.display_name || null, created_at: new Date().toISOString(), accepted_at: null }]
     this.persist(); this.emit(); return { user_id: null, existing: false, pending: true, temp_password: null, sent: false, send_error: null, can_send: false } }
-  async exportJson() { return { app: 'WealthPilot', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
+  async exportJson() { return { app: 'Cresari', exported_at: new Date().toISOString(), household: this.household, ...this.data } }
   /** The same rules as the database repo (lib/restore.ts): merge matches existing rows by id, then by natural key, and re-points children. */
   async importJson(json: Record<string, unknown>, mode: 'merge' | 'replace'): Promise<RestoreSummary> {
     // replace clears the same tables the database repo clears (members, audit trail and email ledger stay); balance history goes with the accounts

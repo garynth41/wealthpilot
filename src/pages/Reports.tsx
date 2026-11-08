@@ -29,7 +29,7 @@ export function ReportsPage() {
   const pick = (id: string) => { setPreset(id); const p = PRESETS.find(p => p.id === id); if (p) setOn(p.sections) }
   const toggle = (id: SectionId, checked: boolean) => { setPreset(''); setOn(x => checked ? ALL_SECTIONS.map(s => s[0]).filter(k => x.includes(k) || k === id) : x.filter(k => k !== id)) }
   const quick = (f: string, t: string) => { setKind('custom'); setFrom(f); setTo(t) }
-  const file = `wealthpilot-${rep.kind}-${rep.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
+  const file = `cresari-${rep.kind}-${rep.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
   // exports are built unmasked so a file has real figures even while privacy mode hides them on screen
   const repX = () => unmasked(() => buildReport(data, settings, kind, anchor, on, today(), { from, to }))
   const csv = () => exportTable(file, [], unmasked(() => reportRows(repX())), 'csv')

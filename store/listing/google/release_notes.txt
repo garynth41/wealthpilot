@@ -1,1 +1,1 @@
-The first WealthPilot app for Android: your household's budget, bills, debts, goals and plans in your pocket — with bill reminders on your phone, fingerprint or face unlock, a read-only copy that opens offline, and exports you can save to Drive or share.
+The first Cresari app for Android: your household's budget, bills, debts, goals and plans in your pocket — with bill reminders on your phone, fingerprint or face unlock, a read-only copy that opens offline, and exports you can save to Drive or share.

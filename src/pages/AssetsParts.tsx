@@ -102,7 +102,7 @@ export function CreditScoreCard() {
   const series = trends.flatMap(t => Object.entries(t.byBureau).map(([b, list]) => ({ name: `${t.person} · ${b}`, list })))
   const palette = [c.accent, c.blue, c.good, c.warn, c.soon, c.crit]
   const all = (data.scores || []).slice().sort((x, y) => y.date.localeCompare(x.date))
-  return <Card span={12} id="credit" title="Credit score" hint="typed from your card issuer, bank app or a bureau — WealthPilot never pulls your credit">
+  return <Card span={12} id="credit" title="Credit score" hint="typed from your card issuer, bank app or a bureau — Cresari never pulls your credit">
     <div data-id="credit-scores" />
     {trends.length > 0 && <div className="kpis" style={{ marginBottom: 10 }}>{trends.map(t => { const b = band(t.latest.score); return <KPI key={t.person} l={t.person === 'Me' ? 'Your score' : t.person} v={<>{t.latest.score} <Pill cls={b.cls}>{b.label}</Pill></>} cls={b.cls} s={<>{t.change != null ? <b style={{ color: t.change >= 0 ? 'var(--good-ink)' : 'var(--crit-ink)' }}>{t.change >= 0 ? '+' : '−'}{Math.abs(t.change)} since {fmtDY(t.previous!.date)}</b> : 'first score'} · {t.latest.bureau || 'bureau?'}{t.latest.model ? ` ${t.latest.model}` : ''} · {fmtDY(t.latest.date)}{t.stale ? ' · over 90 days old' : ''}{t.nextBand ? ` · ${t.nextBand.points} points to ${t.nextBand.label}` : ''}</>} /> })}</div>}
     {series.length > 0 ? <Chart title="Credit score over time" data={series.map((s, i) => ({ type: 'scatter' as const, mode: 'lines+markers' as const, name: s.name, x: s.list.map(x => x.date), y: s.list.map(x => x.score), line: { color: palette[i % palette.length], width: 2 }, hovertemplate: `%{x|%b %d, %Y}: %{y}<extra>${s.name}</extra>` }))}

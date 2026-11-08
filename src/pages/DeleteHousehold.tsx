@@ -10,7 +10,7 @@ import { fmtDY, today } from '../lib/dates'
 export function DeleteHouseholdCard() {
   const { household, isOwner, repo, guarded, mode } = useData(); const { open, close } = useModal()
   const when = household?.deletion_scheduled_for
-  const download = () => guarded(async () => { const j = await repo!.exportJson(); await saveFile(`wealthpilot-backup-${today()}.json`, JSON.stringify(j, null, 2), 'application/json') }, isNative() ? 'Backup ready' : 'Backup downloaded')
+  const download = () => guarded(async () => { const j = await repo!.exportJson(); await saveFile(`cresari-backup-${today()}.json`, JSON.stringify(j, null, 2), 'application/json') }, isNative() ? 'Backup ready' : 'Backup downloaded')
   return <Card span={12} title="Delete this household" hint="permanent after a 7-day grace period">
     {when ? <>
       <div className="msg crit" role="status">Scheduled for permanent deletion on <b>{fmtDY(when.slice(0, 10))}</b>. The household is read-only until then.</div>

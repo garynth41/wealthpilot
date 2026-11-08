@@ -1,4 +1,4 @@
-# WealthPilot roadmap — the "Finance Platform" spec mapped onto the app
+# Cresari roadmap — the "Finance Platform" spec mapped onto the app
 
 Source spec: `roadmap/finance-platform-spec.md` in the Claude project (also the original attachment). Decision (Nov 1, 2026): treat the spec as the roadmap for the existing app — keep the stack (Vite + React + TS, zustand, Plotly, Supabase, engines in `src/lib` with unit tests) rather than rebuild on Tailwind/Recharts/Context.
 

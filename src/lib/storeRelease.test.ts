@@ -21,7 +21,7 @@ describe('store listing text', () => {
   it('keywords are comma-separated without repeating the app name (Apple already indexes it)', () => {
     const kw = text('apple/keywords.txt').trim().split(',')
     expect(kw.every(k => k.trim() === k && k.length > 1)).toBe(true)
-    expect(kw.some(k => /wealthpilot/i.test(k))).toBe(false)
+    expect(kw.some(k => /cresari/i.test(k))).toBe(false)
     expect(new Set(kw).size).toBe(kw.length)
   })
   it('the Play title starts with the app name used everywhere else', () => { expect(text('google/title.txt').startsWith(text('apple/name.txt').trim())).toBe(true) })

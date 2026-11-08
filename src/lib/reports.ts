@@ -215,7 +215,7 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
   }
   // keep the catalogue order whatever order the sections were requested in
   const order = ALL_SECTIONS.map(x => x[0]); out.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
-  return { title: `WealthPilot ${kind === 'month' ? 'monthly' : kind === 'quarter' ? 'quarterly' : kind === 'year' ? 'annual' : 'custom-range'} report — ${r.label}`, kind, from: r.from, to: r.to, label: r.label, prevFrom: r.prevFrom, prevTo: r.prevTo, generated: new Date(Date.parse(asOf + 'T12:00:00')).toISOString().slice(0, 10), sections: out }
+  return { title: `Cresari ${kind === 'month' ? 'monthly' : kind === 'quarter' ? 'quarterly' : kind === 'year' ? 'annual' : 'custom-range'} report — ${r.label}`, kind, from: r.from, to: r.to, label: r.label, prevFrom: r.prevFrom, prevTo: r.prevTo, generated: new Date(Date.parse(asOf + 'T12:00:00')).toISOString().slice(0, 10), sections: out }
 }
 /** Flatten for CSV: section header, KPI rows (label, value, previous), the table, a blank line. */
 export function reportRows(rep: Report): Array<Array<string | number>> {

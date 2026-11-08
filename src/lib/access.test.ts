@@ -64,7 +64,7 @@ describe('temporary passwords and password rules', () => {
 
 describe('common-password blocklist', () => {
   it('blocks common bases with years, symbols and look-alike swaps', () => {
-    for (const pw of ['Password123', 'P@ssw0rd2026', 'Qwerty12345!', 'Welcome2026', 'Letmein99', 'Wealthpilot1', 'Iloveyou2026', 'pass-word_2025']) expect(isCommonPassword(pw), pw).toBe(true)
+    for (const pw of ['Password123', 'P@ssw0rd2026', 'Qwerty12345!', 'Welcome2026', 'Letmein99', 'Cresari1', 'Iloveyou2026', 'pass-word_2025']) expect(isCommonPassword(pw), pw).toBe(true)
     expect(passwordProblems('Password2026')).toContain('not a common password')
   })
   it('lets genuine passphrases through, including ones that merely contain a common word', () => {
@@ -74,10 +74,10 @@ describe('common-password blocklist', () => {
 })
 
 describe('invitation email', () => {
-  const base = { appName: 'WealthPilot', household: 'Thomas', inviter: 'gary@x.com', email: 'pat@example.com', siteUrl: 'https://example.github.io/wealthpilot/' }
+  const base = { appName: 'Cresari', household: 'Thomas', inviter: 'gary@x.com', email: 'pat@example.com', siteUrl: 'https://example.github.io/wealthpilot/' }
   it('carries the access line and the site link — never a password, nothing else from the household (0.25.1)', () => {
     const d = inviteEmailDraft({ ...base, displayName: 'Pat', access: { role: 'editor', read_only: false, modules: ['budget'] }, note: 'Call me if stuck.' })
-    expect(d.subject).toBe('You\'re invited to "Thomas" on WealthPilot')
+    expect(d.subject).toBe('You\'re invited to "Thomas" on Cresari')
     expect(d.body).toMatch(/^Hi Pat,/); expect(d.body).toContain('Limited — Budget (can add and change there)')
     expect(d.body).toContain(`To join, open ${base.siteUrl} and sign in with ${base.email}`); expect(d.body).toContain('create your account with that address'); expect(d.body).toContain('Call me if stuck.')
     expect(d.body).not.toMatch(/password|Email: /i)

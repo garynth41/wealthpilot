@@ -9,6 +9,6 @@ const strip = sql => sql
   .replace(/select\s+cron\.unschedule\([^;]*;\s*/gi, '')
   .replace(/select\s+cron\.schedule\([\s\S]*?\$(job)?\$\s*\);\s*/gi, '-- (scheduled job left out of staging)\n')
 const files = readdirSync(dir).filter(f => /^\d{4}_.*\.sql$/.test(f) && f.slice(0, 4) >= from).sort()
-let out = `-- WealthPilot staging schema: ${files.length} migration(s) from ${files[0]} to ${files[files.length - 1]}, production-only jobs removed\n`
+let out = `-- Cresari staging schema: ${files.length} migration(s) from ${files[0]} to ${files[files.length - 1]}, production-only jobs removed\n`
 for (const f of files) { const s = strip(readFileSync(new URL(f, dir), 'utf8')); if (/cron\.schedule|functions\/v1\//.test(s)) { console.error(`${f}: still calls production after stripping — mark it [prod-only]`); process.exit(1) } out += `\n-- ===== ${f} =====\n${s}\n` }
 process.stdout.write(out)

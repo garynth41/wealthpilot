@@ -103,7 +103,7 @@ const backupRows = (): Rows => ({
   contributions: [{ id: 'old-gc', goal_id: 'old-goal', date: '2026-10-22', amount: 20, transaction_id: 'old-cash', updated_at: STAMP_OLD }],
   emailItems: [{ id: 'old-em', kind: 'paid', payee: 'Movie night', amount: 20, autopay: false, transaction_id: 'old-cash', evidence: [{ msg_id: 'm-77', src: 'gmail', subject: 'Receipt', date: '2026-10-22' }], updated_at: STAMP_OLD }],
 })
-const asBackup = (rows: Rows) => ({ app: 'WealthPilot', exported_at: STAMP_OLD, household: { id: 'hh-old', name: 'Old' }, ...rows })
+const asBackup = (rows: Rows) => ({ app: 'Cresari', exported_at: STAMP_OLD, household: { id: 'hh-old', name: 'Old' }, ...rows })
 const household = (): Household => ({ id: HH, name: 'Test', currency: 'USD', settings: { ...SETTINGS_DEFAULTS } })
 const memoryWith = (rows: Rows) => { const d = emptyData() as unknown as Record<string, unknown[]>; for (const [k, v] of Object.entries(rows)) d[k] = v.map(r => ({ ...r, household_id: HH })); return new MemoryRepo({ household: household(), data: d as unknown as Data }) }
 const supabaseWith = (rows: Rows) => { fake.reset(); for (const [k, v] of Object.entries(rows)) fake.tables[TABLE[(k === 'duplicates' ? 'transactions' : k) as Collection]] = [...(fake.tables[TABLE[(k === 'duplicates' ? 'transactions' : k) as Collection]] || []), ...v.map(r => ({ ...r, household_id: HH }))]; return new SupabaseRepo(HH) }

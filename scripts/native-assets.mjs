@@ -1,4 +1,4 @@
-// Draws the phone apps' artwork from the WealthPilot mark (public/favicon.svg) — `npm run native:assets`:
+// Draws the phone apps' artwork from the Cresari mark (public/favicon.svg) — `npm run native:assets`:
 //   assets/icon-only.png        1024² App Store / launcher icon (square, opaque — iOS rounds the corners itself)
 //   assets/icon-foreground.png  1024² Android adaptive icon foreground (the mark inside the 66% safe zone, transparent)
 //   assets/icon-background.png  1024² Android adaptive icon background (the dark tile)
@@ -25,8 +25,8 @@ const jobs = [
   ['assets/splash-dark.png', 2732, 2732, svg(2732, 2732, centred(0.36, glyph()), BG)],
 ]
 const notif = [['mdpi', 24], ['hdpi', 36], ['xhdpi', 48], ['xxhdpi', 72], ['xxxhdpi', 96]]
-if (existsSync('android/app/src/main/res')) for (const [d, px] of notif) jobs.push([`android/app/src/main/res/drawable-${d}/ic_stat_wealthpilot.png`, px, px, svg(px, px, centred(1.25, glyph('#ffffff', '#ffffff')))])
-const feature = `<!doctype html><html><head><style>html,body{margin:0}body{width:1024px;height:500px;background:linear-gradient(135deg,${BG} 0%,#23272e 100%);display:flex;align-items:center;gap:44px;padding:0 70px;box-sizing:border-box;font-family:'Helvetica Neue',Arial,sans-serif;color:#fff}h1{margin:0;font-size:76px;letter-spacing:-2px;font-weight:800}p{margin:10px 0 0;font-size:30px;color:#c9ced6;line-height:1.25}b{color:${ORANGE}}</style></head><body>${svg(230, 230, centred(1.0, glyph()), BG).replace('<svg ', '<svg style="border-radius:44px;flex:none;box-shadow:0 12px 40px rgba(0,0,0,.45)" ')}<div><h1>WealthPilot</h1><p>Your household's money in one place —<br/><b>budget, bills, debts, goals</b> and the plan.</p></div></body></html>`
+if (existsSync('android/app/src/main/res')) for (const [d, px] of notif) jobs.push([`android/app/src/main/res/drawable-${d}/ic_stat_cresari.png`, px, px, svg(px, px, centred(1.25, glyph('#ffffff', '#ffffff')))])
+const feature = `<!doctype html><html><head><style>html,body{margin:0}body{width:1024px;height:500px;background:linear-gradient(135deg,${BG} 0%,#23272e 100%);display:flex;align-items:center;gap:44px;padding:0 70px;box-sizing:border-box;font-family:'Helvetica Neue',Arial,sans-serif;color:#fff}h1{margin:0;font-size:76px;letter-spacing:-2px;font-weight:800}p{margin:10px 0 0;font-size:30px;color:#c9ced6;line-height:1.25}b{color:${ORANGE}}</style></head><body>${svg(230, 230, centred(1.0, glyph()), BG).replace('<svg ', '<svg style="border-radius:44px;flex:none;box-shadow:0 12px 40px rgba(0,0,0,.45)" ')}<div><h1>Cresari</h1><p>Your household's money in one place —<br/><b>budget, bills, debts, goals</b> and the plan.</p></div></body></html>`
 
 const b = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {})
 for (const [file, w, h, markup] of jobs) {

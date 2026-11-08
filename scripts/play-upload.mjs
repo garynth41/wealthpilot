@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { createSign } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 
-export const PACKAGE = 'io.github.garynth41.wealthpilot'
+export const PACKAGE = 'com.cresari.app'
 export const TRACKS = ['internal', 'alpha', 'beta', 'production']
 const API = 'https://androidpublisher.googleapis.com'
 const SCOPE = 'https://www.googleapis.com/auth/androidpublisher'

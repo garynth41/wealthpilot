@@ -5,7 +5,7 @@ export interface FaqEntry { q: string; a: string[] }
 export interface StartStep { title: string; text: string; to: string }
 
 export const GENERAL: { intro: string; start: StartStep[]; tasks: GuideTask[]; faq: FaqEntry[]; glossary: GuideTerm[]; basics: Array<{ h: string; items: string[] }> } = {
-  intro: 'WealthPilot keeps your household\'s money in one place: what you have, what is coming in and going out, what you owe, and the plan for the rest. Every page answers one question; this guide explains each page, every card on it and what every number means.',
+  intro: 'Cresari keeps your household\'s money in one place: what you have, what is coming in and going out, what you owe, and the plan for the rest. Every page answers one question; this guide explains each page, every card on it and what every number means.',
   start: [
     { title: 'Name your household and choose a budget cadence', text: 'Settings → General: the household\'s name (Household card), your reserve floor — the cash you never want to drop below (Planning thresholds) — and whether you budget by calendar month, pay period, every 2 weeks, twice a month or week (Budget cadence). Then click Save settings.', to: '/settings' },
     { title: 'Add your accounts', text: 'Account Balances: every bank, savings, investment and retirement account with today\'s balance, then every card and loan with what is on its latest statement.', to: '/accounts' },

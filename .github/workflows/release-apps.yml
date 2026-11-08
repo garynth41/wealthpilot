@@ -52,7 +52,7 @@ jobs:
             if (m > 99 || p > 99) { console.error("minor and patch must be below 100"); process.exit(1) }
             const code = M * 1000000 + m * 10000 + p * 100 + b
             require("fs").appendFileSync(process.env.GITHUB_OUTPUT, `name=${v}\ncode=${code}\n`)
-            console.log(`WealthPilot ${v} — build ${code}`)'
+            console.log(`Cresari ${v} — build ${code}`)'
 
   android:
     needs: version
@@ -104,18 +104,18 @@ jobs:
         run: |
           aab=android/app/build/outputs/bundle/release/app-release.aab
           jarsigner -verify "$aab" | grep -q "jar verified" || { echo "::error::the bundle is not signed"; exit 1; }
-          mv "$aab" "wealthpilot-${{ needs.version.outputs.name }}-${{ needs.version.outputs.code }}.aab"
+          mv "$aab" "cresari-${{ needs.version.outputs.name }}-${{ needs.version.outputs.code }}.aab"
           ls -l *.aab
       - uses: actions/upload-artifact@v7
         if: steps.gate.outputs.run == 'true'
         with:
-          name: wealthpilot-android-${{ needs.version.outputs.name }}-${{ needs.version.outputs.code }}
-          path: wealthpilot-*.aab
+          name: cresari-android-${{ needs.version.outputs.name }}-${{ needs.version.outputs.code }}
+          path: cresari-*.aab
           retention-days: 14
       - name: Send to Google Play as a draft
         if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && steps.gate.outputs.play == 'true'
         env: { PLAY_SERVICE_ACCOUNT_JSON: "${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}" }
-        run: node scripts/play-upload.mjs --aab wealthpilot-*.aab --track "${{ inputs.play_track }}" --status draft --notes store/listing/google/release_notes.txt
+        run: node scripts/play-upload.mjs --aab cresari-*.aab --track "${{ inputs.play_track }}" --status draft --notes store/listing/google/release_notes.txt
       - name: Note when Google Play is not connected yet
         if: steps.gate.outputs.run == 'true' && inputs.play_track != 'none' && steps.gate.outputs.play != 'true'
         run: echo "::notice::PLAY_SERVICE_ACCOUNT_JSON is not set — download the .aab from this run and upload it in Play Console (docs/STORE_LAUNCH.md, step A5)"
@@ -152,7 +152,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild archive -project ios/App/App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/WealthPilot.xcarchive" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -archivePath "$RUNNER_TEMP/Cresari.xcarchive" -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="$TEAM" \
             MARKETING_VERSION="${{ needs.version.outputs.name }}" CURRENT_PROJECT_VERSION="${{ needs.version.outputs.code }}" | tail -40
       - name: Sign for the App Store and upload to App Store Connect
@@ -179,7 +179,7 @@ jobs:
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           PLIST
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/WealthPilot.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Cresari.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER" | tail -60
-          echo "::notice::WealthPilot ${{ needs.version.outputs.name }} (${{ needs.version.outputs.code }}) was uploaded to App Store Connect — it shows in TestFlight once Apple has processed it"
+          echo "::notice::Cresari ${{ needs.version.outputs.name }} (${{ needs.version.outputs.code }}) was uploaded to App Store Connect — it shows in TestFlight once Apple has processed it"
