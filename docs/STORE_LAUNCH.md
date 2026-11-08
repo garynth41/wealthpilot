@@ -229,7 +229,7 @@ Enter the email and password only in App Store Connect and Play Console — neve
 
 ## D. After launch
 
-- **Tell the app a new version exists** (after a store has released it):
+- **Tell the app a new version exists** (only after it is live in both the App Store and Google Play):
   `update public.app_meta set value = '0.25.3' where key = 'latest_native_version';` — app users then see "A new version is available".
   Only for changes an older app would break (such as a database change) also set `min_native_version`, which blocks older apps until
   they update.
