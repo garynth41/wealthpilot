@@ -74,7 +74,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     {isOwner && <Btn sm disabled={busy || mappedCount === 0 || !slot.ok} title={why || 'Re-read history back to January 1'} onClick={backfillClick}>Load year-to-date history</Btn>}
     {isOwner && <Btn sm danger onClick={async () => { if (await confirm('Disconnect the bank? The saved key is deleted; imported transactions stay.', 'Disconnect')) run(async () => { await repo!.syncDisconnect(); await load() }, 'Disconnected') }}>Disconnect</Btn>}</span>}>
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
-      <Pill cls={c.status === 'connected' ? 'good' : 'crit'}>{c.status === 'connected' ? 'Connected' : 'Needs attention'}</Pill>
+      <span data-id="bank-sync" style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}><Pill cls={c.status === 'connected' ? 'good' : 'crit'}>{c.status === 'connected' ? 'Connected' : 'Needs attention'}</Pill></span>
       <span className="note" style={{ margin: 0 }}>{c.last_sync_at ? `Last sync ${fmtDT(c.last_sync_at)}` : 'Not synced yet'}</span>
       {limitMsg ? <span className="note" role="status" data-testid="sync-limit" style={{ margin: 0, color: 'var(--warn-ink)' }}>{limitMsg}</span> : (st.requests?.length ? <span className="note" style={{ margin: 0 }}>{st.requests.length} of {slot.limit} on-demand syncs used in the last 24 hours</span> : null)}
     </div>

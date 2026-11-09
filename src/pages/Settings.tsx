@@ -7,6 +7,7 @@ import { AboutCard } from './About'
 import { offlineCopyOn, setOfflineCopy } from '../lib/offlineCache'
 import { passwordProblems } from '../lib/access'
 import { useData } from '../app/hooks'
+import { STYLES, styleName, setStyle, themeMode, setThemeMode, type StyleName, type ThemeMode } from '../components/Layout'
 import { useStore } from '../app/store'
 import type { Category, PeriodType, Role } from '../app/data/types'
 import { PAY_FREQ_LABEL } from '../app/data/types'
@@ -350,8 +351,11 @@ function PhoneReminders() {
 function DeviceDisplay() {
   const { settings, saveSettings, guarded, canEdit } = useData()
   const [loc, setLoc] = useState(localePreference()); const [priv, setPriv] = useState(privacyOn()); const [offline, setOffline] = useState(offlineCopyOn())
+  const [style, setSt] = useState<StyleName>(styleName()); const [mode, setMode] = useState<ThemeMode>(themeMode())
   const sample = `${fm2(1234567.89)} · ${fmtNum(1234.5, 1)} · ${fmtDY(today())}`
   return <Card span={6} title="This device" hint="saved in this browser only">
+    <div className="grid2"><Field label="Style" hint={STYLES.find(x => x[0] === style)?.[2]}><select className="inp" value={style} onChange={e => { const v = e.target.value as StyleName; setSt(v); setStyle(v) }} aria-label="Style">{STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+      <Field label="Light or dark"><select className="inp" value={mode} onChange={e => { const v = e.target.value as ThemeMode; setMode(v); setThemeMode(v) }} aria-label="Light or dark"><option value="system">Follow the system</option><option value="light">Light</option><option value="dark">Dark</option></select></Field></div>
     <Field label="Numbers and dates" hint={`now: ${sample}`}><select className="inp" value={loc} onChange={e => { setLoc(e.target.value); setLocale(e.target.value) }} aria-label="Number and date format">{LOCALES.map(([v, l]) => <option key={v} value={v}>{l}{v === 'auto' ? ` (${resolvedLocale()})` : ''}</option>)}</select></Field>
     <label className="gm-ign" style={{ fontSize: 13, display: 'block', marginTop: 8 }}><input type="checkbox" checked={priv} onChange={e => { setPriv(e.target.checked); setPrivacy(e.target.checked) }} /> Privacy mode — hide amounts on screen (keyboard <kbd>H</kbd>); exports keep real figures</label>
     <label className="gm-ign" style={{ fontSize: 13, display: 'block', marginTop: 8 }}><input type="checkbox" checked={offline} onChange={e => { setOffline(e.target.checked); setOfflineCopy(e.target.checked) }} /> Keep a read-only copy for offline use — the app opens with your data when there is no connection. Turn off on a shared computer; signing out always clears it.</label>

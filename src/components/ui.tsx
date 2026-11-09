@@ -11,7 +11,7 @@ export const Card = ({ title, hint, span = 12, children, right, className = '', 
   const key = help === false ? null : typeof help === 'string' ? help : typeof title === 'string' ? title : null
   return <div className={`card span${span} ${className}`} id={id}>{title != null && <div className="card-head"><h2 className="ch">{title}</h2>{key && <button type="button" className="cardhelp" onClick={() => openHelp(key)} aria-label={`Help: ${key}`} title="What is this? How do I use it?"><span aria-hidden="true">?</span></button>}{hint && <span className="hint">{hint}</span>}{right && <span className="ch-right">{right}</span>}</div>}{children}</div>
 }
-export const KPI = ({ l, v, cls = 'info', s }: { l: string; v: ReactNode; cls?: string; s?: ReactNode }) => <div className={`kpi ${cls}`}><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>
+export const KPI = ({ l, v, cls = 'info', s, anchor }: { l: string; v: ReactNode; cls?: string; s?: ReactNode; /** data-id a link-through lands on */ anchor?: string }) => <div className={`kpi ${cls}`} data-id={anchor}><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>
 export const Pill = ({ cls, children }: { cls: string; children: ReactNode }) => <span className={`pill ${cls}`}>{children}</span>
 export const Money = ({ v, sign }: { v: number | null | undefined; sign?: boolean }) => { const n = +(v ?? 0) || 0; return <span style={{ color: sign ? (n >= 0 ? 'var(--good)' : 'var(--crit)') : undefined }}>{sign && n > 0 ? '+' : ''}{fmtMoney(n)}</span> }
 export const Note = ({ children }: { children: ReactNode }) => <div className="note">{children}</div>

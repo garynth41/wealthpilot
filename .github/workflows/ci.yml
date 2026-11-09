@@ -156,6 +156,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions: { contents: write }   # pushes to gh-pages
+    concurrency: { group: pages, cancel-in-progress: false }   # one gh-pages publish at a time, shared with rollback.yml (0.26.0)
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8

@@ -28,7 +28,7 @@ export function TransactionsPage() {
   const { data, settings, insert, update, remove, guarded, canEdit, catOpts, catLabels, accts, acctLabels, acctName, cat, saveSettings } = useData()
   const confirm = useConfirm(); const { open, close } = useModal()
   const [params, setParams] = useSearchParams()
-  const [range, setRange] = useState<'period' | '30' | 'month' | '90' | 'all'>(() => params.get('tag') ? 'all' : 'period'); const [kind, setKind] = useState<'all' | TxnKind | 'uncat'>('all'); const [acct, setAcct] = useState('')
+  const [range, setRange] = useState<'period' | '30' | 'month' | '90' | 'all'>(() => params.get('tag') ? 'all' : 'period'); const [kind, setKind] = useState<'all' | TxnKind | 'uncat'>(() => params.get('kind') === 'uncat' ? 'uncat' : 'all'); const [acct, setAcct] = useState('')
   const [tag, setTag] = useState(() => params.get('tag') || ''); const [selected, setSelected] = useState<Set<string>>(new Set()); const [viewId, setViewId] = useState('')
   const allTags = useMemo(() => [...new Set(data.transactions.flatMap(x => x.tags || []))].sort(), [data.transactions])
   const acctUpd = (id: string, p: Partial<Account>) => update('accounts', id, p)
@@ -41,8 +41,10 @@ export function TransactionsPage() {
   const rows = useMemo(() => data.transactions.filter(x => (ids.size ? ids.has(x.id) : x.date >= from && x.date <= to) && (kind === 'all' || (kind === 'uncat' ? !x.category_id && x.kind !== 'transfer' : x.kind === kind)) && (!acct || x.account_id === acct || x.to_account_id === acct) && (!tag || (x.tags || []).includes(tag))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.transactions, from, to, kind, acct, tag, ids])
   const focusId = focusIdFrom(params.toString() ? '?' + params.toString() : '')
   useEffect(() => { if (focusId && !rows.some(r => r.id === focusId) && data.transactions.some(t => t.id === focusId)) { setRange('all'); setKind('all'); setAcct(''); setTag('') } }, [focusId, rows, data.transactions])   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const tg = params.get('tag'); if (tg) { setTag(tg); setRange('all') } }, [params])
-  useEffect(() => { const first = [...ids][0]; if (first && !focusId) setTimeout(() => highlight(first), 200) }, [ids, focusId])
+  useEffect(() => { const tg = params.get('tag'); if (tg) { setTag(tg); setRange('all') } if (params.get('kind') === 'uncat') setKind('uncat') }, [params])
+  // a link that names a set (ids=, tag=, kind=uncat) rather than one row lands on the first row of that set (0.26.0)
+  const firstOfSet = !focusId && (ids.size || params.get('tag') || params.get('kind')) ? ([...ids][0] || rows[0]?.id || '') : ''
+  useEffect(() => { if (firstOfSet) setTimeout(() => highlight(firstOfSet), 200) }, [firstOfSet])
   const inc = sum(rows.filter(x => x.kind === 'income' && x.status !== 'void').map(x => x.amount)), exp = sum(rows.filter(x => x.kind === 'expense' && x.status !== 'void').map(x => x.amount)), tr = sum(rows.filter(x => x.kind === 'transfer' && x.status !== 'void').map(x => x.amount))
   const uncat = data.transactions.filter(x => !x.category_id && x.kind !== 'transfer' && x.status !== 'void').length
   const MOVES_MONEY = ['amount', 'kind', 'account_id', 'to_account_id', 'status']

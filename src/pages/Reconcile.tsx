@@ -1,6 +1,7 @@
 // Checkbook Reconciliation — register, matching, statement reconciliation, issues, history. All rules in lib/reconcile.ts and lib/dedupe.ts.
-import { useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { focusIdFrom, highlight } from '../lib/focus'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import type { Transaction, Account } from '../app/data/types'
@@ -22,6 +23,9 @@ export function ReconcilePage() {
   const cashAccts = useMemo(() => accts.filter(a => ['checking', 'savings', 'cash', 'credit_card', 'line_of_credit', 'store_card'].includes(a.kind)), [accts])
   const [acctId, setAcctId] = useState(cashAccts.find(a => a.bank_balance != null)?.id || cashAccts[0]?.id || '')
   const a = cashAccts.find(x => x.id === acctId) || null
+  // a link-through from the Dashboard (0.26.0): ?focus=<account id> lands on that account's Variance, ?focus=out:<account id> on its outstanding checks
+  const focusId = focusIdFrom(useLocation().search)
+  useEffect(() => { if (!focusId) return; const id = focusId.replace(/^out:/, ''); if (cashAccts.some(x => x.id === id)) { setAcctId(id); setTimeout(() => highlight(focusId), 120) } }, [focusId, cashAccts])
   const txns = data.transactions as unknown as RTxn[]
   const mine = useMemo(() => a ? txns.filter(t => t.account_id === a.id || t.to_account_id === a.id) : [], [txns, a])
   const state = useMemo(() => a ? accountState(a, mine) : null, [a, mine])
@@ -74,8 +78,8 @@ export function ReconcilePage() {
       <KPI l="Book balance" v={fmtMoney(S.bookBalance)} cls="info" s="your own running figure" />
       <KPI l="Bank balance" v={S.bankBalance == null ? '—' : fmtMoney(S.bankBalance)} cls={S.verified ? 'good' : 'idle'} s={S.bankAsOf ? `reported ${fmtDY(S.bankAsOf)}` : 'sync, import a statement or reconcile'} />
       <KPI l="Reconciled balance" v={fmtMoney(S.reconciledBalance)} cls="good" s="bank + deposits in transit − outstanding · used by every module" />
-      <KPI l="Variance" v={(S.variance > 0 ? '+' : '') + fmtMoney(S.variance)} cls={Math.abs(S.variance) < 0.01 ? 'good' : 'crit'} s="book − reconciled" />
-      <KPI l="Outstanding checks" v={fmtMoney(S.outstandingChecks)} cls={S.outstandingChecksCount ? 'warn' : 'good'} s={`${S.outstandingChecksCount} not yet cleared`} />
+      <KPI anchor={a?.id} l="Variance" v={(S.variance > 0 ? '+' : '') + fmtMoney(S.variance)} cls={Math.abs(S.variance) < 0.01 ? 'good' : 'crit'} s="book − reconciled" />
+      <KPI anchor={a ? 'out:' + a.id : undefined} l="Outstanding checks" v={fmtMoney(S.outstandingChecks)} cls={S.outstandingChecksCount ? 'warn' : 'good'} s={`${S.outstandingChecksCount} not yet cleared`} />
       <KPI l="Deposits in transit" v={fmtMoney(S.depositsInTransit)} cls={S.depositsInTransitCount ? 'warn' : 'good'} s={`${S.depositsInTransitCount} not yet at the bank`} />
       <KPI l="Uncleared" v={String(S.uncleared)} cls="info" s="register entries awaiting the bank" />
       <KPI l="Last reconciliation" v={S.lastReconciledOn ? fmtDY(S.lastReconciledOn) : 'Never'} cls={S.lastReconciledOn && ago(S.lastReconciledOn) !== 'today' ? 'info' : 'idle'} s={prev ? `statement ${fmtMoney(prev.statement_balance)} · ${prev.status === 'completed' ? 'balanced' : 'with adjustment'}` : 'reconcile against a statement'} />
