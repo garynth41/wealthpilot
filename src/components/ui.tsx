@@ -7,9 +7,9 @@ import { openHelp } from '../lib/helpBus'
 /** A card. Its heading gets a small ? that opens the guide at this card (0.24.1): keyed by the heading text, or by `help` when the
  *  heading varies (a goal's name); `help={false}` for none. The title is the page's second heading level (the page title is the h1);
  *  the ?, the hint and any controls sit beside it, outside the heading, so a screen reader's heading list reads just the titles. */
-export const Card = ({ title, hint, span = 12, children, right, className = '', id, help }: { title?: ReactNode; hint?: ReactNode; span?: number; children?: ReactNode; right?: ReactNode; className?: string; id?: string; help?: string | false }) => {
+export const Card = ({ title, hint, span = 12, children, right, className = '', id, help, meta }: { title?: ReactNode; hint?: ReactNode; span?: number; children?: ReactNode; right?: ReactNode; className?: string; id?: string; help?: string | false; /** a short figure or range for the header's right edge (0.26.1): "4 items", "next 14 days" */ meta?: ReactNode }) => {
   const key = help === false ? null : typeof help === 'string' ? help : typeof title === 'string' ? title : null
-  return <div className={`card span${span} ${className}`} id={id}>{title != null && <div className="card-head"><h2 className="ch">{title}</h2>{key && <button type="button" className="cardhelp" onClick={() => openHelp(key)} aria-label={`Help: ${key}`} title="What is this? How do I use it?"><span aria-hidden="true">?</span></button>}{hint && <span className="hint">{hint}</span>}{right && <span className="ch-right">{right}</span>}</div>}{children}</div>
+  return <div className={`card span${span} ${className}`} id={id}>{title != null && <div className="card-head"><h2 className="ch">{title}</h2>{key && <button type="button" className="cardhelp" onClick={() => openHelp(key)} aria-label={`Help: ${key}`} title="What is this? How do I use it?"><span aria-hidden="true">?</span></button>}{hint && <span className="hint">{hint}</span>}{(right || meta) && <span className="ch-right">{meta && <span className="meta">{meta}</span>}{right}</span>}</div>}{children}</div>
 }
 export const KPI = ({ l, v, cls = 'info', s, anchor }: { l: string; v: ReactNode; cls?: string; s?: ReactNode; /** data-id a link-through lands on */ anchor?: string }) => <div className={`kpi ${cls}`} data-id={anchor}><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>
 export const Pill = ({ cls, children }: { cls: string; children: ReactNode }) => <span className={`pill ${cls}`}>{children}</span>
@@ -38,7 +38,7 @@ export const Field = ({ label, children, hint, error }: { label: string; childre
   return <div className={`field${error ? ' has-error' : ''}`}><label htmlFor={native ? id : undefined}>{label}{hint && <span className="hint" style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 6 }}>{hint}</span>}</label>{child}{error && <div className="field-err" id={id + '-err'} role="alert">{error}</div>}</div>
 }
 export const Banner = ({ cls = '', children }: { cls?: string; children: ReactNode }) => <div className={`banner ${cls}`}>{children}</div>
-export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => <ul className="alist">{items.map((i, k) => <li key={k}><span className={`dot ${i.c}`}></span><span><span className="t">{i.t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li>)}</ul>
+export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => <ul className="alist">{items.map((i, k) => <li key={k} className={`al-${i.c}`}><span className={`dot ${i.c}`} aria-hidden="true"></span><span><span className="t">{i.t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li>)}</ul>
 
 /* ---- layers: everything that sits on top of the page (0.25.1) ----
    Dialogs, the help drawer, the command palette and the phone menu register while they are open, newest last. Escape and the phone's Back
