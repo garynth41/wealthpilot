@@ -1,0 +1,96 @@
+# Rollback (0.26.0) — run by hand: GitHub → Actions → "rollback" → Run workflow, or `node scripts/rollback.mjs --to <sha>`.
+# Rebuilds the website from an older commit on main and publishes it to gh-pages exactly as ci.yml's deploy job does, so the live site
+# (https://garynth41.github.io/wealthpilot/) goes back to that version within a few minutes. Nothing on main changes: the next push to
+# main deploys main again. Use `node scripts/rollback.mjs --revert <sha>` to take the change out of the code as well.
+# It never touches the database. After it finishes, the job summary shows the version now live and the one SQL statement to run on
+# production so the app stops telling everyone an update is available (docs/ROLLBACK.md).
+name: rollback
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA, tag or branch on main's history to put back live (empty = the commit before main's current HEAD)
+        type: string
+        default: ''
+      reason:
+        description: Why (goes into the gh-pages commit message)
+        type: string
+        default: ''
+# one gh-pages publish at a time
+concurrency:
+  group: pages
+  cancel-in-progress: false
+permissions: { contents: write }   # pushes to gh-pages
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Resolve the commit to put back live
+        id: target
+        env: { REF: "${{ inputs.ref }}" }
+        run: |
+          set -euo pipefail
+          if [ -z "$REF" ]; then
+            SHA=$(git rev-parse main~1)
+            echo "No ref given — using the commit before main's HEAD."
+          else
+            SHA=$(git rev-parse --verify --quiet "${REF}^{commit}" || git rev-parse --verify "origin/${REF}^{commit}")
+          fi
+          if ! git merge-base --is-ancestor "$SHA" main; then
+            echo "::error::$REF ($SHA) is not on main's history — refusing to deploy it."; exit 1
+          fi
+          git checkout --detach "$SHA"
+          VERSION=$(node -p "require('./package.json').version")
+          { echo "sha=$SHA"; echo "sha7=${SHA::7}"; echo "version=$VERSION"; echo "subject=$(git log -1 --format=%s)"; } >> "$GITHUB_OUTPUT"
+          echo "Rolling back to ${SHA::7} ($VERSION): $(git log -1 --format=%s)"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # the public Supabase URL / publishable key live in .env.example (the real .env is git-ignored); without them the build has no backend
+      - run: if [ -f .env.example ]; then cp .env.example .env; fi
+      - run: npm run build
+      - name: Built bundle must carry the Supabase project URL
+        run: grep -rl "dshswfcpovdpxcidolqb.supabase.co" dist/assets/*.js > /dev/null
+      - name: Publish dist/ to gh-pages
+        env: { SHA7: "${{ steps.target.outputs.sha7 }}", REASON: "${{ inputs.reason }}" }
+        run: |
+          git config user.name "wealthpilot-ci"; git config user.email "ci@users.noreply.github.com"
+          MSG="ci: rollback to ${SHA7}"; if [ -n "$REASON" ]; then MSG="$MSG — $REASON"; fi
+          npx --yes gh-pages@6 -d dist --add --dotfiles --nojekyll -u "wealthpilot-ci <ci@users.noreply.github.com>" -m "$MSG" -r "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+      - name: What to do next
+        env:
+          SHA: "${{ steps.target.outputs.sha }}"
+          SHA7: "${{ steps.target.outputs.sha7 }}"
+          VERSION: "${{ steps.target.outputs.version }}"
+          SUBJECT: "${{ steps.target.outputs.subject }}"
+          REASON: "${{ inputs.reason }}"
+        run: |
+          {
+            echo "## Rolled the website back to \`$SHA7\` — version **$VERSION**"
+            echo
+            echo "- Commit: \`$SHA\` — $SUBJECT"
+            echo "- Reason: ${REASON:-_(none given)_}"
+            echo "- Live in a few minutes at https://garynth41.github.io/wealthpilot/ (hard-refresh to see it)."
+            echo
+            echo "### Now run this on the production database (Supabase → SQL editor, project dshswfcpovdpxcidolqb)"
+            echo
+            echo "The app shows an *update available* banner whenever \`app_meta.latest_version\` is newer than the version running. It is"
+            echo "not changed by this workflow (CI has no database credentials), so until you run this every user sees a false banner:"
+            echo
+            echo '```sql'
+            echo "update public.app_meta set value = '$VERSION' where key = 'latest_version';"
+            echo '```'
+            echo
+            echo "### Remember"
+            echo
+            echo "- main still has the newer code: the next push to main deploys it again. To take the change out of the code too, run"
+            echo "  \`node scripts/rollback.mjs --revert <merge sha>\` and merge the pull request it opens."
+            echo "- Database migrations were **not** rolled back — see docs/ROLLBACK.md."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,9 @@
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.25.3)
+## State as of this handoff (v0.26.0)
+
+- **0.26.0:** two looks — `data-style` on `<html>` (`terminal` default, `graphite`), tokens in `src/styles.css` (the Terminal block at the end), switch in `src/components/Layout.tsx` (`setStyle`, `STYLES`) and Settings → This device; charts read `--chart-font`. Click-through anchors: `linkTo(path, id)` → `data-id` on the destination; prefixed ids where a record shows in more than one place (`due:`, `debt:`, `asset:`, `day:`, `line:`, `out:`), `anchor` prop on `<Table>` and `<KPI>`; the mark stays until the page changes (`src/lib/focus.ts`). Column resizing: `src/lib/colResize.ts` (DOM-level, pointer events, `wealthpilot.colw` in localStorage) installed once from Layout; the React `<Table>` uses the same drag helper. Rollback: `.github/workflows/rollback.yml`, `scripts/rollback.mjs`, `docs/ROLLBACK.md`; ci.yml's deploy and rollback share the `pages` concurrency group.
 
 - **0.25.3:** `APP_VERSION` in `src/app/config.ts` was left at 0.25.1 by the rename; it is now 0.25.3 and must be bumped with `package.json` each release. The look stays **Graphite** (a new "Crescent" theme was tried on 2026-11-07 and rejected by Gary).
 

@@ -11,9 +11,10 @@ import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
 import { useModal, useConfirm, useLayer, hasOpenLayer, trapTab, MHead, MBody, Btn } from './ui'
 import { installTableCards } from './tableCards'
+import { useColumnResize } from '../lib/colResize'
 import { sb } from '../app/supabase'
 import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
-import { focusIdFrom, highlight } from '../lib/focus'
+import { focusIdFrom, highlight, clearHighlight } from '../lib/focus'
 import { Palette, ShortcutsHelp } from './Palette'
 import type { HelpTab } from './HelpDrawer'
 import { HELP_EVENT, type HelpRequest } from '../lib/helpBus'
@@ -121,11 +122,12 @@ export function Layout({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', k); return () => { clearTimeout(t); window.removeEventListener('keydown', k) } }, [drawer])   // eslint-disable-line react-hooks/exhaustive-deps
   // phones: hand-written tables become cards, and table areas that still scroll get a tab stop (components/tableCards.ts)
   useEffect(() => installTableCards(document.body), [])
+  useColumnResize()   // every table's columns drag to resize (0.26.0)
   // Skip to content moves focus to the page without changing the route (the hash router read "#main" as a page and opened the dashboard)
   const skip = (e: React.MouseEvent) => { e.preventDefault(); const m = document.getElementById('main'); if (m) { m.focus({ preventScroll: true }); m.scrollIntoView({ block: 'start' }) } }
   const zones = [...new Set(visible.map(v => v.zone))]; zonesRef.current = zones
   const focusId = focusIdFrom(loc.search)
-  useEffect(() => { if (focusId) setTimeout(() => highlight(focusId), 120) }, [focusId, loc.pathname])
+  useEffect(() => { if (focusId) setTimeout(() => highlight(focusId), 120); else clearHighlight() }, [focusId, loc.pathname])
   const activeZone = visible.find(v => v.path === loc.pathname)?.zone
   const allOpen = zones.every(z => !closedZones.has(z))
   // arriving on a page opens its section once; before, the section holding the current page could never be folded
@@ -172,20 +174,31 @@ export function Layout({ children }: { children: ReactNode }) {
   </div>
 }
 export type ThemeMode = 'light' | 'dark' | 'system'
+/** The app's look (0.26.0): Graphite (Swiss minimal, the original) or Terminal (the analyst's desk — charcoal & amber, mono figures). Saved per browser; Terminal is the default. */
+export type StyleName = 'graphite' | 'terminal'
+export const STYLES: Array<[StyleName, string, string]> = [['terminal', 'Terminal', 'the analyst\'s desk — charcoal & amber, figures in mono'], ['graphite', 'Graphite', 'Swiss minimal — cool grey, white panels, one tangerine accent']]
+export const styleName = (): StyleName => { try { const v = localStorage.getItem(LS('style')); return v === 'graphite' || v === 'terminal' ? v : 'terminal' } catch { return 'terminal' } }
+export function setStyle(s: StyleName) {
+  try { localStorage.setItem(LS('style'), s) } catch { /* */ }
+  const changed = document.documentElement.dataset.style !== s
+  document.documentElement.dataset.style = s
+  if (changed) { themeSubs.forEach(cb => cb()); paintBars() }
+}
+const railColor = () => { const t = document.documentElement.dataset.theme, s = document.documentElement.dataset.style; return s === 'terminal' ? (t === 'dark' ? '#0d0f11' : '#1b1d20') : t === 'dark' ? '#0b0d10' : '#ffffff' }
+// phones paint the status bar / address bar from theme-color, so keep it in step with the theme and style (the rail's colour)
+const paintBars = () => { try { const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', railColor()) } catch { /* */ } syncSystemBars(document.documentElement.dataset.theme === 'dark' || document.documentElement.dataset.style === 'terminal') }
 const sysTheme = () => (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 export const themeMode = (): ThemeMode => { try { const v = localStorage.getItem(LS('theme')); return v === 'light' || v === 'dark' || v === 'system' ? v : 'system' } catch { return 'system' } }
 // Charts bake the theme's colours into their data when a page renders, so a theme change re-mounts the page (key below) and every chart redraws in the new colours.
 const themeSubs = new Set<() => void>()
-export const useThemeName = () => useSyncExternalStore(cb => { themeSubs.add(cb); return () => { themeSubs.delete(cb) } }, () => document.documentElement.dataset.theme || 'light')
+export const useThemeName = () => useSyncExternalStore(cb => { themeSubs.add(cb); return () => { themeSubs.delete(cb) } }, () => `${document.documentElement.dataset.theme || 'light'}/${document.documentElement.dataset.style || 'graphite'}`)
 export function setThemeMode(m: ThemeMode) {
   try { localStorage.setItem(LS('theme'), m) } catch { /* */ }
   const t = m === 'system' ? sysTheme() : m
   const changed = document.documentElement.dataset.theme !== t
   document.documentElement.dataset.theme = t
   if (changed) themeSubs.forEach(cb => cb())
-  // phones paint the status bar / address bar from theme-color, so keep it in step with the theme (white rail in light, near-black in dark)
-  try { const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', t === 'dark' ? '#0b0d10' : '#ffffff') } catch { /* */ }
-  syncSystemBars(t === 'dark')   // the phone apps paint their own status bar
+  paintBars()
 }
 /** Light / dark / system (follows the OS). Persisted in localStorage; "system" re-applies live when the OS switches. */
 export function ThemeBtn() {
@@ -194,7 +207,7 @@ export function ThemeBtn() {
   const label = m === 'system' ? `System (${sysTheme()})` : m === 'dark' ? 'Dark' : 'Light'
   return <button type="button" className="btn" onClick={cycle} title={`Theme: ${label} — click to change`} aria-label={`Theme: ${label}`} style={{ padding: '6px 10px' }}>{m === 'system' ? '◐' : m === 'dark' ? '☀︎' : '☾'}</button>
 }
-export function applySavedTheme() { setThemeMode(themeMode()); try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode() === 'system') setThemeMode('system') }) } catch { /* */ } }
+export function applySavedTheme() { document.documentElement.dataset.style = styleName(); setThemeMode(themeMode()); try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (themeMode() === 'system') setThemeMode('system') }) } catch { /* */ } }
 
 /** Deployment environment from where the app is served: localhost → development, *.github.io or a custom domain → production, anything else (preview URLs) → staging. */
 export const envName = (): 'development' | 'staging' | 'production' => { const h = location.hostname; if (!h || h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local')) return 'development'; if (/github\.io$|cresari/.test(h)) return 'production'; return 'staging' }

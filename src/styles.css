@@ -12,6 +12,7 @@
   --rail:#ffffff; --rail-ink:#15181c; --rail-muted:#5b6470; --rail-line:#d7dbe0; --rail-hover:#f0f2f4; --rail-active:#15181c; --rail-active-ink:#ffffff;
   --shadow:none;
   --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; --display:'Space Grotesk','IBM Plex Sans',system-ui,sans-serif; --serif:var(--display); --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --figures:var(--sans); --chart-font:'IBM Plex Sans',system-ui,sans-serif;
   --radius:4px; --radius-lg:6px;
   --rail-w:256px;
 }
@@ -141,6 +142,8 @@ kbd{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(-
 .tbl input,.tbl select{padding:5px 7px;border-color:transparent;background:transparent} .tbl input:hover,.tbl select:hover{border-color:var(--line)} .tbl input[type=number],.tbl input.num{text-align:right;font-variant-numeric:tabular-nums}
 .tbl tr.st-good td:first-child{box-shadow:inset 3px 0 0 var(--good)} .tbl tr.st-warn td:first-child{box-shadow:inset 3px 0 0 var(--warn)} .tbl tr.st-crit td:first-child{box-shadow:inset 3px 0 0 var(--crit)} .tbl tr.st-idle td:first-child{box-shadow:inset 3px 0 0 var(--idle)} .tbl tr.st-wait td:first-child{box-shadow:inset 3px 0 0 var(--wait)} .tbl tr.st-info td:first-child{box-shadow:inset 3px 0 0 var(--info)}
 .tbl tr.is-selected td{background:var(--accent-soft)} .tbl tr.ex-off td{opacity:.55} .tbl tfoot td{font-weight:600;background:var(--surface-2)}
+/* action buttons stay on one line (0.26.0) — wrapping them made every row three times as tall on wide tables */
+.tbl td > .btnrow{flex-wrap:nowrap}
 .tbl .del{border:0;background:none;color:var(--ink-3);cursor:pointer;font-size:16px;padding:0 6px} .tbl .del:hover{color:var(--crit-ink)}
 .tbl .mv{border:0;background:none;color:var(--ink-3);cursor:pointer;padding:0 2px;font-size:10px} .tbl .mv:hover{color:var(--accent)}
 /* ---- chart ---- */
@@ -199,7 +202,7 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 .env-development{background:var(--blue-soft);color:var(--info-ink)} .env-staging{background:var(--warn-soft);color:var(--warn-ink)} .env-production{background:var(--good-soft);color:var(--good-ink)}
 
 /* table extras (0.4.0): column resize grip, column picker, pager */
-.tbl th{position:relative} .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none} .colgrip:hover{background:var(--accent-soft)}
+.tbl th{position:relative} .tbl th[style*="width"]{overflow:hidden;text-overflow:ellipsis} .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none} .colgrip:hover{background:var(--accent-soft)}
 .colpicker{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(21,24,28,.12);box-shadow:var(--shadow);padding:10px 12px;min-width:200px;max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:4px;font-size:13px;text-transform:none;letter-spacing:0}
 .colpicker label{display:flex;gap:6px;align-items:center;white-space:nowrap}
 .pager{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px}
@@ -224,8 +227,8 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 @media (min-width:901px){ .rail-collapsed .navtools{display:none} }
 /* click-through highlight (0.15.0): the record a link pointed at */
 @keyframes focusPulse{0%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 6px var(--accent-soft)}60%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 2px var(--accent-soft)}100%{box-shadow:inset 0 0 0 2px var(--accent),0 0 0 0 transparent}}
-.focus-hit{animation:focusPulse 1.6s ease-out 3;background:var(--accent-soft)!important;position:relative;z-index:1}
-tr.focus-hit > td{background:var(--accent-soft)!important}
+.focus-hit{animation:focusPulse 1.6s ease-out 3;background:var(--accent-soft)!important;position:relative;z-index:1;box-shadow:inset 3px 0 0 var(--accent)}
+tr.focus-hit > td{background:var(--accent-soft)!important} tr.focus-hit > td:first-child{box-shadow:inset 3px 0 0 var(--accent)!important} .kpi.focus-hit{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* ---------- 0.20.0 · Phase 4 ---------- */
 /* saved-scenario strip above a planner */
@@ -482,3 +485,44 @@ details.techsetup code { overflow-wrap: anywhere; }
   table.tbl[data-cards] .btnrow { gap: 8px; }
   table.tbl[data-cards] .usebar { width: calc(100% - 48px); max-width: 140px; }   /* room for "100%" beside it */
 }
+
+/* ---------- Terminal (0.26.0) — the analyst's desk. Charcoal ground, amber for actions and attention, every figure in IBM Plex Mono.
+   A second style next to Graphite; Settings → This device → Style switches, saved per browser (data-style on <html>). Light and dark both exist:
+   dark is the desk at night (charcoal), light is the same desk on warm paper with a charcoal rail. ---------- */
+:root[data-style="terminal"]{
+  color-scheme:light;
+  --ground:#e9e6dd; --surface:#f8f6f0; --surface-2:#efece3; --line:#d4cfc2; --line-2:#e2ded3; --line-strong:#bdb7a8;
+  --ink:#1b1d20; --ink-2:#35383e; --ink-3:#5c5f66; --on-accent:#ffffff;
+  --good-ink:#1f6b3e; --warn-ink:#8a5a00; --crit-ink:#a3321f; --info-ink:#3b4b63; --soon-ink:#8a5a00; --wait-ink:#55479a; --idle-ink:#5c5f66;
+  --accent:#9c6200; --accent-deep:#7a4c00; --accent-soft:#f6e6c0; --gold:#9c6200; --link:#86540a;
+  --sel:#1b1d20; --on-sel:#f2a516;
+  --blue:#34506f; --blue-soft:#e1e7ef;
+  --good:#1f7a45; --good-soft:#dcefe3; --warn:#9c6200; --warn-soft:#f6e6c0; --crit:#b53a24; --crit-soft:#f7ddd6;
+  --soon:#9c6200; --soon-soft:#f6e6c0; --idle:#8d8f93; --idle-soft:#e9e6dd; --wait:#6b5bb5; --wait-soft:#e8e4f5; --info:#34506f; --info-soft:#e1e7ef;
+  --rail:#1b1d20; --rail-ink:#e6e3da; --rail-muted:#8f918f; --rail-line:#2c2f34; --rail-hover:#25282d; --rail-active:#f2a516; --rail-active-ink:#1b1d20;
+  --shadow:none;
+  --display:'IBM Plex Mono','IBM Plex Sans',ui-monospace,monospace; --figures:var(--mono); --chart-font:'IBM Plex Mono',ui-monospace,monospace;
+  --radius:2px; --radius-lg:3px;
+}
+:root[data-style="terminal"][data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#121416; --surface:#1a1d20; --surface-2:#212529; --line:#2e3338; --line-2:#262a2f; --line-strong:#3d434a;
+  --ink:#e8e5dc; --ink-2:#b8b5ac; --ink-3:#8e908a; --on-accent:#121416;
+  --good-ink:#6fd39a; --warn-ink:#f2c15a; --crit-ink:#ff8a74; --info-ink:#9db6dc; --soon-ink:#f2c15a; --wait-ink:#c2b7f3; --idle-ink:#b8b5ac;
+  --accent:#f2a516; --accent-deep:#ffbf3f; --accent-soft:#3a2b0b; --gold:#f2a516; --link:#ffb52e;
+  --sel:#f2a516; --on-sel:#121416;
+  --blue:#8fb0de; --blue-soft:#1b2634;
+  --good:#4cc383; --good-soft:#15301f; --warn:#f2a516; --warn-soft:#3a2b0b; --crit:#ff6b57; --crit-soft:#3a1c15;
+  --soon:#f2a516; --soon-soft:#3a2b0b; --idle:#8e908a; --idle-soft:#262a2f; --wait:#a99af0; --wait-soft:#27213f; --info:#8fb0de; --info-soft:#1b2634;
+  --rail:#0d0f11; --rail-ink:#d9d6cd; --rail-muted:#8e908a; --rail-line:#22262a; --rail-hover:#1a1d20; --rail-active:#f2a516; --rail-active-ink:#121416;
+  --shadow:none;
+}
+/* figures in mono, labels tracked out — the parts that make the desk read like a terminal */
+:root[data-style="terminal"] .kpi .v{font-family:var(--mono);font-weight:600;letter-spacing:-.01em;font-size:26px}
+:root[data-style="terminal"] .kpi .l,:root[data-style="terminal"] .tbl th,:root[data-style="terminal"] .card-head .hint,:root[data-style="terminal"] .zone .zt{text-transform:uppercase;letter-spacing:.06em;font-size:10.5px}
+:root[data-style="terminal"] .tbl th.num,:root[data-style="terminal"] .tbl td.num,:root[data-style="terminal"] .tbl input.num,:root[data-style="terminal"] .tbl td.id,:root[data-style="terminal"] .pill,:root[data-style="terminal"] .chip b,:root[data-style="terminal"] .asof,:root[data-style="terminal"] .pager .note{font-family:var(--mono)}
+:root[data-style="terminal"] h1{font-size:20px;letter-spacing:-.01em;font-weight:600} :root[data-style="terminal"] h2,:root[data-style="terminal"] h3{letter-spacing:0;font-weight:600}
+:root[data-style="terminal"] .card-head .ch{font-size:14px;letter-spacing:0;font-weight:600}
+:root[data-style="terminal"] .rail .nav a.active{box-shadow:inset 3px 0 0 var(--rail-active)}
+:root[data-style="terminal"] .btn.primary{font-family:var(--mono);letter-spacing:.02em;text-transform:uppercase;font-size:12px}
+:root[data-style="terminal"] .focus-hit{box-shadow:inset 3px 0 0 var(--accent),0 0 0 1px var(--accent)}
