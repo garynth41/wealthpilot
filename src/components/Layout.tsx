@@ -1,12 +1,15 @@
 import { lockNow } from './IdleLock'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { useStore, outdated, nativeUpdate, updateRequired } from '../app/store'
 import { initNative, syncSystemBars, storeName, storeUrl, openExternal, isNative, hasAppHistory } from '../app/native'
 import { rescheduleReminders, wireReminderTaps } from '../app/nativeReminders'
 import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
 import { Logo } from './Logo'
-import { fmtDY, fmtDT, today, addDays, ago } from '../lib/dates'
+import { fmtDY, fmtDT, fmtD, fmtDow, today, addDays, ago } from '../lib/dates'
+import { fm2, fmtMoney } from '../lib/money'
+import { isLiability } from '../lib/accounts'
+import { balanceOn } from '../lib/history'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
 import { useModal, useConfirm, useLayer, hasOpenLayer, trapTab, MHead, MBody, Btn } from './ui'
@@ -14,7 +17,7 @@ import { installTableCards } from './tableCards'
 import { useColumnResize } from '../lib/colResize'
 import { sb } from '../app/supabase'
 import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
-import { focusIdFrom, highlight, clearHighlight } from '../lib/focus'
+import { focusIdFrom, highlight, clearHighlight, linkTo } from '../lib/focus'
 import { Palette, ShortcutsHelp } from './Palette'
 import type { HelpTab } from './HelpDrawer'
 import { HELP_EVENT, type HelpRequest } from '../lib/helpBus'
@@ -60,7 +63,8 @@ export function useBadges() {
 export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules, offlineAt } = useStore()
   const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path)) }, [mode, modules])
-  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem(LS('rail')) === 'collapsed' } catch { return false } })
+  // the icon rail is the Terminal default (the analyst's desk keeps the width for figures); Graphite opens the full rail — a saved choice wins either way
+  const [collapsed, setCollapsed] = useState(() => { try { const v = localStorage.getItem(LS('rail')); return v === 'collapsed' ? true : v === 'open' ? false : styleName() === 'terminal' } catch { return false } })
   // sections fold; going to a page opens its section (which can then be folded again); the choice is remembered per browser
   const [closedZones, setClosedZones] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(LS('navClosed')) || '[]')) } catch { return new Set() } })
   const toggleZone = (z: string) => setClosedZones(s => { const n = new Set(s); if (n.has(z)) n.delete(z); else n.add(z); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
@@ -158,8 +162,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <div className="railfoot" onClick={about}>{APP_NAME} <b>v{APP_VERSION}</b> · <span className={`envtag env-${envName()}`}>{envName()}</span><br />build {APP_BUILD}</div>
     </aside>
     <main className="main" id="main" tabIndex={-1}>
+      <Ticker />
       <nav className="histnav" aria-label="History"><button type="button" className="hn-btn" onClick={goBack} title="Back"><span aria-hidden>←</span> Back</button><button type="button" className="hn-btn" onClick={() => nav(1)} title="Forward">Forward <span aria-hidden>→</span></button><span className="hn-crumb">{view.path !== '/' && <><NavLink to="/">Home</NavLink> › <span>{view.zone}</span> › </>}<b>{view.title}</b></span></nav>
-      <div className="topbar"><div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button type="button" className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Ctrl K: search and jump" style={{ padding: '6px 10px' }}><span aria-hidden="true">⌕ </span><kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button type="button" className="btn" onClick={() => setHelp({})} title="Help for this page (F1)" style={{ padding: '6px 10px' }}><span aria-hidden="true">ⓘ </span>Help</button><button type="button" className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Hidden — show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? <><span aria-hidden="true">◉ </span>Hidden</> : '◎'}</button><button type="button" className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
+      <div className="topbar"><div><div className="eyebrow">{fmtDow(today())} {today()} · {mode === 'demo' ? 'Offline demo' : household?.name || 'Household'}</div><h1>{view.title}</h1><div className="sub">{view.sub}</div></div><div className="asof"><span className="chip">As of <b>{fmtDY(today())}</b></span><button type="button" className="btn" onClick={() => setPalette(true)} title="Jump to anything (Ctrl K)" aria-label="Ctrl K: search and jump" style={{ padding: '6px 10px' }}><span aria-hidden="true">⌕ </span><kbd style={{ marginLeft: 4 }}>Ctrl K</kbd></button><button type="button" className="btn" onClick={() => setHelp({})} title="Help for this page (F1)" style={{ padding: '6px 10px' }}><span aria-hidden="true">ⓘ </span>Help</button><button type="button" className={`btn ${priv ? 'on' : ''}`} onClick={togglePrivacy} title={priv ? 'Show amounts (H)' : 'Hide amounts on screen (H)'} aria-label={priv ? 'Hidden — show amounts' : 'Hide amounts'} aria-pressed={priv} style={{ padding: '6px 10px' }}>{priv ? <><span aria-hidden="true">◉ </span>Hidden</> : '◎'}</button><button type="button" className="btn lockbtn" onClick={lockNow} title="Lock now (L) — hides every figure until you unlock" aria-label="Lock now" style={{ padding: '6px 10px' }}>🔒</button><ThemeBtn /></div></div>
       {outdated() && <div className="banner crit">A newer release (v{useStore.getState().latest}) is available — this tab is still running <b>v{APP_VERSION}</b>. <Btn sm primary onClick={() => { try { navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.update())) } catch { /* */ } location.reload() }}>Reload now</Btn></div>}
       {nativeUpdate() && <div className="banner info" role="status">A newer version of Cresari (v{useStore.getState().nativeLatest}) is in {storeName()}. {storeUrl() && <Btn sm primary onClick={() => void openExternal(storeUrl())}>Update</Btn>}</div>}
       {mode === 'demo' && <div className="banner">Offline demo — data is stored only in this browser. <Btn sm onClick={() => void resetDemoAsk()}>Reset sample data</Btn><Btn sm onClick={exitDemo}>Sign in to a real household</Btn></div>}
@@ -176,7 +181,7 @@ export function Layout({ children }: { children: ReactNode }) {
 export type ThemeMode = 'light' | 'dark' | 'system'
 /** The app's look (0.26.0): Graphite (Swiss minimal, the original) or Terminal (the analyst's desk — charcoal & amber, mono figures). Saved per browser; Terminal is the default. */
 export type StyleName = 'graphite' | 'terminal'
-export const STYLES: Array<[StyleName, string, string]> = [['terminal', 'Terminal', 'the analyst\'s desk — charcoal & amber, figures in mono'], ['graphite', 'Graphite', 'Swiss minimal — cool grey, white panels, one tangerine accent']]
+export const STYLES: Array<[StyleName, string, string]> = [['terminal', 'Terminal — analyst\'s desk, charcoal & amber, mono figures', 'a ticker of your accounts across the top, an icon rail, every figure in mono'], ['graphite', 'Graphite — Swiss minimal, cool grey & tangerine', 'the original look: white panels, hairlines, one tangerine accent']]
 export const styleName = (): StyleName => { try { const v = localStorage.getItem(LS('style')); return v === 'graphite' || v === 'terminal' ? v : 'terminal' } catch { return 'terminal' } }
 export function setStyle(s: StyleName) {
   try { localStorage.setItem(LS('style'), s) } catch { /* */ }
@@ -226,3 +231,18 @@ export function StatusPanel() {
 
 /** navigator.onLine, kept current. */
 export function useOnline() { const [on, setOn] = useState(() => typeof navigator === 'undefined' || navigator.onLine); useEffect(() => { const up = () => setOn(true), down = () => setOn(false); window.addEventListener('online', up); window.addEventListener('offline', down); return () => { window.removeEventListener('online', up); window.removeEventListener('offline', down) } }, []); return on }
+
+/** The desk's ticker (0.26.1, Terminal style only — styles.css hides it elsewhere and on phones): every active account's balance with its
+ *  30-day move, cards and loans with their next due date, and at the right the last bank sync and the version. */
+function Ticker() {
+  const data = useStore(s => s.data); const t = today(); const since = addDays(t, -30)
+  const accts = data.accounts.filter(a => a.status === 'Active' && !a.asset_type && a.kind !== 'other_asset').slice().sort((a, b) => (isLiability(a) ? 1 : 0) - (isLiability(b) ? 1 : 0) || a.sort_order - b.sort_order).slice(0, 8)
+  const sync = data.audit.find(e => e.kind === 'sync' || e.kind === 'sync_failure')
+  if (!accts.length) return null
+  return <div className="ticker" aria-label="Account ticker">
+    {accts.map(a => { const bal = +a.balance || 0; const li = isLiability(a); const prev = li ? null : balanceOn(data, a, since).balance; const d = prev == null ? null : Math.round((bal - prev) * 100) / 100
+      return <Link key={a.id} to={linkTo('/accounts', a.id)} className="tk"><span className="tk-n">{a.name}{a.last4 ? ` ··${a.last4}` : ''}</span><b className={li ? 'neg' : ''}>{li ? '−' : ''}{fm2(Math.abs(bal))}</b>
+        {li ? <span className="tk-d">{a.autopay && a.due_date ? `autopay ${fmtD(a.due_date)}` : a.due_date ? `due ${fmtD(a.due_date)}` : ''}</span> : d != null && Math.abs(d) >= 1 ? <span className={`tk-d ${d > 0 ? 'up' : 'down'}`}>{d > 0 ? '▲' : '▼'} {fmtMoney(Math.abs(d))}</span> : null}</Link> })}
+    <span className="tk tk-end"><span className={`tk-dot ${sync?.kind === 'sync_failure' ? 'bad' : sync ? 'ok' : ''}`} />sync {sync ? fmtDT(sync.created_at) : 'never'} · v{APP_VERSION}</span>
+  </div>
+}

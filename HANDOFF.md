@@ -2,7 +2,9 @@
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.26.0)
+## State as of this handoff (v0.26.1)
+
+- **0.26.1:** Terminal redrawn — `Ticker` in `src/components/Layout.tsx` (Terminal + desktop only, `.ticker` CSS), `.eyebrow` date line, `meta` prop on `<Card>` for the header's right edge, `AList` rows carry `al-<severity>` and the desk shows tags via CSS `::before`, `cashBarsData/Layout` in Dashboard when `data-style=terminal`. The icon rail is the Terminal default when the user has not chosen (`LS('rail')`).
 
 - **0.26.0:** two looks — `data-style` on `<html>` (`terminal` default, `graphite`), tokens in `src/styles.css` (the Terminal block at the end), switch in `src/components/Layout.tsx` (`setStyle`, `STYLES`) and Settings → This device; charts read `--chart-font`. Click-through anchors: `linkTo(path, id)` → `data-id` on the destination; prefixed ids where a record shows in more than one place (`due:`, `debt:`, `asset:`, `day:`, `line:`, `out:`), `anchor` prop on `<Table>` and `<KPI>`; the mark stays until the page changes (`src/lib/focus.ts`). Column resizing: `src/lib/colResize.ts` (DOM-level, pointer events, `wealthpilot.colw` in localStorage) installed once from Layout; the React `<Table>` uses the same drag helper. Rollback: `.github/workflows/rollback.yml`, `scripts/rollback.mjs`, `docs/ROLLBACK.md`; ci.yml's deploy and rollback share the `pages` concurrency group.
 
