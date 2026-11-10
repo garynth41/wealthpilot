@@ -40,7 +40,13 @@ export const Field = ({ label, children, hint, error }: { label: string; childre
 export const Banner = ({ cls = '', children }: { cls?: string; children: ReactNode }) => <div className={`banner ${cls}`}>{children}</div>
 /** How serious each list item is, read out before it: the colored dot (and the Terminal tag drawn from CSS) carries this only for sighted readers. */
 const SEVERITY_WORDS: Record<string, string> = { crit: 'Critical', warn: 'Warning', info: 'Note', good: 'OK', soon: 'Soon', wait: 'Waiting' }
-export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => <ul className="alist">{items.map((i, k) => <li key={k} className={`al-${i.c}`}><span className={`dot ${i.c}`} aria-hidden="true"></span><span><span className="t"><span className="sr-only">{SEVERITY_WORDS[i.c] || i.c}: </span>{i.t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li>)}</ul>
+export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => {
+  const base = useId()
+  return <ul className="alist">{items.map((i, k) => { const sid = `${base}s${k}`
+    // a linked title (the dashboard's click-throughs) is also described by the severity, so it is heard when moving link to link
+    const t = isValidElement<{ 'aria-describedby'?: string }>(i.t) && !i.t.props['aria-describedby'] ? cloneElement(i.t, { 'aria-describedby': sid }) : i.t
+    return <li key={k} className={`al-${i.c}`}><span className={`dot ${i.c}`} aria-hidden="true"></span><span><span className="t"><span className="sr-only" id={sid}>{SEVERITY_WORDS[i.c] || i.c}: </span>{t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li> })}</ul>
+}
 
 /* ---- layers: everything that sits on top of the page (0.25.1) ----
    Dialogs, the help drawer, the command palette and the phone menu register while they are open, newest last. Escape and the phone's Back
