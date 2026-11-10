@@ -8,7 +8,7 @@ import { APP_NAME, APP_VERSION, APP_BUILD, LS } from '../app/config'
 import { Logo } from './Logo'
 import { fmtDY, fmtDT, fmtD, fmtDow, today, addDays, ago } from '../lib/dates'
 import { fm2, fmtMoney } from '../lib/money'
-import { isLiability } from '../lib/accounts'
+import { isLiability, balanceOf, debtBal } from '../lib/accounts'
 import { balanceOn } from '../lib/history'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
@@ -63,8 +63,12 @@ export function useBadges() {
 export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules, offlineAt } = useStore()
   const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path)) }, [mode, modules])
-  // the icon rail is the Terminal default (the analyst's desk keeps the width for figures); Graphite opens the full rail — a saved choice wins either way
-  const [collapsed, setCollapsed] = useState(() => { try { const v = localStorage.getItem(LS('rail')); return v === 'collapsed' ? true : v === 'open' ? false : styleName() === 'terminal' } catch { return false } })
+  // the icon rail is the Terminal default (the analyst's desk keeps the width for figures); Graphite opens the full rail. Only a choice the
+  // user made with the toggle is saved (0.27.1) — the style's default is not, so switching styles moves the rail until the user sets it
+  const [railChoice, setRailChoice] = useState<'collapsed' | 'open' | null>(() => { try { const v = localStorage.getItem(LS('rail')); return v === 'collapsed' || v === 'open' ? v : null } catch { return null } })
+  const themeName = useThemeName()
+  const collapsed = railChoice ? railChoice === 'collapsed' : themeName.endsWith('/terminal')
+  const setCollapsed = (next: boolean | ((c: boolean) => boolean)) => { const v = typeof next === 'function' ? next(collapsed) : next; setRailChoice(v ? 'collapsed' : 'open'); try { localStorage.setItem(LS('rail'), v ? 'collapsed' : 'open') } catch { /* */ } }
   // sections fold; going to a page opens its section (which can then be folded again); the choice is remembered per browser
   const [closedZones, setClosedZones] = useState<Set<string>>(() => { try { return new Set(JSON.parse(localStorage.getItem(LS('navClosed')) || '[]')) } catch { return new Set() } })
   const toggleZone = (z: string) => setClosedZones(s => { const n = new Set(s); if (n.has(z)) n.delete(z); else n.add(z); try { localStorage.setItem(LS('navClosed'), JSON.stringify([...n])) } catch { /* */ } return n })
@@ -114,7 +118,6 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => { const on = (e: Event) => { const d = (e as CustomEvent<HelpRequest>).detail || {}; setHelp({ card: d.card ?? null, tab: d.tab }) }; window.addEventListener(HELP_EVENT, on); return () => window.removeEventListener(HELP_EVENT, on) }, [])
   // a search result on another page: go there and keep the drawer open at that card; general topics open the Help Center
   const helpGo = (path: string | null, card?: string | null) => { if (!path || path.startsWith('/help')) { setHelp(false); nav(path || '/help') } else if (path !== view.path) { keepHelp.current = true; nav(path); setHelp({ card: card ?? null }) } else setHelp({ card: card ?? null }) }
-  useEffect(() => { try { localStorage.setItem(LS('rail'), collapsed ? 'collapsed' : 'open') } catch { /* */ } }, [collapsed])
   // the phone menu (0.25.1): hidden from screen readers and the keyboard while closed (styles.css); open, it takes focus, keeps Tab inside,
   // and Esc, a tap outside or the phone's Back button closes it and puts focus back on the Menu button
   const railRef = useRef<HTMLElement>(null); const menuBtn = useRef<HTMLButtonElement | null>(null); const mbarMenu = useRef<HTMLButtonElement>(null)
@@ -240,7 +243,7 @@ function Ticker() {
   const sync = data.audit.find(e => e.kind === 'sync' || e.kind === 'sync_failure')
   if (!accts.length) return null
   return <div className="ticker" aria-label="Account ticker">
-    {accts.map(a => { const bal = +a.balance || 0; const li = isLiability(a); const prev = li ? null : balanceOn(data, a, since).balance; const d = prev == null ? null : Math.round((bal - prev) * 100) / 100
+    {accts.map(a => { const li = isLiability(a); const bal = li ? debtBal(a, data) : balanceOf(a, data); const prev = li ? null : balanceOn(data, a, since).balance; const d = prev == null ? null : Math.round((bal - prev) * 100) / 100   // the verified figures every page shows (0.27.1), not the raw book balance
       return <Link key={a.id} to={linkTo('/accounts', a.id)} className="tk"><span className="tk-n">{a.name}{a.last4 ? ` ··${a.last4}` : ''}</span><b className={li ? 'neg' : ''}>{li ? '−' : ''}{fm2(Math.abs(bal))}</b>
         {li ? <span className="tk-d">{a.autopay && a.due_date ? `autopay ${fmtD(a.due_date)}` : a.due_date ? `due ${fmtD(a.due_date)}` : ''}</span> : d != null && Math.abs(d) >= 1 ? <span className={`tk-d ${d > 0 ? 'up' : 'down'}`}>{d > 0 ? '▲' : '▼'} {fmtMoney(Math.abs(d))}</span> : null}</Link> })}
     <span className="tk tk-end"><span className={`tk-dot ${sync?.kind === 'sync_failure' ? 'bad' : sync ? 'ok' : ''}`} />sync {sync ? fmtDT(sync.created_at) : 'never'} · v{APP_VERSION}</span>

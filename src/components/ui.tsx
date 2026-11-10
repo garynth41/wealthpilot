@@ -38,7 +38,9 @@ export const Field = ({ label, children, hint, error }: { label: string; childre
   return <div className={`field${error ? ' has-error' : ''}`}><label htmlFor={native ? id : undefined}>{label}{hint && <span className="hint" style={{ fontWeight: 400, color: 'var(--ink-3)', marginLeft: 6 }}>{hint}</span>}</label>{child}{error && <div className="field-err" id={id + '-err'} role="alert">{error}</div>}</div>
 }
 export const Banner = ({ cls = '', children }: { cls?: string; children: ReactNode }) => <div className={`banner ${cls}`}>{children}</div>
-export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => <ul className="alist">{items.map((i, k) => <li key={k} className={`al-${i.c}`}><span className={`dot ${i.c}`} aria-hidden="true"></span><span><span className="t">{i.t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li>)}</ul>
+/** How serious each list item is, read out before it: the colored dot (and the Terminal tag drawn from CSS) carries this only for sighted readers. */
+const SEVERITY_WORDS: Record<string, string> = { crit: 'Critical', warn: 'Warning', info: 'Note', good: 'OK', soon: 'Soon', wait: 'Waiting' }
+export const AList = ({ items }: { items: Array<{ c: string; t: ReactNode; m?: ReactNode; d?: ReactNode }> }) => <ul className="alist">{items.map((i, k) => <li key={k} className={`al-${i.c}`}><span className={`dot ${i.c}`} aria-hidden="true"></span><span><span className="t"><span className="sr-only">{SEVERITY_WORDS[i.c] || i.c}: </span>{i.t}</span>{i.m && <div className="m">{i.m}</div>}</span>{i.d && <span className="d">{i.d}</span>}</li>)}</ul>
 
 /* ---- layers: everything that sits on top of the page (0.25.1) ----
    Dialogs, the help drawer, the command palette and the phone menu register while they are open, newest last. Escape and the phone's Back
