@@ -459,7 +459,7 @@ function DedupeCard() {
   const o = dedupeOptions(settings.dedupe); const [last, setLast] = useState<string | null>(null)
   const counts = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe])
   const save = (patch: Partial<typeof o>) => guarded(() => st().saveSettings({ dedupe: { ...o, ...patch } }), 'Saved')
-  const run = () => guarded(async () => { const n = await st().autoDedupe(true); setLast(`${n} merged just now · ${counts.review} left to review`) })
+  const run = () => guarded(async () => { const n = await st().autoDedupe(true); const s = st(); const left = duplicateCounts(s.data.transactions, s.data.duplicates, s.data.accounts, s.settings().dedupe).review; setLast(`${n} merged just now · ${left} left to review`) })
   return <Card span={6} title="Duplicates" hint="one copy of every transaction, whichever way it arrived">
     <Field label="Merge on their own" hint="the bank's copy is kept and inherits the category, bill or goal from the copy it absorbs"><select className="inp" value={o.auto} onChange={e => save({ auto: e.target.value as typeof o.auto })} disabled={!canEdit} aria-label="Merge on their own">
       <option value="likely">Certain and likely matches (recommended)</option><option value="certain">Certain matches only — same day, amount and payee</option><option value="off">Nothing — show every match for review</option></select></Field>
@@ -467,6 +467,6 @@ function DedupeCard() {
     <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, margin: "6px 0" }}><input type="checkbox" style={{ marginTop: 3 }} checked={o.checks} onChange={e => save({ checks: e.target.checked })} disabled={!canEdit} /> Match a check you typed to the bank line that clears it, even months later</label>
     <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, margin: "6px 0" }}><input type="checkbox" style={{ marginTop: 3 }} checked={o.near} onChange={e => save({ near: e.target.checked })} disabled={!canEdit} /> Show near-matches for review — same payee, amount a little different (a tip or tax) or posted up to 10 days later</label>
     <div className="btnrow" style={{ marginTop: 10, alignItems: 'center', gap: 10 }}>{canEdit && <Btn onClick={run}>Check for duplicates now</Btn>}<span className="note" style={{ margin: 0 }}>{last || `${counts.merged} merged so far · ${counts.review} to review in Transactions → Duplicates`}</span></div>
-    <Note>Card and loan payments are always paired (out of checking, onto the card). Nothing is ever deleted: a merged copy is hidden from every total and can be restored from Transactions → Duplicates, after which it is never merged again. Every automatic merge is written to the change history.</Note>
+    <Note>Card and loan payments are paired (out of checking, onto the card) whenever merging on their own is on. Nothing is ever deleted: a merged copy is hidden from every total and can be restored from Transactions → Duplicates, after which it is never merged again. Every automatic merge is written to the change history.</Note>
   </Card>
 }

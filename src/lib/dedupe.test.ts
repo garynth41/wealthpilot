@@ -119,6 +119,11 @@ describe('own-account transfers (0.27.0)', () => {
     const inn = bank({ id: 'i', account_id: BRK, external_id: 'sfin:ACT-3:1', amount: 1000, kind: 'income', payee: 'ACH DEPOSIT HUNTINGTON', date: '2026-10-23' })
     expect(transferPairs([out, inn], ACCTS)).toHaveLength(1)
   })
+  it('a bank name both accounts carry, or a word like "savings", is no hint on its own', () => {
+    const out = bank({ id: 'o', amount: 500, payee: 'ATM WITHDRAWAL HUNTINGTON', date: '2026-10-21' })
+    const inn = sav({ id: 'i', amount: 500, kind: 'income', payee: 'HUNTINGTON SAVINGS INTEREST', date: '2026-10-21' })
+    expect(transferPairs([out, inn], ACCTS)).toEqual([])
+  })
   it('leaves a paycheck and an unrelated withdrawal of the same amount alone', () => {
     const out = bank({ id: 'o', amount: 500, payee: 'ATM WITHDRAWAL', date: '2026-10-21' })
     const inn = sav({ id: 'i', amount: 500, kind: 'income', payee: 'NETJETS PAYROLL', date: '2026-10-21' })

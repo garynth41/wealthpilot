@@ -209,6 +209,8 @@ const LIAB = new Set(['credit_card', 'store_card', 'loan', 'auto_loan', 'student
 const OWN_CASH = new Set(['checking', 'savings'])
 /** The household's own asset accounts a transfer can run between (0.27.0). */
 const OWN_ASSET = new Set(['checking', 'savings', 'cash', 'investment', 'retirement', 'other_asset'])
+/** Words that name an account type rather than the account: they appear on most labels, so they say nothing about which account a row means. */
+const GENERIC_ACCT = new Set(['checking', 'savings', 'saving', 'banking', 'bank', 'account', 'acct', 'plus', 'advantage', 'total', 'everyday', 'basic', 'premier', 'preferred', 'rewards', 'money', 'market', 'cash', 'brokerage', 'investment', 'retirement', 'ira', 'roth', 'fund', 'funds', 'share', 'shares'])
 const TRANSFER_RE = /\b(transfer|xfer|tfr|online banking|internet banking|mobile banking|to (?:savings|checking|share|brokerage|investment)|from (?:savings|checking|share|brokerage|investment)|savings deposit|sweep|acct to acct|account to account)\b/i
 export interface PaymentPair { out: string; into: string; to: string; days: number; reason: string }
 /** The two rows of one card or loan payment: money out of the household's own checking or savings (an expense there, from the bank feed or a
@@ -247,15 +249,19 @@ export function paymentPairs(rows: DTxn[], accounts: DAccount[]): PaymentPair[] 
  *  other's only candidate. Rows typed by hand or from email, merged, void or marked "not a duplicate" are left alone. The out row is kept
  *  and becomes the transfer; restoring the in row puts it back as the expense it arrived as (unpairPatch). */
 export function transferPairs(rows: DTxn[], accounts: DAccount[]): PaymentPair[] {
-  const kindOf = new Map(accounts.map(a => [a.id, a.kind])), label = new Map(accounts.map(a => [a.id, `${a.name || ''} ${a.institution || ''}`]))
+  const kindOf = new Map(accounts.map(a => [a.id, a.kind]))
+  // the other account's NAME, less the words every account label carries — a shared bank name or "savings" alone is no hint
+  const nameWords = new Map(accounts.map(a => [a.id, payeeTokens(a.name).filter(w => !GENERIC_ACCT.has(w)).join(' ')]))
   const ok = (t: DTxn) => !t.duplicate_of && t.status !== 'void' && !t.dedupe_ok && Number(t.amount) > 0 && origin(t) !== 'typed'
   const outs = rows.filter(t => ok(t) && t.kind === 'expense' && !!t.account_id && OWN_ASSET.has(kindOf.get(t.account_id) || ''))
   const ins = rows.filter(t => ok(t) && t.kind === 'income' && !!t.account_id && OWN_ASSET.has(kindOf.get(t.account_id) || ''))
   const cents = (t: DTxn) => Math.round(Number(t.amount) * 100)
   const text = (t: DTxn) => `${t.payee || ''} ${t.memo || ''}`
-  const hint = (o: DTxn, i: DTxn) => TRANSFER_RE.test(text(o)) || TRANSFER_RE.test(text(i)) || (payeeSimilarity(o.payee, label.get(i.account_id!)) ?? 0) > 0 || (payeeSimilarity(i.payee, label.get(o.account_id!)) ?? 0) > 0
+  const names = (t: DTxn, other: DTxn) => { const n = nameWords.get(other.account_id!); return !!n && (payeeSimilarity(t.payee, n) ?? 0) >= 0.5 }
+  const hint = (o: DTxn, i: DTxn) => TRANSFER_RE.test(text(o)) || TRANSFER_RE.test(text(i)) || names(o, i) || names(i, o)   // one shared word with the other account's name was enough before — a bank name both labels carry is not
   const outsOf = new Map<string, string[]>(), insOf = new Map<string, string[]>(); const byId = new Map(rows.map(t => [t.id, t]))
-  for (const i of ins) for (const o of outs) if (o.account_id !== i.account_id && cents(o) === cents(i) && dayGap(o.date, i.date) <= MAX_GAP_DAYS && hint(o, i)) { outsOf.set(i.id, [...(outsOf.get(i.id) || []), o.id]); insOf.set(o.id, [...(insOf.get(o.id) || []), i.id]) }
+  const outsByCents = new Map<number, DTxn[]>(); for (const o of outs) { const k = cents(o); const b = outsByCents.get(k); if (b) b.push(o); else outsByCents.set(k, [o]) }
+  for (const i of ins) for (const o of outsByCents.get(cents(i)) || []) if (o.account_id !== i.account_id && dayGap(o.date, i.date) <= MAX_GAP_DAYS && hint(o, i)) { outsOf.set(i.id, [...(outsOf.get(i.id) || []), o.id]); insOf.set(o.id, [...(insOf.get(o.id) || []), i.id]) }
   const out: PaymentPair[] = []
   for (const i of ins) {
     const os = outsOf.get(i.id) || []; if (os.length !== 1) continue
@@ -309,7 +315,7 @@ export function lookalikes(row: Omit<DTxn, 'id'>, existing: DTxn[]): Array<{ txn
   const me = { ...row, id: '__new__' } as DTxn; const amt = Math.round(Number(row.amount) * 100); const rank = { certain: 0, likely: 1, possible: 2 }
   const out: Array<{ txn: DTxn; pair: DupPair }> = []
   for (const t of existing) {
-    if (t.duplicate_of || t.status === 'void' || direction(t) !== direction(me)) continue
+    if (t.duplicate_of || t.dedupe_ok || t.status === 'void' || direction(t) !== direction(me)) continue
     if (Math.round(Number(t.amount) * 100) === amt) { const p = classify(me, t); if (p && p.confidence !== 'possible') out.push({ txn: t, pair: p }) }
   }
   return out.sort((x, y) => rank[x.pair.confidence] - rank[y.pair.confidence] || x.pair.days - y.pair.days)

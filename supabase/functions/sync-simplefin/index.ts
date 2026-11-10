@@ -57,7 +57,8 @@ async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: nu
   const { data: accts, error: ae } = await admin.from('accounts').select('id, kind, name, institution').eq('household_id', hh)
   if (ae) throw new Error('Reading accounts for de-duplication failed: ' + ae.message)
   // the household's choices (0.27.0): what merges on its own, whether transfers, checks and near-matches are looked for
-  const { data: hhRow } = await admin.from('households').select('settings').eq('id', hh).maybeSingle()
+  const { data: hhRow, error: he } = await admin.from('households').select('settings').eq('id', hh).maybeSingle()
+  if (he) throw new Error('Reading household settings for de-duplication failed: ' + he.message)
   const plan = planDedupe(rows, (accts || []) as DAccount[], ((hhRow?.settings as { dedupe?: DedupeOptions } | null)?.dedupe) || null); let merged = 0
   if (dryRun) {
     const byId = new Map(rows.map(t => [t.id, t])); const brief = (id: string): Brief => { const t = byId.get(id)!; return { date: t.date, amount: t.amount, kind: t.kind, payee: t.payee ?? null, source: t.external_id?.startsWith('sfin:') ? 'bank' : t.source ?? null, account_id: t.account_id ?? t.to_account_id ?? null } }
