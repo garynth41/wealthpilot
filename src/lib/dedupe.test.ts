@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import functionCopy from '../../supabase/functions/sync-simplefin/dedupe.ts?raw'
 import engineSource from './dedupe.ts?raw'
-import { planDedupe, payeeTokens, payeeSimilarity, alreadyPresent, keeperOrder, origin, type DTxn } from './dedupe'
+import { planDedupe, payeeTokens, payeeSimilarity, alreadyPresent, keeperOrder, origin, transferPairs, checkPairs, nearPairs, lookalikes, checkNo, nearAmount, type DTxn, type DAccount } from './dedupe'
 
 const CHK = 'acct-0224', GAV = 'acct-2060', CAT = 'cat-utilities'
 let n = 0
@@ -100,3 +100,102 @@ describe('alreadyPresent (checked before a row is saved)', () => {
 })
 
 it('the bank-sync function carries an identical copy of this engine', () => { expect(functionCopy).toBe(engineSource) })
+
+// ---------------- 0.27.0 ----------------
+const SAV = 'acct-0253', BRK = 'acct-7730'
+const ACCTS: DAccount[] = [{ id: CHK, kind: 'checking', name: 'Adv Plus Banking', institution: 'Huntington' }, { id: SAV, kind: 'savings', name: 'Advantage Savings', institution: 'Huntington' }, { id: BRK, kind: 'investment', name: 'Schwab brokerage', institution: 'Schwab' }, { id: 'card', kind: 'credit_card', name: 'Chase Freedom', institution: 'Chase' }]
+const sav = (p: Partial<DTxn>) => bank({ account_id: SAV, external_id: `sfin:ACT-2:${p.id || n + 1}`, ...p })
+
+describe('own-account transfers (0.27.0)', () => {
+  it('pairs the two bank rows of a checking → savings transfer into one transfer when either side reads as a transfer', () => {
+    const out = bank({ id: 'o', amount: 500, payee: 'ONLINE BANKING TRANSFER TO SAV 0253', date: '2026-10-21' })
+    const inn = sav({ id: 'i', amount: 500, kind: 'income', payee: 'ONLINE BANKING TRANSFER FROM CHK 0224', date: '2026-10-21' })
+    expect(transferPairs([out, inn], ACCTS)).toMatchObject([{ out: 'o', into: 'i', to: SAV, days: 0 }])
+    const plan = planDedupe([out, inn], ACCTS)
+    expect(plan.auto).toMatchObject([{ keeper: 'o', dups: ['i'], patch: { kind: 'transfer', to_account_id: SAV } }])
+  })
+  it('names the other account instead of the word transfer', () => {
+    const out = bank({ id: 'o', amount: 1000, payee: 'To Schwab Brokerage', date: '2026-10-21' })
+    const inn = bank({ id: 'i', account_id: BRK, external_id: 'sfin:ACT-3:1', amount: 1000, kind: 'income', payee: 'ACH DEPOSIT HUNTINGTON', date: '2026-10-23' })
+    expect(transferPairs([out, inn], ACCTS)).toHaveLength(1)
+  })
+  it('leaves a paycheck and an unrelated withdrawal of the same amount alone', () => {
+    const out = bank({ id: 'o', amount: 500, payee: 'ATM WITHDRAWAL', date: '2026-10-21' })
+    const inn = sav({ id: 'i', amount: 500, kind: 'income', payee: 'NETJETS PAYROLL', date: '2026-10-21' })
+    expect(transferPairs([out, inn], ACCTS)).toEqual([])
+    expect(planDedupe([out, inn], ACCTS).auto).toEqual([])
+  })
+  it('does not pair when two out rows could match', () => {
+    const o1 = bank({ id: 'o1', amount: 200, payee: 'TRANSFER TO SAVINGS' }), o2 = bank({ id: 'o2', amount: 200, payee: 'TRANSFER TO SAVINGS', date: '2026-10-22' })
+    const inn = sav({ id: 'i', amount: 200, kind: 'income', payee: 'TRANSFER FROM CHECKING' })
+    expect(transferPairs([o1, o2, inn], ACCTS)).toEqual([])
+  })
+  it('can be switched off', () => {
+    const out = bank({ id: 'o', amount: 500, payee: 'TRANSFER TO SAVINGS' }), inn = sav({ id: 'i', amount: 500, kind: 'income', payee: 'TRANSFER FROM CHECKING' })
+    expect(planDedupe([out, inn], ACCTS, { transfers: false }).auto).toEqual([])
+  })
+})
+
+describe('checks (0.27.0)', () => {
+  it('reads the check number from the field or the bank text', () => {
+    expect(checkNo({ check_number: '0142', payee: null, memo: null })).toBe('142')
+    expect(checkNo({ check_number: null, payee: 'CHECK 142', memo: null })).toBe('142')
+    expect(checkNo({ check_number: null, payee: 'Chk #142 Lawn care', memo: null })).toBe('142')
+    expect(checkNo({ check_number: null, payee: 'Kroger', memo: null })).toBeNull()
+  })
+  it('a check typed in the register merges into the bank line that clears it five weeks later', () => {
+    const typed = t({ id: 'w', amount: 85, payee: 'Lawn care', check_number: '142', status: 'pending', account_id: CHK, date: '2026-09-10', category_id: CAT })
+    const cleared = bank({ id: 'c', amount: 85, payee: 'CHECK 142', date: '2026-10-16' })
+    expect(checkPairs([typed, cleared])).toMatchObject([{ a: 'w', b: 'c', confidence: 'certain' }])
+    const plan = planDedupe([typed, cleared], ACCTS)
+    expect(plan.auto).toMatchObject([{ keeper: 'c', dups: ['w'], patch: { category_id: CAT, check_number: '142' } }])
+  })
+  it('a different number or amount is not the same check', () => {
+    const typed = t({ id: 'w', amount: 85, check_number: '142', account_id: CHK, date: '2026-09-10' })
+    expect(checkPairs([typed, bank({ id: 'c1', amount: 85, payee: 'CHECK 143', date: '2026-10-16' })])).toEqual([])
+    expect(checkPairs([typed, bank({ id: 'c2', amount: 58, payee: 'CHECK 142', date: '2026-10-16' })])).toEqual([])
+  })
+})
+
+describe('near-matches (0.27.0)', () => {
+  it('amount within $3 or a quarter is near; the same amount is not', () => {
+    expect(nearAmount(40, 48)).toBe(true); expect(nearAmount(12.5, 14)).toBe(true); expect(nearAmount(100, 100)).toBe(false); expect(nearAmount(100, 150)).toBe(false)
+  })
+  it('an emailed meal and the bank line with the tip go to review, never auto-merge', () => {
+    const e = email({ id: 'e', amount: 40, payee: 'Chipotle', date: '2026-10-21' }), b = bank({ id: 'b', amount: 48, payee: 'CHIPOTLE 1234 COLUMBUS OH', date: '2026-10-23' })
+    const plan = planDedupe([e, b], ACCTS)
+    expect(plan.auto).toEqual([]); expect(plan.review).toMatchObject([{ a: 'e', b: 'b', confidence: 'possible' }]); expect(plan.review[0].reason).toMatch(/tip, tax/)
+  })
+  it('an order that posted a week later is a near-match; a different payee is not', () => {
+    const e = email({ id: 'e', amount: 63.2, payee: 'Amazon', date: '2026-10-12' })
+    expect(nearPairs([e, bank({ id: 'b', amount: 63.2, payee: 'Amazon.com*2K4 Seattle', date: '2026-10-20' })])).toHaveLength(1)
+    expect(nearPairs([e, bank({ id: 'k', amount: 63.2, payee: 'Kroger', date: '2026-10-20' })])).toEqual([])
+  })
+  it('respects "not a duplicate" and the near switch', () => {
+    const e = email({ id: 'e', amount: 40, payee: 'Chipotle', dedupe_ok: true }), b = bank({ id: 'b', amount: 48, payee: 'CHIPOTLE' })
+    expect(nearPairs([e, b])).toEqual([])
+    const e2 = email({ id: 'e2', amount: 40, payee: 'Chipotle' })
+    expect(planDedupe([e2, b], ACCTS, { near: false }).review).toEqual([])
+  })
+})
+
+describe('automatic-merge level (0.27.0)', () => {
+  const e = () => email({ id: 'e', amount: 150, payee: 'AEP Ohio', date: '2026-10-20' }), b = () => bank({ id: 'b', amount: 150, payee: 'AEP COLUMBUS SOU DES:BILL PAY', date: '2026-10-22' })
+  it('likely merges by default, goes to review at "certain only", everything waits at "off"', () => {
+    expect(planDedupe([e(), b()], ACCTS).auto).toHaveLength(1)
+    const certain = planDedupe([e(), b()], ACCTS, { auto: 'certain' }); expect(certain.auto).toEqual([]); expect(certain.review).toMatchObject([{ confidence: 'likely' }])
+    const same = t({ id: 's', amount: 150, payee: 'AEP Ohio', date: '2026-10-20' })
+    expect(planDedupe([e(), same], ACCTS, { auto: 'certain' }).auto).toHaveLength(1)
+    const off = planDedupe([e(), same], ACCTS, { auto: 'off' }); expect(off.auto).toEqual([]); expect(off.review).toMatchObject([{ confidence: 'certain' }])
+  })
+})
+
+describe('entry-time lookalikes (0.27.0)', () => {
+  it('lists certain and likely matches for a row about to be saved, best first', () => {
+    const have = [bank({ id: 'b', amount: 62.4, payee: 'KROGER #123', date: '2026-10-21' }), t({ id: 'm', amount: 62.4, payee: 'Kroger', date: '2026-10-19', account_id: CHK }), bank({ id: 'x', amount: 62.4, payee: 'KROGER', date: '2026-09-01' })]
+    const hits = lookalikes({ date: '2026-10-21', kind: 'expense', amount: 62.4, payee: 'Kroger', account_id: CHK }, have)
+    expect(hits.map(h => h.txn.id)).toEqual(['b', 'm'])
+    expect(hits[0].pair.confidence).toBe('certain')
+    expect(lookalikes({ date: '2026-10-21', kind: 'expense', amount: 9.99, payee: 'Kroger', account_id: CHK }, have)).toEqual([])
+  })
+})

@@ -2,7 +2,9 @@
 
 **Owner:** Gary Thomas (garynthomas@gmail.com). **Origin:** spun off from CareerShift's finance modules (Monthly Budget & Finances, Credit Cards & Payments, Obligations & Hardship, Cash Runway, Income/Bills & Taxes, Bills & Money Tracker + the v1.24 email money-capture engine). **Goal:** a robust, modern, comprehensive budgeting / savings / financial-planning app in the spirit of Copilot (track & budget money), for income from all sources on any pay cadence, fixed / variable / irregular expenses, bills, debts, goals and forecasting.
 
-## State as of this handoff (v0.26.1)
+## State as of this handoff (v0.27.0)
+
+- **0.27.0 duplicates:** `planDedupe(rows, accounts, options)` — `DedupeOptions` (`auto` likely|certain|off, `transfers`, `checks`, `near`) stored in `household.settings.dedupe`; new `transferPairs` (own asset ↔ asset, needs a transfer hint), `checkPairs` (`CHECK_GAP_DAYS` 180, exempt from the group gap rule), `nearPairs` (review only, `NEAR_GAP_DAYS` 10, `nearAmount` = $3 or 25 %), `lookalikes` (entry-time warning in `AddTxn`). The sync function reads `households.settings.dedupe` (needs a redeploy of `sync-simplefin`). `autoDedupe` logs a `match` audit line. `?dups=1` on Transactions opens the review; Dashboard attention item `dups`.
 
 - **0.26.1:** Terminal redrawn — `Ticker` in `src/components/Layout.tsx` (Terminal + desktop only, `.ticker` CSS), `.eyebrow` date line, `meta` prop on `<Card>` for the header's right edge, `AList` rows carry `al-<severity>` and the desk shows tags via CSS `::before`, `cashBarsData/Layout` in Dashboard when `data-style=terminal`. The icon rail is the Terminal default when the user has not chosen (`LS('rail')`).
 

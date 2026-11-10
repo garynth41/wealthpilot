@@ -17,6 +17,7 @@ import { splitsFor, validateSplits, splitRemaining, isSplit } from '../lib/split
 import { DuplicatesReview, duplicateCounts } from './Duplicates'
 import { AttachmentsModal, attachmentsFor } from './Attachments'
 import { focusIdFrom, highlight } from '../lib/focus'
+import { lookalikes, type DTxn } from '../lib/dedupe'
 import { patchProblem, amountProblem, InputError } from '../lib/validate'
 import { useEffect } from 'react'
 
@@ -34,7 +35,7 @@ export function TransactionsPage() {
   const acctUpd = (id: string, p: Partial<Account>) => update('accounts', id, p)
   const pushUndo = useStore.getState().pushUndo
   const sp = spanFor(data, settings); const t = today()
-  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts), [data.transactions, data.duplicates, data.accounts]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
+  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
   const from = range === 'period' ? sp.start : range === '30' ? addDays(t, -29) : range === 'month' ? monthStart(curMonth()) : range === '90' ? addDays(t, -89) : '0000'
   const to = range === 'period' ? sp.end : '9999'
   const ids = useMemo(() => new Set((params.get('ids') || '').split(',').filter(Boolean)), [params])
@@ -42,6 +43,8 @@ export function TransactionsPage() {
   const focusId = focusIdFrom(params.toString() ? '?' + params.toString() : '')
   useEffect(() => { if (focusId && !rows.some(r => r.id === focusId) && data.transactions.some(t => t.id === focusId)) { setRange('all'); setKind('all'); setAcct(''); setTag('') } }, [focusId, rows, data.transactions])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const tg = params.get('tag'); if (tg) { setTag(tg); setRange('all') } if (params.get('kind') === 'uncat') setKind('uncat') }, [params])
+  const wantDups = params.get('dups') === '1'
+  useEffect(() => { if (wantDups) { const h = setTimeout(openDups, 250); return () => clearTimeout(h) } }, [wantDups])   // eslint-disable-line react-hooks/exhaustive-deps
   // a link that names a set (ids=, tag=, kind=uncat) rather than one row lands on the first row of that set (0.26.0)
   const firstOfSet = !focusId && (ids.size || params.get('tag') || params.get('kind')) ? ([...ids][0] || rows[0]?.id || '') : ''
   useEffect(() => { if (firstOfSet) setTimeout(() => highlight(firstOfSet), 200) }, [firstOfSet])
@@ -110,7 +113,7 @@ export function TransactionsPage() {
       {allTags.length > 0 && <div className="slicer"><div className="l">Tag</div><div className="opts"><button type="button" className={tag ? '' : 'on'} aria-pressed={!tag} onClick={() => setTag('')}>All</button>{allTags.map(tg => <button type="button" key={tg} className={tag === tg ? 'on' : ''} aria-pressed={tag === tg} onClick={() => setTag(tg)}>#{tg}</button>)}</div></div>}
       {canEdit && <div className="slicer"><div className="l">View</div><div className="opts"><button type="button" onClick={saveView} title="Pin the current range, type, account and tag as a named view">★ Save this view</button></div></div>}</div>
     {tag === REVIEW_TAG && rows.length > 0 && <div className="banner info" style={{ marginBottom: 12 }}>{rows.length} transaction{rows.length === 1 ? '' : 's'} flagged for review by your payee rules. Check each one, then clear the flag.{canEdit && <> <button type="button" className="btn sm" onClick={() => guarded(async () => { const before = rows.map(r => ({ id: r.id, tags: r.tags || [] })); for (const r of rows) await update('transactions', r.id, { tags: (r.tags || []).filter(x => x !== REVIEW_TAG) }); pushUndo({ label: 'mark reviewed', run: async () => { for (const b of before) await update('transactions', b.id, { tags: b.tags }) } }) }, `${rows.length} marked reviewed`)}>Mark all reviewed</button></>}</div>}
-    {(dupN.review > 0 || dupN.pendingAuto > 0) && <div className="banner" style={{ marginBottom: 12 }}>{dupN.pendingAuto > 0 ? `${dupN.pendingAuto} duplicate${dupN.pendingAuto === 1 ? '' : 's'} found` : ''}{dupN.pendingAuto > 0 && dupN.review > 0 ? ' · ' : ''}{dupN.review > 0 ? `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check` : ''} <button type="button" className="btn sm" onClick={openDups}>Review</button></div>}
+    {(dupN.review > 0 || dupN.pendingAuto > 0) && <div className="banner" style={{ marginBottom: 12 }}>{dupN.pendingAuto > 0 ? `${dupN.pendingAuto} duplicate${dupN.pendingAuto === 1 ? '' : 's'} found` : ''}{dupN.pendingAuto > 0 && dupN.review > 0 ? ' · ' : ''}{dupN.review > 0 ? `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check` : ''} <button type="button" className="btn sm" data-id="dups" onClick={openDups}>Review</button></div>}
     <Card title="Ledger" hint="click any cell to edit · amounts are always positive, the type gives the direction · every transaction appears once: duplicates are merged" right={<span className="btnrow"><Btn sm onClick={openDups}>Duplicates{dupN.merged ? ` (${dupN.merged} merged)` : ''}</Btn>{canEdit && <Btn primary sm onClick={addForm}>+ Add transaction</Btn>}</span>}>
       {canEdit && selected.size > 0 && <BulkBar n={selected.size} catOpts={catOpts(['expense', 'income', 'transfer']).map(c => [c.id, catLabels[c.id]] as [string, string])} allTags={allTags} onCategory={id => bulk({ category_id: id || null }, 'Category set')} onBudget={on => bulk({ exclude_from_budget: !on }, on ? 'Counted in budget' : 'Excluded from budget')} onTag={bulkTag} onDelete={bulkDel} onClear={() => setSelected(new Set())} />}
       <Table rows={rows} cols={cols} onChange={change} onDelete={del} editable={canEdit} caption="Transactions" rowLabel={r => `${r.payee || (r.kind === 'transfer' ? 'Transfer' : 'Transaction')}, ${fm2(r.amount)}, ${fmtD(r.date)}`} onSwipe={canEdit ? (r, dir) => { if (dir === 'left' && r.kind !== 'transfer') quickCat(r) } : undefined} swipeHint="Swipe a card left to categorize it" selected={canEdit ? selected : undefined} onSelect={canEdit ? setSelected : undefined} actions={r => <>{r.kind !== 'transfer' && canEdit ? <Btn sm onClick={() => openSplit(r)} title="Split this transaction across categories">{isSplit(data, r) ? `Split (${splitsFor(data, r.id).length})` : 'Split'}</Btn> : isSplit(data, r) ? <Pill cls="info">split</Pill> : null}<Btn sm onClick={() => openFiles(r)} title="Receipts and documents" aria-label={countName(attachmentsFor(data, r.id).length, 'receipt')}>{attachmentsFor(data, r.id).length ? `📎 ${attachmentsFor(data, r.id).length}` : '📎'}</Btn><Btn sm onClick={() => openComments(r)} title="Comments" aria-label={countName(commentsFor(data, r.id).length, 'comment')}>{commentsFor(data, r.id).length ? `💬 ${commentsFor(data, r.id).length}` : '💬'}</Btn></>} rowCls={r => r.status === 'void' ? 'st-idle ex-off' : r.status === 'pending' ? 'st-wait' : r.kind === 'income' ? 'st-good' : r.kind === 'transfer' ? 'st-info' : !r.category_id ? 'st-warn' : ''} empty="No transactions in this range. Add one, or sync your email on the Email page." />
@@ -129,12 +132,15 @@ export function AddTxn({ onDone, preset }: { onDone: () => void; preset?: Partia
   const kinds: Array<[TxnKind, string]> = [['expense', 'Expense'], ['income', 'Income'], ['transfer', 'Transfer / payment']]
   // 0.25.1: anything that cannot be saved says why under its field and the dialog stays open (Enter used to do nothing, silently)
   const [err, setErr] = useState<{ date?: string; amount?: string; to?: string }>({}); const formRef = useRef<HTMLFormElement>(null)
+  const [dupWarn, setDupWarn] = useState<string | null>(null); const dupOk = !!dupWarn   // once warned, the next Save adds the row anyway
   const submit = (e: FormEvent) => { e.preventDefault(); if (saving) return
     const problems = { date: f.date ? undefined : 'Enter the date.', amount: amountProblem(amt, { negative: 'Amounts are always positive — pick Expense, Income or Transfer above for the direction.' }) || undefined, to: f.kind === 'transfer' && !f.to_account_id ? 'Choose the account the money goes to.' : undefined }
     if (problems.date || problems.amount || problems.to) { setErr(problems); requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); return }
     setErr({}); const a = parseNum(amt)!
     setSaving(true)
     void guarded(async () => { const body = { ...f, amount: Math.round(a * 100) / 100, tags: f.tags || [], source: 'manual' as const, exclude_from_budget: !!f.exclude_from_budget }
+      // 0.27.0: the same transaction may already be here (the bank feed brought it, or it was typed twice) — ask before adding another copy
+      if (!dupOk) { const like = lookalikes(body as unknown as Omit<DTxn, 'id'>, data.transactions as unknown as DTxn[]); if (like.length) { const h = like[0]; setDupWarn(`${h.pair.confidence === 'certain' ? 'This is already here' : 'This may already be here'}: ${fm2(h.txn.amount)} ${h.txn.payee ? `to ${h.txn.payee} ` : ''}on ${fmtD(h.txn.date)}${h.txn.account_id ? ` (${acctLabels[h.txn.account_id] || ''})` : ''}${h.txn.external_id ? ', from the bank feed' : ''}. Save again to add it anyway.`); setSaving(false); return } }
       let row: Transaction
       // 0.25.1: a paycheck (Income → Paychecks ahead → Received) is logged once — if that payday's deposit is already on file, nothing is added
       if (body.kind === 'income' && body.pay_schedule_id) { const r = await logPaycheck(body); if (r.existing) { toast(`Already recorded: ${fm2(r.txn.amount)} on ${fmtD(r.txn.date)}${r.txn.payee ? ` from ${r.txn.payee}` : ''} — nothing was added`); onDone(); return } row = r.txn }
@@ -152,7 +158,8 @@ export function AddTxn({ onDone, preset }: { onDone: () => void; preset?: Partia
         : <Field label="Category"><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— uncategorized —</option>{catOpts(f.kind === 'income' ? 'income' : 'expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}</div>
     {f.kind === 'transfer' && <Field label="Budget line (optional)" hint={liabilityTo && isRevolving(data.accounts.find(a => a.id === f.to_account_id)!) ? 'not needed — a card payment is not spending: what you bought on the card already counts in its own lines' : liabilityTo ? 'e.g. Loan payments, so the payment counts in the budget' : ['savings', 'investment', 'retirement'].includes(data.accounts.find(a => a.id === f.to_account_id)?.kind || '') ? 'e.g. Emergency fund, so the transfer counts toward that line (as saving, not spending)' : 'e.g. Emergency fund, so the transfer counts toward that line'}><select className="inp" value={f.category_id || ''} onChange={e => set('category_id', e.target.value || null)}><option value="">— none —</option>{catOpts('expense').map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select></Field>}
     <div className="grid2"><Field label="Payee" hint={hint || undefined}><input className="inp" value={f.payee || ''} onChange={e => set('payee', e.target.value)} onBlur={onPayeeBlur} placeholder="Kroger, Landlord, Employer…" /></Field><Field label="Memo"><input className="inp" value={f.memo || ''} onChange={e => set('memo', e.target.value)} /></Field></div>
-  </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn type="submit" primary disabled={saving}>{saving ? 'Saving…' : 'Save'}</Btn></MFoot></form>
+  {dupWarn && <div className="msg warn" role="alert" style={{ marginTop: 8 }}>{dupWarn}</div>}
+  </MBody><MFoot><Btn onClick={onDone}>Cancel</Btn><Btn type="submit" primary disabled={saving}>{saving ? 'Saving…' : dupWarn ? 'Add it anyway' : 'Save'}</Btn></MFoot></form>
 }
 
 /** Split one transaction across categories. Slices must add up to the transaction; the parent's category becomes a display default. */

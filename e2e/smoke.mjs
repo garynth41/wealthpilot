@@ -36,6 +36,12 @@ for (const W of [1400, 390]) {
     await p.click('text=+ Add transaction'); await p.waitForTimeout(300); await p.fill('input[placeholder="0.00"]', '42.50'); await p.fill('input[placeholder="Kroger, Landlord, Employer…"]', 'Test grocer'); await p.selectOption('.modal select >> nth=2', { label: 'Food › Groceries' }); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(600)
     const after = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length); ok(after === before + 1, 'adding a transaction stores it')
     const chk = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.find(a => a.name === 'Huntington Checking').balance); ok(Math.abs(chk - (3184.22 - 42.5)) < 0.01, `checking balance moved by the expense (${chk})`)
+    // 0.27.0: typing the same transaction again warns first; Save again adds it (and the engine then merges the two certain copies into one)
+    await p.click('text=+ Add transaction'); await p.waitForTimeout(300); await p.fill('input[placeholder="0.00"]', '42.50'); await p.fill('input[placeholder="Kroger, Landlord, Employer…"]', 'Test grocer'); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(400)
+    ok((await p.locator('.modal .msg.warn').count()) === 1 && /already here/.test(await p.locator('.modal .msg.warn').textContent()), 'typing a transaction that is already here warns before saving')
+    await p.click('.modal button:has-text("Add it anyway")'); await p.waitForTimeout(900)
+    const dupes = await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('wealthpilot.demo')).data; return d.transactions.filter(t => t.payee === 'Test grocer').map(t => !!t.duplicate_of) })
+    ok(dupes.length === 2 && dupes.filter(Boolean).length === 1, `the second copy is merged into the first (${JSON.stringify(dupes)})`)
     // budget: plan edit
     await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(800); const inp = p.locator('table.tbl input.num').first(); await inp.fill('999'); await inp.blur(); await p.waitForTimeout(500)
     ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.lines.some(l => l.planned === 999)), 'editing a planned amount saves the budget line')
