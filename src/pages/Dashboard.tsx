@@ -17,6 +17,7 @@ import { fmtMoney, sum } from '../lib/money'
 import { addDays, diffDays, fmtD, fmtDY, today } from '../lib/dates'
 import { AddTxn } from './Transactions'
 import { linkTo } from '../lib/focus'
+import { duplicateCounts } from './Duplicates'
 import { hasMoneyData } from '../lib/onboarding'
 import { REVIEW_TAG } from '../lib/rules'
 import { revalueDue } from '../lib/assets'
@@ -41,6 +42,7 @@ export function Dashboard() {
   const nextPay = nextPaycheck(data, t, 60)   // a payday whose deposit is already on file is not "next" (0.25.1)
   const goals = data.goals.filter(g => g.status === 'Active').map(g => ({ g, p: goalProgress(data, g) })).sort((a, b) => a.g.priority - b.g.priority).slice(0, 4)
   // every item links to the page that fixes it and (0.26.0) highlights the exact record there: `id` is the data-id anchor on that page
+  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe])
   const attention: Array<{ c: string; t: string; m: string; d?: string; id?: string }> = []
   over.forEach(u => attention.push({ c: 'crit', id: 'due:' + u.r.id, t: `${u.r.name} is overdue`, m: `${fmtMoney(u.amount)} was due ${fmtDY(u.date)}`, d: 'Bills' }))
   { const fail = data.audit.find(e => e.kind === 'sync' || e.kind === 'sync_failure'); if (fail && fail.kind === 'sync_failure') attention.push({ c: 'crit', id: 'bank-sync', t: 'Bank sync failed', m: fail.summary.replace(/^Bank sync failed: /, '') + ' — balances kept from the last good sync', d: 'Cash & Account Operations' }) }
@@ -52,6 +54,8 @@ export function Dashboard() {
   ps?.lines.filter(l => l.state === 'crit').slice(0, 3).forEach(l => attention.push({ c: 'warn', id: 'line:' + l.cat.id, t: `${l.cat.name} is over budget`, m: `${fmtMoney(l.actual)} of ${fmtMoney(l.available)}`, d: 'Budget' }))
   { const n = data.transactions.filter(x => x.status !== 'void' && (x.tags || []).includes(REVIEW_TAG)).length; if (n) attention.push({ c: 'info', t: `${n} transaction${n === 1 ? '' : 's'} flagged for review`, m: 'your payee rules asked you to look at these', d: 'Review' }) }
   if (ps && ps.uncat > 0) attention.push({ c: 'info', t: `${fmtMoney(ps.uncat)} uncategorized this period`, m: 'categorize it so the budget is right', d: 'Uncategorized' })
+  // 0.27.0: transactions that may be the same one twice — the engine merges the clear cases itself; these need a person
+  if (dupN.review > 0) attention.push({ c: 'info', id: 'dups', t: `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check`, m: 'same payee and amount, or nearly — merge or keep both', d: 'Duplicates' })
   data.hardship.filter(h => !['Closed', 'Not needed', 'Declined', 'Enrolled'].includes(h.status) && h.next_followup && h.next_followup <= t).forEach(h => attention.push({ c: 'warn', id: h.id, t: `Call ${h.entity}`, m: `follow-up ${h.next_followup === t ? 'today' : 'was ' + fmtDY(h.next_followup!)}`, d: 'Hardship' }))
   revalueDue(data, t).forEach(r => attention.push({ c: 'info', id: 'asset:' + r.a.id, t: `Update the value of ${r.a.name}`, m: r.asOf ? `last valued ${fmtDY(r.asOf)} (${r.age} days ago)${r.estimate != null ? ` — the guide estimates ${fmtMoney(r.estimate)} now` : ''}` : 'no as-of date on the value yet', d: 'Accounts' }))
   creditTrends(data, t).filter(p => p.stale).forEach(p => attention.push({ c: 'info', t: `Add ${p.person === 'Me' ? 'your' : p.person + '\'s'} latest credit score`, id: 'credit-scores', m: `the last one is from ${fmtDY(p.latest.date)} — most card issuers show a free score each month`, d: 'Debts' }))
@@ -59,7 +63,7 @@ export function Dashboard() {
   if (!attention.length) attention.push(hasData ? { c: 'good', t: 'Nothing needs attention', m: 'bills are on track, cash is above the floor, the budget is within plan' } : { c: 'info', t: 'Nothing to check yet', m: 'add your accounts, income and bills — the checklist above walks through it — and this list starts watching them' })
   const last30 = rangeStat(data, addDays(t, -29), t); const grpRows = Object.entries(last30.byGroup).sort((a, b) => b[1] - a[1]).slice(0, 7)
   const desk = typeof document !== 'undefined' && document.documentElement.dataset.style === 'terminal'   // Terminal draws the cash card as bars
-  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Uncategorized: '/transactions?kind=uncat', Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
+  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Uncategorized: '/transactions?kind=uncat', Duplicates: '/transactions?dups=1', Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
   const cards: Record<string, ReactNode> = {
     setup: <SetupCard />,
     paycheck: <PaycheckCard />,
@@ -97,7 +101,7 @@ export function Dashboard() {
 
 type Cal = ReturnType<typeof cashCalendar>; type Cc = ReturnType<typeof C>
 /** Where an attention item leads, as the desk's short tag (0.26.1). */
-const SHORT: Record<string, string> = { Bills: 'bills', Accounts: 'accts', Email: 'email', Forecast: 'cash', Budget: 'budget', Transactions: 'ledger', Uncategorized: 'ledger', Review: 'review', Hardship: 'calls', Reconcile: 'recon', Debts: 'credit', 'Cash & Account Operations': 'sync' }
+const SHORT: Record<string, string> = { Duplicates: 'dupes', Bills: 'bills', Accounts: 'accts', Email: 'email', Forecast: 'cash', Budget: 'budget', Transactions: 'ledger', Uncategorized: 'ledger', Review: 'review', Hardship: 'calls', Reconcile: 'recon', Debts: 'credit', 'Cash & Account Operations': 'sync' }
 /** Terminal's cash card (0.26.1): one bar per day at that day's closing balance — amber, green where a paycheck lands, red at the low point. */
 function cashBarsData(cal: Cal, c: Cc) {
   const days = cal.daily.map(x => x.d); const pay = new Set(cal.items.filter(i => i.src === 'pay' && i.amt > 0).map(i => i.date)); const labels = new Map<string, string[]>()

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { DeleteAccountCard } from './DeleteAccount'
 import { remindersOn, setReminders, rescheduleReminders } from '../app/nativeReminders'
 import { isNative, passkeysAvailable, webPushAvailable, saveFile, publicUrl } from '../app/native'
@@ -7,6 +7,8 @@ import { AboutCard } from './About'
 import { offlineCopyOn, setOfflineCopy } from '../lib/offlineCache'
 import { passwordProblems } from '../lib/access'
 import { useData } from '../app/hooks'
+import { dedupeOptions } from '../lib/dedupe'
+import { duplicateCounts } from './Duplicates'
 import { STYLES, styleName, setStyle, themeMode, setThemeMode, type StyleName, type ThemeMode } from '../components/Layout'
 import { useStore } from '../app/store'
 import type { Category, PeriodType, Role } from '../app/data/types'
@@ -76,6 +78,7 @@ export function SettingsPage() {
     {tab === 'data' && <div className="grid g12">
       <Card span={6} title="Backup" hint="everything in this household as one JSON file"><div className="btnrow"><Btn primary onClick={exportJson}>Download JSON backup</Btn><Btn onClick={exportCsv}>Transactions as CSV</Btn></div><Note>Keep a backup before big changes. The JSON restores into any household; merging it where its records already are does not copy them.</Note></Card>
       <NightlyBackups />
+      <DedupeCard />
       <Card span={6} title="Restore" hint="from a JSON backup"><input type="file" ref={fileRef} accept="application/json" className="inp" /><div className="btnrow" style={{ marginTop: 8 }}><Btn onClick={() => importJson('merge')} disabled={!canEdit}>Merge into this household</Btn><Btn danger onClick={() => importJson('replace')} disabled={!canEdit}>Replace everything</Btn></div></Card>
       <Card span={12} title="Where your data is kept" hint="what is stored, where, and who can see it"><Note>{mode === 'demo' ? <>The offline demo keeps its sample data in this browser only — nothing is sent anywhere, and clearing the browser's site data removes it.</> : <>Everything in this household — accounts, transactions, budgets, bills, goals and files you add — is kept in Cresari's online database, encrypted where it is stored and on its way to you. Only the people listed under <b>Members</b> can see it, each with the access you gave them; the database itself enforces that, not just the app. Emails are never kept: only the amount, date and payee of what you file from them.</>}</Note></Card>
     </div>}
@@ -447,5 +450,23 @@ function Devices({ onSignOutOthers, onSignOutAll }: { onSignOutOthers: () => voi
     {err && <div className="msg warn">{err}</div>}
     <div className="btnrow" style={{ marginTop: 8 }}><Btn onClick={() => { onSignOutOthers(); setTimeout(load, 800) }}>Sign out all other devices</Btn><Btn danger onClick={onSignOutAll}>Sign out everywhere</Btn></div>
     <Note>Signing a device out stops it refreshing its session; anything it already has open stops working within the hour.</Note>
+  </Card>
+}
+
+/** Settings → Data → Duplicates (0.27.0): what the duplicate engine may do on its own, and a run-now with the result. */
+function DedupeCard() {
+  const { data, settings, canEdit, guarded } = useData(); const st = useStore.getState
+  const o = dedupeOptions(settings.dedupe); const [last, setLast] = useState<string | null>(null)
+  const counts = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe])
+  const save = (patch: Partial<typeof o>) => guarded(() => st().saveSettings({ dedupe: { ...o, ...patch } }), 'Saved')
+  const run = () => guarded(async () => { const n = await st().autoDedupe(true); const s = st(); const left = duplicateCounts(s.data.transactions, s.data.duplicates, s.data.accounts, s.settings().dedupe).review; setLast(`${n} merged just now · ${left} left to review`) })
+  return <Card span={6} title="Duplicates" hint="one copy of every transaction, whichever way it arrived">
+    <Field label="Merge on their own" hint="the bank's copy is kept and inherits the category, bill or goal from the copy it absorbs"><select className="inp" value={o.auto} onChange={e => save({ auto: e.target.value as typeof o.auto })} disabled={!canEdit} aria-label="Merge on their own">
+      <option value="likely">Certain and likely matches (recommended)</option><option value="certain">Certain matches only — same day, amount and payee</option><option value="off">Nothing — show every match for review</option></select></Field>
+    <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, margin: "6px 0" }}><input type="checkbox" style={{ marginTop: 3 }} checked={o.transfers} onChange={e => save({ transfers: e.target.checked })} disabled={!canEdit} /> Pair the two bank rows of a transfer between your own accounts into one transfer</label>
+    <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, margin: "6px 0" }}><input type="checkbox" style={{ marginTop: 3 }} checked={o.checks} onChange={e => save({ checks: e.target.checked })} disabled={!canEdit} /> Match a check you typed to the bank line that clears it, even months later</label>
+    <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, margin: "6px 0" }}><input type="checkbox" style={{ marginTop: 3 }} checked={o.near} onChange={e => save({ near: e.target.checked })} disabled={!canEdit} /> Show near-matches for review — same payee, amount a little different (a tip or tax) or posted up to 10 days later</label>
+    <div className="btnrow" style={{ marginTop: 10, alignItems: 'center', gap: 10 }}>{canEdit && <Btn onClick={run}>Check for duplicates now</Btn>}<span className="note" style={{ margin: 0 }}>{last || `${counts.merged} merged so far · ${counts.review} to review in Transactions → Duplicates`}</span></div>
+    <Note>Card and loan payments are paired (out of checking, onto the card) whenever merging on their own is on. Nothing is ever deleted: a merged copy is hidden from every total and can be restored from Transactions → Duplicates, after which it is never merged again. Every automatic merge is written to the change history.</Note>
   </Card>
 }

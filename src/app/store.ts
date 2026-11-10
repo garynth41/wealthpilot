@@ -185,8 +185,10 @@ export const useStore = create<State>((set, get) => ({
     if (deduping || !get().canEdit() || !get().repo) return 0
     deduping = true
     try {
-      const plan = planDedupe(get().data.transactions as unknown as DTxn[], get().data.accounts); let n = 0
+      const plan = planDedupe(get().data.transactions as unknown as DTxn[], get().data.accounts, get().household?.settings?.dedupe); let n = 0
       for (const g of plan.auto) { await get().mergeDuplicates(g.keeper, g.dups, g.patch as Partial<Transaction>); n += g.dups.length }
+      // every automatic merge leaves a line in the change history (0.27.0), so it can be found and undone later
+      if (n) { const byId = new Map(get().data.duplicates.map(t => [t.id, t])); const what = plan.auto.flatMap(g => g.dups.map(d => { const t = byId.get(d); return t ? `${t.date} ${t.payee || ''} ${Number(t.amount).toFixed(2)}` : d })).slice(0, 12).join('; '); void get().repo?.logAudit('match', `Merged ${n} duplicate transaction${n === 1 ? '' : 's'}: ${what}${plan.auto.length > 12 ? ' …' : ''}`, { groups: plan.auto.map(g => ({ keeper: g.keeper, dups: g.dups, reason: g.reason })) }).catch(() => {}) }
       if (n && !quiet) get().toast(`Merged ${n} duplicate transaction${n === 1 ? '' : 's'} — one copy kept (the bank's when there is one). Review or undo in Transactions → Duplicates.`)
       return n
     } finally { deduping = false }

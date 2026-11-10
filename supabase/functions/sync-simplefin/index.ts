@@ -10,7 +10,7 @@
 // Maintenance (pg_cron secret): { action: "maintenance_all", backfill_from?: "YYYY-MM-DD", dry_run?: true } — backfill (optional) and de-duplicate every household; dry_run only previews the merge plan.
 // The access URL contains the SimpleFIN credentials: it is only ever in sync_secrets (no browser access), never logged, never returned.
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { planDedupe, type DAccount, type DTxn } from './dedupe.ts'
+import { planDedupe, type DAccount, type DTxn, type DedupeOptions } from './dedupe.ts'
 import { verifiedBalance, type RTxn } from './reconcile.ts'
 import { syncLimitMessage, SYNC_GAP_MINUTES, SYNC_DAILY, type SyncSlot } from './syncLimit.ts'
 import { claimUrlFromToken, splitAccessUrl, redactUrl, syncWindows, mergeResponses, normaliseResponse, balanceFor, toNewTxns, dropKnown, type SfinResponse } from './simplefin.ts'
@@ -56,7 +56,10 @@ async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: nu
   // the accounts' kinds let the two bank rows of a card or loan payment (out of checking, onto the card) become one transfer (0.25.1)
   const { data: accts, error: ae } = await admin.from('accounts').select('id, kind, name, institution').eq('household_id', hh)
   if (ae) throw new Error('Reading accounts for de-duplication failed: ' + ae.message)
-  const plan = planDedupe(rows, (accts || []) as DAccount[]); let merged = 0
+  // the household's choices (0.27.0): what merges on its own, whether transfers, checks and near-matches are looked for
+  const { data: hhRow, error: he } = await admin.from('households').select('settings').eq('id', hh).maybeSingle()
+  if (he) throw new Error('Reading household settings for de-duplication failed: ' + he.message)
+  const plan = planDedupe(rows, (accts || []) as DAccount[], ((hhRow?.settings as { dedupe?: DedupeOptions } | null)?.dedupe) || null); let merged = 0
   if (dryRun) {
     const byId = new Map(rows.map(t => [t.id, t])); const brief = (id: string): Brief => { const t = byId.get(id)!; return { date: t.date, amount: t.amount, kind: t.kind, payee: t.payee ?? null, source: t.external_id?.startsWith('sfin:') ? 'bank' : t.source ?? null, account_id: t.account_id ?? t.to_account_id ?? null } }
     return { merged: plan.auto.reduce((n, g) => n + g.dups.length, 0), review: plan.review.length, preview: { auto: plan.auto.map(g => ({ keep: brief(g.keeper), merge: g.dups.map(brief), confidence: g.confidence, reason: g.reason, patch: g.patch })), review: plan.review.slice(0, 60).map(p => ({ a: brief(p.a), b: brief(p.b), reason: p.reason })) } }
