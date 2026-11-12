@@ -8,10 +8,12 @@
 // them has a bank figure (two accounts the bank reports separately are two real accounts, whatever they are called). Property and vehicles
 // are never compared. Nothing is merged without the owner pressing Merge.
 //
-// Merging keeps one account — the one with a bank figure, else the one with the most transactions, else an active one, else the oldest —
+// Merging keeps one account — the one with a bank figure, else one with reconciliations, else the most transactions, else an active one,
+// else the oldest —
 // and moves everything that points at the others onto it: transactions (both sides of a transfer), bills, statements, goals, holdings,
-// income deposits, reconciliations, email items, creditor outreach, autopay and loan links, and remembered email matches. What is owed now
-// (balance, statement, minimum, due date, autopay) comes from the freshest copy — an active one with the latest due or statement date —
+// income deposits, email items, creditor outreach, autopay and loan links, remembered email matches and the bank feed's match. Completed
+// reconciliations cannot be moved, so the copy that has them is the one kept (two reconciled copies are never offered). What is owed now
+// (balance, statement, minimum, due date, autopay) comes from the freshest copy — an active one whose balance was set most recently —
 // because the copies describe one debt, not several to add up; blanks on the kept account (last four, limit, APR) are filled from the
 // others. The other copies are then deleted. Their own balance history goes with them; the kept account's history is untouched.
 import type { Account, Data, Transaction } from '../app/data/types'
@@ -28,25 +30,28 @@ function txnCounts(d: Pick<Data, 'transactions'>): Map<string, number> {
   for (const t of d.transactions) { bump(t.account_id); if (t.to_account_id !== t.account_id) bump(t.to_account_id) }
   return m
 }
-const fresh = (a: Account) => `${a.status === 'Active' ? 1 : 0}|${(a.due_date || '').slice(0, 10)}|${(a.statement_date || '').slice(0, 10)}|${(a.balance_as_of || '').slice(0, 10)}|${a.updated_at || ''}`
+/** How current a copy's figures are: an active copy first, then the one whose balance was set last (its date, then when the row last changed) —
+ *  a later due date alone says nothing about which balance is newer. */
+const fresh = (a: Account) => `${a.status === 'Active' ? 1 : 0}|${(a.balance_as_of || '').slice(0, 10)}|${a.updated_at || ''}|${(a.due_date || '').slice(0, 10)}|${(a.statement_date || '').slice(0, 10)}`
 
 /** Groups of accounts that are the same account listed more than once, each with the copy to keep. */
-export function accountTwins(d: Pick<Data, 'accounts' | 'transactions'>): Twins[] {
-  const n = txnCounts(d); const groups = new Map<string, Account[]>()
+export function accountTwins(d: Pick<Data, 'accounts' | 'transactions'> & { reconciliations?: Data['reconciliations'] }): Twins[] {
+  const n = txnCounts(d); const reconciled = new Set((d.reconciliations || []).map(r => r.account_id)); const groups = new Map<string, Account[]>()
   for (const a of d.accounts) { if (isProperty(a) || a.excluded || !norm(a.name) || PLACEHOLDER.has(norm(a.name))) continue; const k = `${norm(a.name)}|${a.kind}|${norm(a.institution)}`; groups.set(k, [...(groups.get(k) || []), a]) }
   const out: Twins[] = []
   for (const [key, g] of groups) {
     if (g.length < 2) continue
     const last4 = new Set(g.map(a => String(a.last4 || '').slice(-4)).filter(Boolean)); if (last4.size > 1) continue   // different card numbers: different accounts
     if (g.filter(a => a.bank_balance != null).length > 1) continue                                                    // the bank reports them separately
-    const rank = (a: Account) => [a.bank_balance != null ? 1 : 0, n.get(a.id) || 0, a.status === 'Active' ? 1 : 0]
+    if (g.filter(a => reconciled.has(a.id)).length > 1) continue                                                      // completed reconciliations cannot be moved: two reconciled copies stay two accounts
+    const rank = (a: Account) => [a.bank_balance != null ? 1 : 0, reconciled.has(a.id) ? 1 : 0, n.get(a.id) || 0, a.status === 'Active' ? 1 : 0]
     const sorted = g.slice().sort((x, y) => { const X = rank(x), Y = rank(y); for (let i = 0; i < X.length; i++) if (X[i] !== Y[i]) return Y[i] - X[i]; return String(x.created_at || '').localeCompare(String(y.created_at || '')) || x.sort_order - y.sort_order || x.id.localeCompare(y.id) })
     out.push({ key, name: sorted[0].name, keeper: sorted[0], others: sorted.slice(1), counts: Object.fromEntries(g.map(a => [a.id, n.get(a.id) || 0])) })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-type Coll = 'transactions' | 'recurring' | 'statements' | 'goals' | 'holdings' | 'paySchedules' | 'reconciliations' | 'emailItems' | 'hardship' | 'accounts'
+type Coll = 'transactions' | 'recurring' | 'statements' | 'goals' | 'holdings' | 'paySchedules' | 'emailItems' | 'hardship' | 'accounts'
 export interface Move { coll: Coll; id: string; patch: Record<string, unknown> }
 export interface MergePlan { keeper: Account; others: Account[]; moves: Move[]; keeperPatch: Partial<Account>; rules: Record<string, { account?: string; category?: string; recurring?: string; none?: boolean }> | null; moved: { transactions: number; bills: number; statements: number; other: number } }
 
@@ -55,8 +60,10 @@ const CURRENT: Array<keyof Account> = ['balance', 'balance_as_of', 'statement_da
 /** Fields worth keeping from any copy when the kept account has none. */
 const FILL: Array<keyof Account> = ['last4', 'institution', 'credit_limit', 'apr', 'promo_apr', 'promo_until', 'beneficiary', 'color', 'icon']
 
-/** Everything that has to change to fold `others` into `keeper`. Nothing is written here — the store applies it. */
+/** Everything that has to change to fold `others` into `keeper`. Nothing is written here — the store applies it. Completed reconciliations
+ *  are immutable and are not moved: accountTwins keeps the copy that has them, and a copy with reconciliations is refused as one to remove. */
 export function planAccountMerge(d: Data, keeper: Account, others: Account[], finmailRules?: MergePlan['rules']): MergePlan {
+  const locked = others.find(o => d.reconciliations.some(r => r.account_id === o.id)); if (locked) throw new Error(`${locked.name} has completed reconciliations, which cannot be moved — keep that copy instead`)
   const gone = new Set(others.map(a => a.id)); const to = keeper.id; const moves: Move[] = []
   const swap = (id?: string | null) => (id && gone.has(id) ? to : id)
   const moved = { transactions: 0, bills: 0, statements: 0, other: 0 }
@@ -70,7 +77,7 @@ export function planAccountMerge(d: Data, keeper: Account, others: Account[], fi
   // a statement for a date the kept account already has one for stays behind (and goes with its copy): the same statement, not a second one
   const have = new Set(d.statements.filter(s => s.account_id === to).map(s => s.statement_date.slice(0, 10)))
   for (const s of d.statements) if (gone.has(s.account_id) && !have.has(s.statement_date.slice(0, 10))) { have.add(s.statement_date.slice(0, 10)); moves.push({ coll: 'statements', id: s.id, patch: { account_id: to } }); moved.statements++ }
-  const simple: Array<[Coll, Array<{ id: string }>, string]> = [['goals', d.goals, 'account_id'], ['holdings', d.holdings, 'account_id'], ['paySchedules', d.paySchedules, 'deposit_account_id'], ['reconciliations', d.reconciliations, 'account_id'], ['emailItems', d.emailItems, 'account_id'], ['hardship', d.hardship, 'account_id'], ['accounts', d.accounts.filter(a => !gone.has(a.id)), 'autopay_account_id'], ['accounts', d.accounts.filter(a => !gone.has(a.id)), 'linked_account_id']]
+  const simple: Array<[Coll, Array<{ id: string }>, string]> = [['goals', d.goals, 'account_id'], ['holdings', d.holdings, 'account_id'], ['paySchedules', d.paySchedules, 'deposit_account_id'], ['emailItems', d.emailItems, 'account_id'], ['hardship', d.hardship, 'account_id'], ['accounts', d.accounts.filter(a => !gone.has(a.id)), 'autopay_account_id'], ['accounts', d.accounts.filter(a => !gone.has(a.id)), 'linked_account_id']]
   for (const [coll, rows, col] of simple) for (const r of rows) { const v = (r as unknown as Record<string, string | null | undefined>)[col]; if (v && gone.has(v)) { moves.push({ coll, id: r.id, patch: { [col]: to } }); moved.other++ } }
   // what is owed now comes from the freshest copy; blanks on the kept account are filled from the others
   const all = [keeper, ...others]; const newest = all.slice().sort((x, y) => fresh(y).localeCompare(fresh(x)))[0]
@@ -83,9 +90,13 @@ export function planAccountMerge(d: Data, keeper: Account, others: Account[], fi
   return { keeper, others, moves, keeperPatch: keeperPatch as Partial<Account>, rules, moved }
 }
 
-/** Is there already an account a new one would be a copy of? Used before anything creates an account on its own (email capture). */
+/** Is there already an account a new one would be a copy of? Used before anything creates an account on its own (email capture). With a
+ *  last four: the account with those digits, else one on file without any (the same card, not yet numbered) when it is the only such one.
+ *  Without: the match only when the candidates do not name different cards. Never a guess between two. */
 export function accountLike(accounts: Account[], row: Pick<Account, 'name' | 'kind'> & { institution?: string | null; last4?: string | null }): Account | null {
-  const want = String(row.last4 || '').slice(-4)
-  const hits = accounts.filter(a => !isProperty(a) && a.kind === row.kind && norm(a.name) === norm(row.name) && (!norm(row.institution) || !norm(a.institution) || norm(a.institution) === norm(row.institution)) && (!want || !a.last4 || String(a.last4).slice(-4) === want))
-  return hits.sort((x, y) => (y.status === 'Active' ? 1 : 0) - (x.status === 'Active' ? 1 : 0) || String(x.created_at || '').localeCompare(String(y.created_at || '')))[0] || null
+  const want = String(row.last4 || '').slice(-4); const l4 = (a: Account) => String(a.last4 || '').slice(-4)
+  const named = accounts.filter(a => !isProperty(a) && a.kind === row.kind && norm(a.name) === norm(row.name) && (!norm(row.institution) || !norm(a.institution) || norm(a.institution) === norm(row.institution)))
+  const best = (list: Account[]) => list.slice().sort((x, y) => (y.status === 'Active' ? 1 : 0) - (x.status === 'Active' ? 1 : 0) || String(x.created_at || '').localeCompare(String(y.created_at || '')))[0] || null
+  if (want) { const exact = named.filter(a => l4(a) === want); if (exact.length) return best(exact); const blank = named.filter(a => !l4(a)); return blank.length === 1 ? blank[0] : null }
+  return new Set(named.map(l4).filter(Boolean)).size > 1 ? null : best(named)
 }

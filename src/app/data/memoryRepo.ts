@@ -45,7 +45,8 @@ export class MemoryRepo implements Repo {
   }
   private nextRef(coll: Collection) { const p = PREFIX[coll]; if (!p) return undefined; const rows = this.data[coll] as Array<{ ref?: string | null }>; const n = Math.max(0, ...rows.map(r => +String(r.ref || '').split('-')[1] || 0)) + 1; return `${p}-${String(n).padStart(3, '0')}` }
   async insert<C extends Collection>(coll: C, row: Partial<RowOf<C>>) {
-    const r = { ...row, id: (row as { id?: string }).id || demoId(), household_id: this.household.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as RowOf<C> & { ref?: string | null }
+    const supplied = (row as { id?: string }).id; if (supplied) demoIdsAfter([supplied])   // a restored id must not be handed out again later
+    const r = { ...row, id: supplied || demoId(), household_id: this.household.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } as RowOf<C> & { ref?: string | null }
     if ('ref' in r || PREFIX[coll]) { if (!r.ref) r.ref = this.nextRef(coll) }
     if (coll === 'holdings') { const h = r as unknown as { quantity: number; price: number; value?: number }; h.value = Math.round((+h.quantity || 0) * (+h.price || 0) * 100) / 100 }   // mirrors the DB's generated column
     if (coll === 'balances') throw new Error('Balance history is written by the database')

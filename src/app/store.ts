@@ -192,14 +192,21 @@ export const useStore = create<State>((set, get) => ({
   },
   async notDuplicates(ids) { for (const id of ids) await get().update('transactions', id, { dedupe_ok: true }) },
   // Leaving an account out (0.28.0). The flag goes first, so nothing pairs across the line while the transfers are taken apart; the data is
-  // then read again and split (toView), which is what actually takes the account off every page.
+  // then read again and split (toView), which is what actually takes the account off every page. If a write fails part-way the flag is
+  // put back, so the account is counted as before and the engine re-pairs whatever was taken apart; and asking again for an account that
+  // is already off finishes any pair an earlier attempt did not reach, so a retry always completes the job.
   async leaveAccountOut(id, off) {
     const repo = need(get); const d = get().data
     const a = everyAccount(d).find(x => x.id === id); if (!a) throw new Error('That account is no longer here — refresh and try again')
-    if (!!a.excluded === off) return 0
-    const pairs = off ? unpairForLeavingOut(d, id) : []
-    await repo.update('accounts', id, { excluded: off } as Partial<Account>)
-    await inChunks(pairs, async u => { await repo.update('transactions', u.keeper, u.patch); await repo.update('transactions', u.restore, { duplicate_of: null }) })
+    const was = !!a.excluded; const pairs = off ? unpairForLeavingOut(d, id) : []
+    if (was === off && !pairs.length) return 0
+    if (was !== off) await repo.update('accounts', id, { excluded: off } as Partial<Account>)
+    try { await inChunks(pairs, async u => { await repo.update('transactions', u.keeper, u.patch); await repo.update('transactions', u.restore, { duplicate_of: null }) }) }
+    catch (e) {
+      if (was !== off) { try { await repo.update('accounts', id, { excluded: was } as Partial<Account>) } catch { /* the retry above finishes it */ } }
+      await get().refresh().catch(() => {})
+      throw new Error(`${a.name} could not be left out just now (${(e as Error).message}). Nothing is lost — try again.`)
+    }
     void repo.logAudit('correction', off ? `${a.name} left out of the figures${pairs.length ? ` — ${pairs.length} transfer${pairs.length === 1 ? '' : 's'} with your other accounts now read as money in or out` : ''}` : `${a.name} counted again`, { excluded: off, unpaired: pairs.map(u => ({ keeper: u.keeper, restored: u.restore })) }, id).catch(() => {})
     await get().refresh()
     return pairs.length
@@ -209,11 +216,17 @@ export const useStore = create<State>((set, get) => ({
     const keeper = d.accounts.find(a => a.id === keeperId); const others = d.accounts.filter(a => otherIds.includes(a.id) && a.id !== keeperId)
     if (!keeper || !others.length) throw new Error('Those accounts are no longer here — refresh and try again')
     const plan = planAccountMerge(d, keeper, others, get().settings().finmail?.rules || null)
+    // the bank feed's match (which bank account goes into which of ours) is kept by id: a copy that is matched hands its feed to the kept
+    // account before it is deleted — and two copies each matched to a bank account are two real accounts, so that merge is refused
+    const map = await repo.syncStatus().then(st => st.connection?.account_map || null).catch(() => null); const gone = new Set(others.map(o => o.id)); let nextMap: Record<string, string> | null = null
+    if (map) { const fed = Object.values(map).filter(v => gone.has(v)); if (fed.length && (fed.length > 1 || Object.values(map).includes(keeper.id))) throw new Error(`The bank feed reports ${keeper.name} as separate accounts — they are not copies and were left as they are`)
+      if (fed.length) nextMap = Object.fromEntries(Object.entries(map).map(([k, v]) => [k, gone.has(v) ? keeper.id : v])) }
+    if (nextMap) await repo.syncSetMap(nextMap)
     await inChunks(plan.moves, m => repo.update(m.coll, m.id, m.patch as never))
     if (Object.keys(plan.keeperPatch).length) await repo.update('accounts', keeper.id, plan.keeperPatch)
     if (plan.rules) await get().saveSettings({ finmail: { ...(get().settings().finmail || {}), rules: plan.rules } })
     for (const o of others) await repo.remove('accounts', o.id)
-    void repo.logAudit('correction', `Merged ${others.length} cop${others.length === 1 ? 'y' : 'ies'} of ${keeper.name} into one account`, { keeper: keeper.id, removed: others.map(o => ({ id: o.id, ref: o.ref || null, balance: o.balance, status: o.status })), moved: plan.moved, keeperPatch: plan.keeperPatch }, keeper.id).catch(() => {})
+    void repo.logAudit('correction', `Merged ${others.length} cop${others.length === 1 ? 'y' : 'ies'} of ${keeper.name} into one account`, { keeper: keeper.id, removed: others.map(o => ({ id: o.id, ref: o.ref || null, balance: o.balance, status: o.status })), moved: plan.moved, keeperPatch: plan.keeperPatch, feed: !!nextMap }, keeper.id).catch(() => {})
     await get().refresh()
     return plan.moves.length
   },

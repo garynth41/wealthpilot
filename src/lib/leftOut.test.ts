@@ -40,6 +40,19 @@ describe('leaving an account out of the figures', () => {
     expect(v.paySchedules.map(r => r.id)).toEqual(['p2']); expect(v.goals.map(r => r.id)).toEqual(['g2'])
   })
 
+  it('what email capture filed against it and creditor calls about it go too', () => {
+    const d = base(); d.emailItems = [{ id: 'e1', account_id: 'son', kind: 'pastdue' }, { id: 'e2', account_id: 'card', kind: 'bill' }, { id: 'e3', account_id: null, kind: 'paid' }] as never
+    d.hardship = [{ id: 'h1', account_id: 'son' }, { id: 'h2', account_id: 'card' }] as never
+    const v = leaveOut(d); expect(v.emailItems.map(e => e.id)).toEqual(['e2', 'e3']); expect(v.off!.emailItems.map(e => e.id)).toEqual(['e1']); expect(v.hardship.map(h => h.id)).toEqual(['h2'])
+  })
+  it('recorded net-worth snapshots are read without it, so the history does not step on the day it is left out', () => {
+    const d = base(); d.accounts = [...d.accounts, acct('sonCard', 'credit_card', { excluded: true }), acct('sonOld', 'savings', { excluded: true, status: 'Closed' })]
+    d.snapshots = [{ id: 's1', household_id: 'h', date: '2026-10-01', cash: 1500, assets: 9000, liabilities: 700, by_account: { mine: 1000, son: 500, save: 7500, card: 400, sonCard: 300, sonOld: 99 } }, { id: 's2', household_id: 'h', date: '2026-09-01', cash: 900, assets: 900, liabilities: 0, by_account: { mine: 900 } }]
+    const v = leaveOut(d)
+    expect(v.snapshots[0]).toMatchObject({ cash: 1000, assets: 8500, liabilities: 400, by_account: { mine: 1000, save: 7500, card: 400, sonOld: 99 } })   // a closed account was not in the totals: nothing to take off
+    expect(v.snapshots[1]).toBe(d.snapshots[1])                                // a snapshot that never held it is untouched
+    expect(d.snapshots[0].assets).toBe(9000)                                   // and the stored snapshot is not changed
+  })
   it('is what the store shows: merged copies split first, then the left-out account', () => {
     const d = base(); d.transactions = [tx({ id: 'a', account_id: 'mine' }), tx({ id: 'b', account_id: 'son' }), tx({ id: 'c', account_id: 'mine', duplicate_of: 'a' })]
     const v = toView(d)
@@ -73,6 +86,9 @@ describe('transfers across the line', () => {
     ])
     expect(plan.every(u => !('dedupe_ok' in u.patch))).toBe(true)   // not marked "not a duplicate": counted again, they pair again
     expect(leftOutSummary(d, 'son')).toMatchObject({ pairs: 2, crossing: 3, txns: 0 })
+    // a second attempt after the flag is set (the first one failed part-way): the pair it did not reach is still found, its merged row now off the books
+    const half = leaveOut({ ...d, accounts: d.accounts.map(a => (a.id === 'son' ? { ...a, excluded: true } : a)), transactions: [{ ...out.k, ...plan[0].patch } as Transaction, back.k, own.k, typed, { ...out.dup, duplicate_of: null }], duplicates: [back.dup, own.dup] })
+    expect(unpairForLeavingOut(half, 'son')).toEqual([plan[1]])
     // applied, then viewed with the account off: money out on my account, money in on my account, the rest off the books
     const after: Data = { ...d, accounts: d.accounts.map(a => (a.id === 'son' ? { ...a, excluded: true } : a)), transactions: [{ ...out.k, ...plan[0].patch }, { ...back.k, ...plan[1].patch }, own.k, typed, { ...out.dup, duplicate_of: null }, { ...back.dup, duplicate_of: null }] as Transaction[], duplicates: [own.dup] }
     const v = leaveOut(after)

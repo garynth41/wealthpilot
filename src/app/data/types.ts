@@ -237,6 +237,6 @@ export interface Data {
   off?: OffBooks
 }
 /** What a left-out account takes with it: its own rows only. Nothing here is counted or listed outside the Accounts page. */
-export interface OffBooks { accounts: Account[]; transactions: Transaction[]; duplicates: Transaction[]; recurring: Recurring[]; paySchedules: PaySchedule[]; statements: Statement[]; balances: BalancePoint[]; holdings: Holding[]; reconciliations: Reconciliation[]; goals: Goal[] }
+export interface OffBooks { accounts: Account[]; transactions: Transaction[]; duplicates: Transaction[]; recurring: Recurring[]; paySchedules: PaySchedule[]; statements: Statement[]; balances: BalancePoint[]; holdings: Holding[]; reconciliations: Reconciliation[]; goals: Goal[]; emailItems: EmailItem[]; hardship: Hardship[] }
 export const emptyData = (): Data => ({ balances: [], scores: [], lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

@@ -50,6 +50,18 @@ describe('the same account listed more than once', () => {
     expect(p.keeperPatch).toMatchObject({ balance: 0, due_date: '2026-11-05', minimum_payment: 67, last4: '9911' })   // the active copy due last, not 618 + 0 − 134
     expect(p.rules).toEqual({ flexrent: { account: '4' }, ollo: { account: 'x' } })
   })
+  it('what is owed comes from the copy whose balance was set last, not the one due latest', () => {
+    const keeper = acct('1', 'Card', 'credit_card', { balance: 100, balance_as_of: '2026-10-01', due_date: '2026-12-20' }); const other = acct('2', 'Card', 'credit_card', { balance: 60, balance_as_of: '2026-11-05', due_date: '2026-11-20' })
+    expect(planAccountMerge(data([keeper, other]), keeper, [other]).keeperPatch).toMatchObject({ balance: 60, balance_as_of: '2026-11-05', due_date: '2026-11-20' })
+  })
+  it('completed reconciliations cannot be moved: that copy is the one kept, two reconciled copies are not offered, and removing one is refused', () => {
+    const a = acct('1', 'Checking', 'checking'), b = acct('2', 'Checking', 'checking'); const txns = [tx('a', { account_id: '1' }), tx('b', { account_id: '1' })]
+    const rec = (id: string, account_id: string) => ({ id, account_id }) as never
+    expect(accountTwins(data([a, b], { transactions: txns, reconciliations: [rec('k1', '2')] }))[0].keeper.id).toBe('2')
+    expect(accountTwins(data([a, b], { transactions: txns, reconciliations: [rec('k1', '1'), rec('k2', '2')] }))).toEqual([])
+    expect(() => planAccountMerge(data([a, b], { reconciliations: [rec('k1', '2')] }), a, [b])).toThrow(/reconciliations/)
+    expect(planAccountMerge(data([a, b], { reconciliations: [rec('k1', '2')] }), b, [a]).moves.every(m => (m.coll as string) !== 'reconciliations')).toBe(true)
+  })
   it('a paid-off account is active again when one of its copies is', () => {
     const keeper = acct('1', 'Loan', 'loan', { status: 'Paid off', bank_balance: 0 }); const other = acct('2', 'Loan', 'loan', { balance: 50 })
     expect(planAccountMerge(data([keeper, other]), keeper, [other]).keeperPatch).toMatchObject({ status: 'Active', balance: 50 })
@@ -62,5 +74,11 @@ describe('the same account listed more than once', () => {
     expect(accountLike(list, { name: 'Indigo', kind: 'credit_card', last4: '1234' })).toBeNull()                       // another card from the same issuer
     expect(accountLike(list, { name: 'Indigo', kind: 'store_card' })).toBeNull()
     expect(accountLike(list, { name: 'Mission Lane', kind: 'credit_card' })).toBeNull()
+    // never a guess between two cards: the exact last four wins over a blank one, and with no last four two numbered cards are ambiguous
+    const cards = [acct('a', 'Visa', 'credit_card'), acct('b', 'Visa', 'credit_card', { last4: '1111' }), acct('c', 'Visa', 'credit_card', { last4: '2222' })]
+    expect(accountLike(cards, { name: 'Visa', kind: 'credit_card', last4: '1111' })?.id).toBe('b')
+    expect(accountLike(cards, { name: 'Visa', kind: 'credit_card', last4: '3333' })?.id).toBe('a')   // the one copy not numbered yet
+    expect(accountLike(cards, { name: 'Visa', kind: 'credit_card' })).toBeNull()
+    expect(accountLike([...cards, acct('d', 'Visa', 'credit_card')], { name: 'Visa', kind: 'credit_card', last4: '3333' })).toBeNull()
   })
 })

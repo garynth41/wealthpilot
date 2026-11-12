@@ -14,10 +14,15 @@
 // in the bank reported, the other row goes off the books with its account — and the engine does not pair across the line while it is off.
 // Switched back on, the engine pairs them again on its next run. A transfer typed by hand across the line stays a transfer; budget.flowOf
 // reads it as spending (money sent to the left-out account) or income (money that came from it).
-import type { Account, Data, OffBooks, Transaction } from '../app/data/types'
+//
+// Also off the books with the account: the bills paid from it, income deposited to it, goals saved in it, its statements, balance history,
+// holdings and reconciliations, what email capture filed against it and creditor calls about it. Recorded net-worth snapshots are read
+// without its balance (withoutAccounts), so the history does not step on the day it is left out.
+import type { Account, Data, NetWorthSnapshot, OffBooks, Transaction } from '../app/data/types'
+import { LIABILITY_KINDS } from '../app/data/types'
 import { unpairPatch, type DTxn } from './dedupe'
 
-export const emptyOff = (): OffBooks => ({ accounts: [], transactions: [], duplicates: [], recurring: [], paySchedules: [], statements: [], balances: [], holdings: [], reconciliations: [], goals: [] })
+export const emptyOff = (): OffBooks => ({ accounts: [], transactions: [], duplicates: [], recurring: [], paySchedules: [], statements: [], balances: [], holdings: [], reconciliations: [], goals: [], emailItems: [], hardship: [] })
 export const offOf = (d: Pick<Data, 'off'>): OffBooks => d.off || emptyOff()
 /** Every account the household has, counted or not — for the few places that must not lose sight of one (bank matching, names). */
 export const everyAccount = (d: Pick<Data, 'accounts' | 'off'>): Account[] => (d.off?.accounts.length ? [...d.accounts, ...d.off.accounts] : d.accounts)
@@ -52,17 +57,34 @@ export function leaveOut(d: Data): Data {
     holdings: split(d.holdings, h => on(h.account_id), o.holdings),
     reconciliations: split(d.reconciliations, r => on(r.account_id), o.reconciliations),
     goals: split(d.goals, g => on(g.account_id), o.goals),
+    // what email capture filed against the account (a past-due notice would otherwise still raise an alert) and creditor calls about it
+    emailItems: split(d.emailItems, e => on(e.account_id), o.emailItems),
+    hardship: split(d.hardship, h => on(h.account_id), o.hardship),
+    snapshots: d.snapshots.map(s => withoutAccounts(s, offAccts)),
   }
+}
+const LIAB = new Set<string>(LIABILITY_KINDS); const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
+/** A recorded net-worth snapshot read without the left-out accounts: each one's balance that day (by_account) comes off the assets,
+ *  liabilities and cash it was counted in, so the history and "change since" do not step on the day an account is left out. The stored
+ *  snapshot is not changed — counted again, the account is back in its history. (Which totals it was in is taken from how the account is
+ *  set today: active, in net worth, counts as cash.) */
+function withoutAccounts(s: NetWorthSnapshot, offAccts: Account[]): NetWorthSnapshot {
+  const by = s.by_account || {}; let assets = +s.assets || 0, liabilities = +s.liabilities || 0, cash = +s.cash || 0, hit = false; const rest = { ...by }
+  for (const a of offAccts) { if (!(a.id in by) || a.status !== 'Active') continue; const v = +by[a.id] || 0; hit = true; delete rest[a.id]
+    if (LIAB.has(a.kind)) { if (a.include_in_net_worth) liabilities -= Math.max(0, v) } else { if (a.include_in_net_worth) assets -= v; if (a.include_in_cash) cash -= v } }
+  return hit ? { ...s, assets: r2(assets), liabilities: r2(liabilities), cash: r2(cash), by_account: rest } : s
 }
 
 export interface Unpair { keeper: string; patch: Partial<Transaction>; restore: string }
 /** Before an account is switched off: the paired transfers and payments that have it on one side and a counted account on the other, and how
  *  to take each apart — the kept row goes back to the expense the bank reported (its category is cleared when that was a transfer category,
  *  so it shows as uncategorized spending to be filed), and the merged row is restored. Unlike restoring a duplicate by hand, the rows are
- *  not marked "not a duplicate": switched back on, the account's transfers are paired again. */
-export function unpairForLeavingOut(d: Pick<Data, 'transactions' | 'duplicates' | 'categories' | 'accounts'>, accountId: string): Unpair[] {
+ *  not marked "not a duplicate": switched back on, the account's transfers are paired again. Works the same once the account is already
+ *  off (a pair still joined across the line is one a failed attempt did not reach). */
+export function unpairForLeavingOut(d: Pick<Data, 'transactions' | 'duplicates' | 'categories' | 'accounts'> & { off?: Data['off'] }, accountId: string): Unpair[] {
   const counted = new Set(d.accounts.filter(a => !a.excluded && a.id !== accountId).map(a => a.id))
-  const dupsOf = new Map<string, Transaction[]>(); for (const x of d.duplicates || []) if (x.duplicate_of) dupsOf.set(x.duplicate_of, [...(dupsOf.get(x.duplicate_of) || []), x])
+  // merged rows on the account itself are in data.off once it is switched off: looked at too, so the plan can be finished on a second attempt
+  const dupsOf = new Map<string, Transaction[]>(); for (const x of [...(d.duplicates || []), ...(d.off?.duplicates || [])]) if (x.duplicate_of) dupsOf.set(x.duplicate_of, [...(dupsOf.get(x.duplicate_of) || []), x])
   const transferCat = new Set(d.categories.filter(c => c.kind === 'transfer').map(c => c.id))
   const out: Unpair[] = []
   for (const k of d.transactions) {
