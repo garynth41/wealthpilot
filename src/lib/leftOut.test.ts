@@ -89,6 +89,11 @@ describe('transfers across the line', () => {
     // a second attempt after the flag is set (the first one failed part-way): the pair it did not reach is still found, its merged row now off the books
     const half = leaveOut({ ...d, accounts: d.accounts.map(a => (a.id === 'son' ? { ...a, excluded: true } : a)), transactions: [{ ...out.k, ...plan[0].patch } as Transaction, back.k, own.k, typed, { ...out.dup, duplicate_of: null }], duplicates: [back.dup, own.dup] })
     expect(unpairForLeavingOut(half, 'son')).toEqual([plan[1]])
+    // an attempt that stopped between the two writes of one pair (its merged row restored, the keeper not yet changed): the keeper is still a
+    // bank-feed transfer with both accounts, so it is found and finished — with nothing left to restore
+    const between = leaveOut({ ...d, accounts: d.accounts.map(a => (a.id === 'son' ? { ...a, excluded: true } : a)), transactions: [out.k, back.k, own.k, typed, { ...out.dup, duplicate_of: null }, { ...back.dup, duplicate_of: null }], duplicates: [own.dup] })
+    expect(unpairForLeavingOut(between, 'son')).toEqual([{ keeper: out.k.id, patch: plan[0].patch }, { keeper: back.k.id, patch: plan[1].patch }])
+    expect(unpairForLeavingOut(between, 'son').every(u => u.keeper !== typed.id)).toBe(true)   // a transfer typed by hand is never rewritten
     // applied, then viewed with the account off: money out on my account, money in on my account, the rest off the books
     const after: Data = { ...d, accounts: d.accounts.map(a => (a.id === 'son' ? { ...a, excluded: true } : a)), transactions: [{ ...out.k, ...plan[0].patch }, { ...back.k, ...plan[1].patch }, own.k, typed, { ...out.dup, duplicate_of: null }, { ...back.dup, duplicate_of: null }] as Transaction[], duplicates: [own.dup] }
     const v = leaveOut(after)

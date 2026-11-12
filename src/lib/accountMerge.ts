@@ -46,6 +46,7 @@ export function accountTwins(d: Pick<Data, 'accounts' | 'transactions'> & { reco
     if (g.filter(a => reconciled.has(a.id)).length > 1) continue                                                      // completed reconciliations cannot be moved: two reconciled copies stay two accounts
     const rank = (a: Account) => [a.bank_balance != null ? 1 : 0, reconciled.has(a.id) ? 1 : 0, n.get(a.id) || 0, a.status === 'Active' ? 1 : 0]
     const sorted = g.slice().sort((x, y) => { const X = rank(x), Y = rank(y); for (let i = 0; i < X.length; i++) if (X[i] !== Y[i]) return Y[i] - X[i]; return String(x.created_at || '').localeCompare(String(y.created_at || '')) || x.sort_order - y.sort_order || x.id.localeCompare(y.id) })
+    if (sorted.slice(1).some(a => reconciled.has(a.id))) continue                                                     // the reconciled copy must be the one kept (it is not the bank-fed one): left as two
     out.push({ key, name: sorted[0].name, keeper: sorted[0], others: sorted.slice(1), counts: Object.fromEntries(g.map(a => [a.id, n.get(a.id) || 0])) })
   }
   return out.sort((a, b) => a.name.localeCompare(b.name))
@@ -88,6 +89,16 @@ export function planAccountMerge(d: Data, keeper: Account, others: Account[], fi
   let rules: MergePlan['rules'] = null
   if (finmailRules && Object.values(finmailRules).some(r => r.account && gone.has(r.account))) rules = Object.fromEntries(Object.entries(finmailRules).map(([k, r]) => [k, r.account && gone.has(r.account) ? { ...r, account: to } : r]))
   return { keeper, others, moves, keeperPatch: keeperPatch as Partial<Account>, rules, moved }
+}
+
+/** The bank feed's saved match (bank account id → our account id) after a merge: each copy being removed hands its feed to the kept account.
+ *  null when no removed copy is matched (nothing to save). Throws when two of the accounts are each matched to a bank account — the bank
+ *  reports them separately, so they are two real accounts and must not be merged. */
+export function feedRemap(map: Record<string, string> | null | undefined, keeperId: string, goneIds: string[], name = 'this account'): Record<string, string> | null {
+  if (!map) return null
+  const gone = new Set(goneIds); const fed = Object.values(map).filter(v => gone.has(v)); if (!fed.length) return null
+  if (fed.length > 1 || Object.values(map).includes(keeperId)) throw new Error(`The bank feed reports ${name} as separate accounts — they are not copies and were left as they are`)
+  return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, gone.has(v) ? keeperId : v]))
 }
 
 /** Is there already an account a new one would be a copy of? Used before anything creates an account on its own (email capture). With a

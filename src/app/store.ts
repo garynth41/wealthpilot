@@ -15,7 +15,7 @@ import { post } from '../lib/ledger'
 import { patchProblem, InputError, isInputError } from '../lib/validate'
 import type { Account, Transaction } from './data/types'
 import { leaveOut, unpairForLeavingOut, everyAccount } from '../lib/leftOut'
-import { planAccountMerge } from '../lib/accountMerge'
+import { planAccountMerge, feedRemap } from '../lib/accountMerge'
 
 /** Merged duplicates live in data.duplicates, everything else in data.transactions — so every page and engine sees each transaction once. */
 export const splitDups = (d: Data): Data => { const all = [...d.transactions, ...(d.duplicates || [])]; return { ...d, transactions: all.filter(t => !t.duplicate_of), duplicates: all.filter(t => !!t.duplicate_of) } }
@@ -201,13 +201,14 @@ export const useStore = create<State>((set, get) => ({
     const was = !!a.excluded; const pairs = off ? unpairForLeavingOut(d, id) : []
     if (was === off && !pairs.length) return 0
     if (was !== off) await repo.update('accounts', id, { excluded: off } as Partial<Account>)
-    try { await inChunks(pairs, async u => { await repo.update('transactions', u.keeper, u.patch); await repo.update('transactions', u.restore, { duplicate_of: null }) }) }
+    // restore the merged row first, change the keeper second: whatever stops in between, the keeper is still a paired transfer and the plan finds it again
+    try { await inChunks(pairs, async u => { if (u.restore) await repo.update('transactions', u.restore, { duplicate_of: null }); await repo.update('transactions', u.keeper, u.patch) }) }
     catch (e) {
       if (was !== off) { try { await repo.update('accounts', id, { excluded: was } as Partial<Account>) } catch { /* the retry above finishes it */ } }
       await get().refresh().catch(() => {})
       throw new Error(`${a.name} could not be left out just now (${(e as Error).message}). Nothing is lost — try again.`)
     }
-    void repo.logAudit('correction', off ? `${a.name} left out of the figures${pairs.length ? ` — ${pairs.length} transfer${pairs.length === 1 ? '' : 's'} with your other accounts now read as money in or out` : ''}` : `${a.name} counted again`, { excluded: off, unpaired: pairs.map(u => ({ keeper: u.keeper, restored: u.restore })) }, id).catch(() => {})
+    void repo.logAudit('correction', off ? `${a.name} left out of the figures${pairs.length ? ` — ${pairs.length} transfer${pairs.length === 1 ? '' : 's'} with your other accounts now read as money in or out` : ''}` : `${a.name} counted again`, { excluded: off, unpaired: pairs.map(u => ({ keeper: u.keeper, restored: u.restore || null })) }, id).catch(() => {})
     await get().refresh()
     return pairs.length
   },
@@ -217,11 +218,14 @@ export const useStore = create<State>((set, get) => ({
     if (!keeper || !others.length) throw new Error('Those accounts are no longer here — refresh and try again')
     const plan = planAccountMerge(d, keeper, others, get().settings().finmail?.rules || null)
     // the bank feed's match (which bank account goes into which of ours) is kept by id: a copy that is matched hands its feed to the kept
-    // account before it is deleted — and two copies each matched to a bank account are two real accounts, so that merge is refused
-    const map = await repo.syncStatus().then(st => st.connection?.account_map || null).catch(() => null); const gone = new Set(others.map(o => o.id)); let nextMap: Record<string, string> | null = null
-    if (map) { const fed = Object.values(map).filter(v => gone.has(v)); if (fed.length && (fed.length > 1 || Object.values(map).includes(keeper.id))) throw new Error(`The bank feed reports ${keeper.name} as separate accounts — they are not copies and were left as they are`)
-      if (fed.length) nextMap = Object.fromEntries(Object.entries(map).map(([k, v]) => [k, gone.has(v) ? keeper.id : v])) }
-    if (nextMap) await repo.syncSetMap(nextMap)
+    // account before anything else moves. The merge stops when that match cannot be read or — for a copy that is matched — cannot be saved
+    // and read back: a member who may not open Bank connections cannot be shown it, and only an owner may change it.
+    if (get().mode === 'db' && !get().canView('/connections')) throw new Error('Merging accounts needs to check the bank feed\'s matching, which your access does not include — ask an owner to merge them')
+    const st = await repo.syncStatus(); if (get().mode === 'db' && !st.available) throw new Error('The bank feed\'s matching could not be checked just now — nothing was merged; try again')
+    const gone = others.map(o => o.id); const nextMap = feedRemap(st.connection?.account_map || null, keeper.id, gone, keeper.name)
+    if (nextMap) { if (!get().isOwner()) throw new Error(`A copy of ${keeper.name} is matched to the bank feed — ask an owner to merge them`)
+      await repo.syncSetMap(nextMap); const after = (await repo.syncStatus()).connection?.account_map || {}
+      if (Object.values(after).some(v => gone.includes(v))) throw new Error('The bank feed\'s matching could not be moved to the kept account — nothing was merged') }
     await inChunks(plan.moves, m => repo.update(m.coll, m.id, m.patch as never))
     if (Object.keys(plan.keeperPatch).length) await repo.update('accounts', keeper.id, plan.keeperPatch)
     if (plan.rules) await get().saveSettings({ finmail: { ...(get().settings().finmail || {}), rules: plan.rules } })

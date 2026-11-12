@@ -20,7 +20,7 @@
 // without its balance (withoutAccounts), so the history does not step on the day it is left out.
 import type { Account, Data, NetWorthSnapshot, OffBooks, Transaction } from '../app/data/types'
 import { LIABILITY_KINDS } from '../app/data/types'
-import { unpairPatch, type DTxn } from './dedupe'
+import { unpairPatch, origin, type DTxn } from './dedupe'
 
 export const emptyOff = (): OffBooks => ({ accounts: [], transactions: [], duplicates: [], recurring: [], paySchedules: [], statements: [], balances: [], holdings: [], reconciliations: [], goals: [], emailItems: [], hardship: [] })
 export const offOf = (d: Pick<Data, 'off'>): OffBooks => d.off || emptyOff()
@@ -67,7 +67,10 @@ const LIAB = new Set<string>(LIABILITY_KINDS); const r2 = (n: number) => Math.ro
 /** A recorded net-worth snapshot read without the left-out accounts: each one's balance that day (by_account) comes off the assets,
  *  liabilities and cash it was counted in, so the history and "change since" do not step on the day an account is left out. The stored
  *  snapshot is not changed — counted again, the account is back in its history. (Which totals it was in is taken from how the account is
- *  set today: active, in net worth, counts as cash.) */
+ *  set today: active, in net worth, counts as cash.)
+ *  Limits: a snapshot with no per-account figures (none were kept, as in the sample data) cannot be adjusted and stays as recorded; and
+ *  snapshots recorded before 0.28.0 kept each account's book balance while the totals used the verified one, so where those two differed
+ *  that difference stays in the history. From 0.28.0 the snapshot keeps the same figure the totals use (Accounts → Record today's snapshot). */
 function withoutAccounts(s: NetWorthSnapshot, offAccts: Account[]): NetWorthSnapshot {
   const by = s.by_account || {}; let assets = +s.assets || 0, liabilities = +s.liabilities || 0, cash = +s.cash || 0, hit = false; const rest = { ...by }
   for (const a of offAccts) { if (!(a.id in by) || a.status !== 'Active') continue; const v = +by[a.id] || 0; hit = true; delete rest[a.id]
@@ -75,25 +78,28 @@ function withoutAccounts(s: NetWorthSnapshot, offAccts: Account[]): NetWorthSnap
   return hit ? { ...s, assets: r2(assets), liabilities: r2(liabilities), cash: r2(cash), by_account: rest } : s
 }
 
-export interface Unpair { keeper: string; patch: Partial<Transaction>; restore: string }
+export interface Unpair { keeper: string; patch: Partial<Transaction>; /** the merged row to restore — absent when an earlier attempt already restored it */ restore?: string }
 /** Before an account is switched off: the paired transfers and payments that have it on one side and a counted account on the other, and how
- *  to take each apart — the kept row goes back to the expense the bank reported (its category is cleared when that was a transfer category,
- *  so it shows as uncategorized spending to be filed), and the merged row is restored. Unlike restoring a duplicate by hand, the rows are
- *  not marked "not a duplicate": switched back on, the account's transfers are paired again. Works the same once the account is already
- *  off (a pair still joined across the line is one a failed attempt did not reach). */
+ *  to take each apart — the merged row is restored, then the kept row goes back to the expense the bank reported (its category is cleared
+ *  when that was a transfer category, so it shows as uncategorized spending to be filed). Unlike restoring a duplicate by hand, the rows
+ *  are not marked "not a duplicate": switched back on, the account's transfers are paired again.
+ *
+ *  A paired keeper is recognised by what it is — a row from the bank feed or a statement file that is a transfer with both accounts set (the
+ *  bank never reports one; only pairing makes it) — not by the merged row still hanging off it. So the plan can always be worked out again:
+ *  with the account already off, and after an attempt that stopped between the two writes (the merged row restored, the keeper not yet
+ *  changed), the keeper is still found and finished. The store restores first and changes the keeper second for that reason. */
 export function unpairForLeavingOut(d: Pick<Data, 'transactions' | 'duplicates' | 'categories' | 'accounts'> & { off?: Data['off'] }, accountId: string): Unpair[] {
   const counted = new Set(d.accounts.filter(a => !a.excluded && a.id !== accountId).map(a => a.id))
-  // merged rows on the account itself are in data.off once it is switched off: looked at too, so the plan can be finished on a second attempt
+  // merged rows on the account itself are in data.off once it is switched off: looked at too
   const dupsOf = new Map<string, Transaction[]>(); for (const x of [...(d.duplicates || []), ...(d.off?.duplicates || [])]) if (x.duplicate_of) dupsOf.set(x.duplicate_of, [...(dupsOf.get(x.duplicate_of) || []), x])
   const transferCat = new Set(d.categories.filter(c => c.kind === 'transfer').map(c => c.id))
   const out: Unpair[] = []
   for (const k of d.transactions) {
-    if (k.kind !== 'transfer' || !k.account_id || !k.to_account_id) continue
+    if (k.kind !== 'transfer' || !k.account_id || !k.to_account_id || origin(k as unknown as DTxn) === 'typed') continue
     const other = k.account_id === accountId ? k.to_account_id : k.to_account_id === accountId ? k.account_id : null
     if (!other || !counted.has(other)) continue
     const dup = (dupsOf.get(k.id) || []).find(x => unpairPatch(k as unknown as DTxn, x as unknown as DTxn))
-    if (!dup) continue
-    out.push({ keeper: k.id, restore: dup.id, patch: { kind: 'expense', to_account_id: null, ...(k.category_id && transferCat.has(k.category_id) ? { category_id: null } : {}) } })
+    out.push({ keeper: k.id, ...(dup ? { restore: dup.id } : {}), patch: { kind: 'expense', to_account_id: null, ...(k.category_id && transferCat.has(k.category_id) ? { category_id: null } : {}) } })
   }
   return out
 }

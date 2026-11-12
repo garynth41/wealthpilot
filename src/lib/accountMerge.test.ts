@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyData, type Account, type Data, type Transaction } from '../app/data/types'
-import { accountTwins, planAccountMerge, accountLike } from './accountMerge'
+import { accountTwins, planAccountMerge, accountLike, feedRemap } from './accountMerge'
 
 const acct = (id: string, name: string, kind: Account['kind'], extra: Partial<Account> = {}): Account => ({ id, household_id: 'h', name, kind, institution: name, balance: 0, apr: 0, minimum_payment: 0, autopay: false, include_in_cash: false, include_in_net_worth: true, status: 'Active', sort_order: 0, created_at: '2026-11-02T21:01:' + id.padStart(2, '0'), ...extra })
 const tx = (id: string, p: Partial<Transaction>): Transaction => ({ id, household_id: 'h', date: '2026-11-03', kind: 'expense', amount: 10, tags: [], status: 'cleared', source: 'manual', exclude_from_budget: false, ...p })
@@ -60,7 +60,20 @@ describe('the same account listed more than once', () => {
     expect(accountTwins(data([a, b], { transactions: txns, reconciliations: [rec('k1', '2')] }))[0].keeper.id).toBe('2')
     expect(accountTwins(data([a, b], { transactions: txns, reconciliations: [rec('k1', '1'), rec('k2', '2')] }))).toEqual([])
     expect(() => planAccountMerge(data([a, b], { reconciliations: [rec('k1', '2')] }), a, [b])).toThrow(/reconciliations/)
+    // the bank-fed copy would be kept, but the other one holds the reconciliations: not offered at all (the Accounts page plans every group it shows)
+    const fed = acct('1', 'Checking', 'checking', { bank_balance: 10 })
+    expect(accountTwins(data([fed, b], { reconciliations: [rec('k1', '2')] }))).toEqual([])
+    expect(accountTwins(data([fed, b], { reconciliations: [rec('k1', '1')] }))[0].keeper.id).toBe('1')
     expect(planAccountMerge(data([a, b], { reconciliations: [rec('k1', '2')] }), b, [a]).moves.every(m => (m.coll as string) !== 'reconciliations')).toBe(true)
+  })
+  it('the bank feed follows the merge: a matched copy hands its feed to the kept account; two matched copies are two accounts', () => {
+    const map = { 'ACT-1': 'x', 'ACT-2': 'gone1' }
+    expect(feedRemap(map, 'keep', ['gone1', 'gone2'])).toEqual({ 'ACT-1': 'x', 'ACT-2': 'keep' })
+    expect(feedRemap(map, 'keep', ['gone2'])).toBeNull()                       // no removed copy is matched: nothing to save
+    expect(feedRemap(null, 'keep', ['gone1'])).toBeNull()                      // no bank connection
+    expect(() => feedRemap({ a: 'gone1', b: 'gone2' }, 'keep', ['gone1', 'gone2'], 'Visa')).toThrow(/separate accounts/)
+    expect(() => feedRemap({ a: 'gone1', b: 'keep' }, 'keep', ['gone1'], 'Visa')).toThrow(/Visa/)
+    expect(map).toEqual({ 'ACT-1': 'x', 'ACT-2': 'gone1' })                   // the saved map is not changed in place
   })
   it('a paid-off account is active again when one of its copies is', () => {
     const keeper = acct('1', 'Loan', 'loan', { status: 'Paid off', bank_balance: 0 }); const other = acct('2', 'Loan', 'loan', { balance: 50 })
