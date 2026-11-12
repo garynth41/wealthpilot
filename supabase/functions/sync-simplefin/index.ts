@@ -4,6 +4,8 @@
 //   disconnect { household_id }               owner: forgets the access URL and the connection
 //   backfill   { household_id, from }         owner: re-read history back to `from` (SimpleFIN keeps about 90 days), then merge duplicates
 //   dedupe     { household_id }               owner/editor: merge clear-cut duplicate transactions now (see dedupe.ts)
+// Accounts left out of the household's figures (0.28.0, accounts.excluded) are still synced — switching one back on restores everything — but
+// their rows take no part in de-duplication with the counted accounts.
 // Limits (0.25.0): sync and backfill at most once every 15 minutes and 12 times in 24 hours per household (claim_sync_slot, 429 with
 // retry_at otherwise); the daily run is not counted. A household scheduled for deletion is not synced and cannot be changed.
 // Daily run: pg_cron (migration 0005) POSTs { action: "sync_all" } with header x-cron-secret = the Vault secret 'wealthpilot_cron_secret' (checked by cron_secret_ok).
@@ -54,12 +56,18 @@ async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: nu
   if (error) throw new Error('Reading transactions for de-duplication failed: ' + error.message)
   const rows = (data || []).map(t => ({ ...t, amount: Number(t.amount) })) as DTxn[]
   // the accounts' kinds let the two bank rows of a card or loan payment (out of checking, onto the card) become one transfer (0.25.1)
-  const { data: accts, error: ae } = await admin.from('accounts').select('id, kind, name, institution').eq('household_id', hh)
+  const { data: accts, error: ae } = await admin.from('accounts').select('*').eq('household_id', hh)   // '*': `excluded` may not exist yet (migration 0020)
   if (ae) throw new Error('Reading accounts for de-duplication failed: ' + ae.message)
+  // an account left out of the household's figures (0.28.0) is not one of its own for this: its rows are never merged with, or paired
+  // into a transfer with, a counted account's rows — the app shows the counted side as the money in or out the bank reported
+  const off = new Set(((accts || []) as Array<{ id: string; excluded?: boolean }>).filter(a => a.excluded).map(a => a.id))
+  const offRow = (t: DTxn) => { const from = t.account_id || null, to = t.to_account_id || null; return from && off.has(from) ? !to || off.has(to) : !from && !!to && off.has(to) }
+  const own = ((accts || []) as Array<DAccount & { excluded?: boolean }>).filter(a => !a.excluded)
+  const mine = off.size ? rows.filter(t => !offRow(t)) : rows
   // the household's choices (0.27.0): what merges on its own, whether transfers, checks and near-matches are looked for
   const { data: hhRow, error: he } = await admin.from('households').select('settings').eq('id', hh).maybeSingle()
   if (he) throw new Error('Reading household settings for de-duplication failed: ' + he.message)
-  const plan = planDedupe(rows, (accts || []) as DAccount[], ((hhRow?.settings as { dedupe?: DedupeOptions } | null)?.dedupe) || null); let merged = 0
+  const plan = planDedupe(mine, own, ((hhRow?.settings as { dedupe?: DedupeOptions } | null)?.dedupe) || null); let merged = 0
   if (dryRun) {
     const byId = new Map(rows.map(t => [t.id, t])); const brief = (id: string): Brief => { const t = byId.get(id)!; return { date: t.date, amount: t.amount, kind: t.kind, payee: t.payee ?? null, source: t.external_id?.startsWith('sfin:') ? 'bank' : t.source ?? null, account_id: t.account_id ?? t.to_account_id ?? null } }
     return { merged: plan.auto.reduce((n, g) => n + g.dups.length, 0), review: plan.review.length, preview: { auto: plan.auto.map(g => ({ keep: brief(g.keeper), merge: g.dups.map(brief), confidence: g.confidence, reason: g.reason, patch: g.patch })), review: plan.review.slice(0, 60).map(p => ({ a: brief(p.a), b: brief(p.b), reason: p.reason })) } }

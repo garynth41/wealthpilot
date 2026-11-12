@@ -11,12 +11,14 @@ export function useData() {
   const helpers = useMemo(() => {
     const catById = new Map(data.categories.map(c => [c.id, c])); const accById = new Map(data.accounts.map(a => [a.id, a]))
     const catName = (id?: string | null) => (id && catById.get(id)?.name) || '—'
-    const acctName = (id?: string | null) => { const a = id ? accById.get(id) : null; return a ? acctLabel(a, data.accounts) : '—' }
+    // an account left out of the figures (0.28.0) still has a name where a transfer to or from it is listed
+    const offById = new Map((data.off?.accounts || []).map(a => [a.id, a]))
+    const acctName = (id?: string | null) => { const a = id ? accById.get(id) : null; if (a) return acctLabel(a, data.accounts); const o = id ? offById.get(id) : null; return o ? `${o.name} (left out)` : '—' }
     const cats = data.categories.filter(c => !c.archived).sort((a, b) => a.sort_order - b.sort_order)
     const catOpts = (kind?: Category['kind'] | Category['kind'][]) => cats.filter(c => !kind || ([] as string[]).concat(kind).includes(c.kind))
     const catLabels = Object.fromEntries(cats.map(c => [c.id, (c.group ? c.group + ' › ' : '') + c.name]))
     const accts = data.accounts.filter(a => a.status === 'Active').sort((a, b) => a.sort_order - b.sort_order)
-    const acctLabels = Object.fromEntries(data.accounts.map(a => [a.id, acctLabel(a, data.accounts)]))
+    const acctLabels = Object.fromEntries([...(data.off?.accounts || []).map(a => [a.id, `${a.name} (left out)`] as [string, string]), ...data.accounts.map(a => [a.id, acctLabel(a, data.accounts)] as [string, string])])
     const groups = [...new Set(cats.map(c => c.group || 'Other'))]
     const acc = (id?: string | null): Account | undefined => (id ? accById.get(id) : undefined)
     const cat = (id?: string | null): Category | undefined => (id ? catById.get(id) : undefined)

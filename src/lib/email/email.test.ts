@@ -50,6 +50,18 @@ describe('propose + apply (demo household)', () => {
     const sp = props.find(p => (p.f as Fact).payee === 'Spotify')!; expect(sp.kind).toBe('current'); expect(sp.dup).toBe(true)   // already logged on Oct 21
     const ml = props.find(p => (p.f as Fact).payee === 'Mission Lane')!; expect(ml.target).toBe('new-account'); expect(ml.checked).toBe(true)
   })
+  it('two emails about one new creditor approved together make one account, not two (0.28.0)', async () => {
+    const { repo, ctx } = setup(); const ev = (id: string, date: string) => [{ msg_id: id, src: 'gmail', subject: 'Mission Lane statement', date }]
+    const two = [
+      { ...(extract(msg('m1', 'statements@missionlane.com', 'Your Mission Lane statement is available', 'Account ending in 7788. Statement balance: $612.40. Minimum payment: $35.00. Due date: 11/28/2026.', '2026-11-03')) as Fact), ev: ev('m1', '2026-11-03') },
+      { ...(extract(msg('m2', 'statements@missionlane.com', 'Your Mission Lane statement is available', 'Account ending in 7788. Statement balance: $655.10. Minimum payment: $35.00. Due date: 12/28/2026.', '2026-12-03')) as Fact), ev: ev('m2', '2026-12-03') },
+    ]
+    const props = propose(repo.data, repo.household.settings, two); expect(props.map(p => p.target)).toEqual(['new-account', 'new-account'])
+    await applyMany(ctx, props)
+    const made = repo.data.accounts.filter(a => a.name === 'Mission Lane'); expect(made).toHaveLength(1)
+    expect(made[0].statement_balance).toBe(655.1); expect(made[0].due_date).toBe('2026-12-28')                           // the second email updated the account the first one made
+    expect(repo.data.emailItems.filter(x => x.account_id === made[0].id)).toHaveLength(2)
+  })
   it('apply writes statements, transactions, occurrences and a new account', async () => {
     const { repo, ctx } = setup(); const props = propose(repo.data, repo.household.settings, facts()).filter(p => p.kind === 'item' && p.checked)
     const n0 = repo.data.transactions.length

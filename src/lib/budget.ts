@@ -26,11 +26,16 @@ export const budgetable = (t: Transaction) => !t.exclude_from_budget
 export type Flow = 'income' | 'spend' | 'refund' | 'card' | 'loan' | 'save' | 'move'
 const SAVING_KINDS = ['savings', 'investment', 'retirement']
 type Lookup = (id?: string | null) => Account | undefined
-export const accountLookup = (d: Pick<Data, 'accounts'>): Lookup => { const m = new Map(d.accounts.map(a => [a.id, a])); return id => (id ? m.get(id) : undefined) }
+/** Accounts by id — the ones left out of the figures included (0.28.0, flagged excluded), so a transfer across that line can be told from a move between your own. */
+export const accountLookup = (d: Pick<Data, 'accounts'> & { off?: Data['off'] }): Lookup => { const m = new Map([...(d.off?.accounts || []), ...d.accounts].map(a => [a.id, a])); return id => (id ? m.get(id) : undefined) }
 export function flowOf(t: Pick<Transaction, 'kind' | 'account_id' | 'to_account_id'>, acct: Lookup): Flow {
   if (t.kind === 'income') { const a = acct(t.account_id); return a && LIABILITY_KINDS.includes(a.kind) ? 'refund' : 'income' }
   if (t.kind === 'expense') return 'spend'
   const to = acct(t.to_account_id)
+  // a transfer typed across the line of an account left out of the figures (0.28.0): money sent to it is spending, money from it is income
+  const from = acct(t.account_id)
+  if (to?.excluded && from && !from.excluded) return 'spend'
+  if (from?.excluded && to && !to.excluded && !LIABILITY_KINDS.includes(to.kind)) return 'income'
   if (to && LIABILITY_KINDS.includes(to.kind)) return REVOLVING_KINDS.includes(to.kind) ? 'card' : 'loan'
   if (to && SAVING_KINDS.includes(to.kind)) return 'save'
   return 'move'

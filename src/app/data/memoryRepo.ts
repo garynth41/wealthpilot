@@ -1,7 +1,7 @@
 // Offline demo repo: the same contract as Supabase, kept in this browser (localStorage). Also the harness for the test suites.
 import type { Repo } from './repo'
 import { emptyData, SETTINGS_DEFAULTS, type Account, type Collection, type Data, type Household, type MemberNotify, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type SyncStatus, type SyncResult, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind } from './types'
-import { demoSeed, demoId } from './demoSeed'
+import { demoSeed, demoId, demoIdsAfter } from './demoSeed'
 import { LS } from '../config'
 import { syncSlot, syncLimitMessage } from '../../lib/syncLimit'
 import { monthKey, today } from '../../lib/dates'
@@ -22,6 +22,7 @@ export class MemoryRepo implements Repo {
     const saved = seed ? null : this.load()
     const s = seed || saved || demoSeed()
     this.household = s.household; this.data = s.data
+    demoIdsAfter(Object.values(this.data).flatMap(v => (Array.isArray(v) ? v.map(r => (r as { id?: unknown })?.id) : [])))
     if (!saved && !seed) this.persist()
   }
   private load(): { household: Household; data: Data } | null { try { const j = JSON.parse(localStorage.getItem(KEY) || 'null'); if (j && j.data && j.household) return { household: j.household, data: { ...emptyData(), ...j.data } } } catch { /* ignore */ } return null }
