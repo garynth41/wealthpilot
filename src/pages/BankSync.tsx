@@ -16,7 +16,8 @@ const NEW = '__new__'
 export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void }) {
   const { data, repo, mode, isOwner, canEdit, guarded, refresh, insert } = useData(); const confirm = useConfirm()
   const [st, setSt] = useState<SyncStatus | null>(null); const [token, setToken] = useState(''); const [map, setMap] = useState<Record<string, string>>({}); const [dirty, setDirty] = useState(false); const [busy, setBusy] = useState(false)
-  const locals = useMemo(() => data.accounts.filter(a => a.status === 'Active'), [data.accounts])
+  // an account left out of the figures (0.28.0) keeps its bank feed: it stays in this list so its match is not lost or made twice
+  const locals = useMemo(() => [...data.accounts.filter(a => a.status === 'Active'), ...(data.off?.accounts || [])], [data.accounts, data.off])
   const localsRef = useRef(locals); localsRef.current = locals
   const suggest = useCallback((c: SyncConnection, current: Record<string, string>) => {
     const locals = localsRef.current
@@ -82,7 +83,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>At the bank</th><th className="num">Balance</th><th>Goes into</th></tr></thead><tbody>
       {c.discovered.length === 0 && <tr><td colSpan={3} className="note">No accounts reported by the bank yet — press Sync now once, or check the accounts are linked in SimpleFIN.</td></tr>}
       {c.discovered.map(d => <tr key={d.id}><td><b>{d.org || '—'}</b> · {d.name}{d.last4 ? <span className="note" style={{ margin: 0, display: 'inline' }}> · …{d.last4}</span> : null}</td><td className="num">{fm2(d.balance)}</td>
-        <td>{isOwner ? <select className="inp" value={map[d.id] || ''} onChange={e => { setMap({ ...map, [d.id]: e.target.value }); setDirty(true) }}><option value="">— don't import —</option><option value={NEW}>+ Create a new account from this</option>{locals.map(a => <option key={a.id} value={a.id} disabled={used.has(a.id) && map[d.id] !== a.id}>{acctLabel(a, data.accounts)}</option>)}</select> : (map[d.id] && locals.find(a => a.id === map[d.id]) ? acctLabel(locals.find(a => a.id === map[d.id])!, data.accounts) : '—')}</td></tr>)}
+        <td>{isOwner ? <select className="inp" value={map[d.id] || ''} onChange={e => { setMap({ ...map, [d.id]: e.target.value }); setDirty(true) }}><option value="">— don't import —</option><option value={NEW}>+ Create a new account from this</option>{locals.map(a => <option key={a.id} value={a.id} disabled={used.has(a.id) && map[d.id] !== a.id}>{acctLabel(a, data.accounts)}{a.excluded ? ' (left out of your figures)' : ''}</option>)}</select> : (map[d.id] && locals.find(a => a.id === map[d.id]) ? acctLabel(locals.find(a => a.id === map[d.id])!, data.accounts) + (locals.find(a => a.id === map[d.id])!.excluded ? ' (left out of your figures)' : '') : '—')}</td></tr>)}
     </tbody></table></div>
     {isOwner && c.discovered.length > 0 && <div className="btnrow" style={{ marginTop: 8 }}>
       <Btn sm onClick={() => { setMap(suggest(c, {})); setDirty(true) }}>Auto-match</Btn>

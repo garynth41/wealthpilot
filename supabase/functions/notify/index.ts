@@ -35,17 +35,28 @@ interface Prefs extends NRouting { bills?: boolean; low_cash?: boolean; large?: 
 async function loadHousehold(hh: string) {
   const [h, acc, rec, occ, tx, pay, sync, members] = await Promise.all([
     admin.from('households').select('*').eq('id', hh).single(),
-    admin.from('accounts').select('id, name, kind, status, balance, bank_balance, include_in_cash, balance_as_of, last_reconciled_on, created_at').eq('household_id', hh),
-    admin.from('recurring').select('id, name, payee, kind, amount, amount_varies, frequency, day_of_month, next_due, starts_on, ends_on, status, autopay').eq('household_id', hh),
+    admin.from('accounts').select('*').eq('household_id', hh),   // '*': `excluded` may not exist yet (migration 0020)
+    admin.from('recurring').select('id, name, payee, kind, amount, amount_varies, frequency, day_of_month, next_due, starts_on, ends_on, status, autopay, account_id, liability_account_id').eq('household_id', hh),
     admin.from('bill_occurrences').select('recurring_id, due_date, status, transaction_id, amount').eq('household_id', hh).gte('due_date', new Date(Date.now() - 75 * 86400000).toISOString().slice(0, 10)),
-    admin.from('transactions').select('id, date, kind, amount, payee, recurring_id, pay_schedule_id, created_at, status, duplicate_of, category_id').eq('household_id', hh).gte('date', new Date(Date.now() - 105 * 86400000).toISOString().slice(0, 10)),
-    admin.from('pay_schedules').select('id, name, frequency, anchor_date, semimonthly_days, net_amount, starts_on, ends_on, status').eq('household_id', hh),
+    admin.from('transactions').select('id, date, kind, amount, payee, recurring_id, pay_schedule_id, created_at, status, duplicate_of, category_id, account_id, to_account_id').eq('household_id', hh).gte('date', new Date(Date.now() - 105 * 86400000).toISOString().slice(0, 10)),
+    admin.from('pay_schedules').select('id, name, frequency, anchor_date, semimonthly_days, net_amount, starts_on, ends_on, status, deposit_account_id').eq('household_id', hh),
     admin.from('sync_connections').select('status, last_sync_at, last_error').eq('household_id', hh).maybeSingle(),
     admin.from('household_members').select('user_id, email, role, modules').eq('household_id', hh)])
   if (h.error) throw h.error
   const settings = (h.data.settings || {}) as Record<string, unknown>; const prefs = (settings.notify || {}) as Prefs
   const num = <T extends Record<string, unknown>>(r: T) => { const o = { ...r } as Record<string, unknown>; for (const k of ['balance', 'bank_balance', 'amount', 'net_amount']) if (k in o && o[k] != null) o[k] = Number(o[k]); return o as T }
-  return { household: h.data, settings, prefs, members: (members.data || []) as NMember[], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: (acc.data || []).map(num), recurring: (rec.data || []).map(num), occurrences: (occ.data || []).map(num), transactions: (tx.data || []).map(num), paySchedules: (pay.data || []).map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
+  // Accounts left out of the household's figures (0.28.0, accounts.excluded): no alert or digest counts them, the rows that sit only on
+  // them, the bills paid from them or the income deposited to them — the same line the app draws (src/lib/leftOut.ts).
+  type Row = Record<string, unknown> & { id?: string; excluded?: boolean; account_id?: string | null; to_account_id?: string | null; liability_account_id?: string | null; deposit_account_id?: string | null; recurring_id?: string | null }
+  const rowsOf = (r: { data: unknown }) => (r.data || []) as Row[]
+  const off = new Set(rowsOf(acc).filter(a => a.excluded).map(a => a.id as string)); const isOff = (id?: string | null) => !!id && off.has(id)
+  const counted = (rows: Row[], gone: (r: Row) => boolean): Row[] => (off.size ? rows.filter(r => !gone(r)) : rows)
+  const accts = counted(rowsOf(acc), a => !!a.excluded)
+  const txns = counted(rowsOf(tx), t => (isOff(t.account_id) ? !t.to_account_id || isOff(t.to_account_id) : !t.account_id && isOff(t.to_account_id)))
+  const recs = counted(rowsOf(rec), r => isOff(r.account_id) || (!r.account_id && isOff(r.liability_account_id)))
+  const pays = counted(rowsOf(pay), p => isOff(p.deposit_account_id))
+  const kept = new Set(recs.map(r => r.id)); const occs = counted(rowsOf(occ), o => !kept.has(o.recurring_id as string))
+  return { household: h.data, settings, prefs, members: (members.data || []) as NMember[], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: accts.map(num), recurring: recs.map(num), occurrences: occs.map(num), transactions: txns.map(num), paySchedules: pays.map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
 }
 
 async function sendPush(hh: string, userIds: string[] | null, title: string, body: string, path: string, tag: string): Promise<{ sent: number; failed: number; detail: string }> {

@@ -25,6 +25,9 @@ export interface Account extends Stamped {
   statement_date?: ISODate | null; statement_balance?: number | null; minimum_payment: number; due_date?: ISODate | null; planned_payment?: number | null
   autopay: boolean; autopay_account_id?: UUID | null; last_paid_due?: ISODate | null
   include_in_cash: boolean; include_in_net_worth: boolean
+  /** 0.28.0: left out of the household's figures — the account, its balance and everything on it are kept (and still synced) but shown and
+   *  counted nowhere until it is switched back on. See lib/leftOut.ts. */
+  excluded?: boolean
   status: 'Active' | 'Paid off' | 'Closed' | 'Hidden'; color?: string | null; icon?: string | null; sort_order: number; notes?: string | null
 }
 export interface Statement extends Stamped { ref?: string | null; account_id: UUID; statement_date: ISODate; statement_balance: number; minimum_payment: number; due_date?: ISODate | null; paid_on?: ISODate | null; paid_amount?: number | null; source: string; notes?: string | null }
@@ -230,6 +233,10 @@ export interface Data {
   emailLedger: EmailLedgerRow[]; members: Member[]; invites: Invite[]; activity: ActivityRow[]
   /** transactions merged into another one (duplicate_of set) — kept for review and undo, excluded from all calculations */
   duplicates: Transaction[]
+  /** 0.28.0: accounts left out of the figures and everything that sits on them — set by the store (lib/leftOut.ts), never saved */
+  off?: OffBooks
 }
+/** What a left-out account takes with it: its own rows only. Nothing here is counted or listed outside the Accounts page. */
+export interface OffBooks { accounts: Account[]; transactions: Transaction[]; duplicates: Transaction[]; recurring: Recurring[]; paySchedules: PaySchedule[]; statements: Statement[]; balances: BalancePoint[]; holdings: Holding[]; reconciliations: Reconciliation[]; goals: Goal[]; emailItems: EmailItem[]; hardship: Hardship[] }
 export const emptyData = (): Data => ({ balances: [], scores: [], lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]

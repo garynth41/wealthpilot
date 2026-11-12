@@ -427,6 +427,26 @@ for (const W of [1400, 390]) {
     await p.click('.asof button[aria-label^="Theme"]'); await p.waitForTimeout(900); ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark mode toggles (system → dark)'); await p.screenshot({ path: 'e2e/shots/1400_dark.png', fullPage: false })
     const tickAfter = await p.evaluate(() => getComputedStyle(document.querySelector('.js-plotly-plot .ytick text')).fill); ok(tickBefore !== tickAfter, 'charts redraw in the new theme\'s colours when the theme changes (axis text ' + tickBefore + ' → ' + tickAfter + ')')
     await p.goBack(); await p.waitForTimeout(500); ok((await p.locator('h1').first().textContent()) === 'Settings', 'browser back returns to the previous page')
+    // 0.28.0: an account can be left out of the figures and brought back — nothing is deleted either way
+    { await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900)
+      const cash = async () => (await p.locator('.kpis .kpi').first().textContent()).replace(/\s+/g, ' '); const st = () => p.evaluate(() => { const d = JSON.parse(localStorage.getItem('wealthpilot.demo')).data; return { off: d.accounts.filter(a => a.excluded).map(a => a.name).join(), n: d.accounts.length, tx: d.transactions.length } })
+      const c0 = await cash(), s0 = await st()
+      await p.locator('input[aria-label^="Ally Savings is counted"]').first().click(); await p.waitForTimeout(300); const ask = (await p.locator('.modal').last().textContent()) || ''; await p.click('.modal button:has-text("Leave it out")'); await p.waitForTimeout(1200)
+      const c1 = await cash(), s1 = await st(); const card = p.locator('.card:has-text("Left out of your figures")')
+      ok(/Nothing is deleted/.test(ask) && s1.off === 'Ally Savings' && s1.n === s0.n && s1.tx === s0.tx && c1 !== c0, `leaving an account out keeps every row and changes the figures (${c0} → ${c1})`)
+      ok((await card.count()) === 1 && /Ally Savings/.test(await card.textContent()) && (await p.locator('input[aria-label^="Ally Savings is counted"]').count()) === 0, 'it moves to "Left out of your figures" and leaves the account tables')
+      await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(900); const tick = (await p.locator('.ticker').count()) ? await p.locator('.ticker').textContent() : ''; const dash = await p.locator('#main').textContent()
+      ok(!/Ally Savings/.test(tick || '') && !/Ally Savings/.test(dash || ''), 'the dashboard no longer shows or counts it')
+      await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900); await p.locator('input[aria-label^="Ally Savings is left out"]').click(); await p.waitForTimeout(1200)
+      const c2 = await cash(), s2 = await st(); ok(c2 === c0 && s2.off === '' && s2.tx === s0.tx && (await p.locator('.card:has-text("Left out of your figures")').count()) === 0, `ticking it again brings everything back (${c2})`)
+      // the same account listed twice folds into one: the dashboard points at it, Merge keeps one copy
+      for (let i = 0; i < 2; i++) { await p.click('button:has-text("+ Credit card")'); await p.waitForTimeout(700); const nameBox = (await p.evaluateHandle(() => [...document.querySelectorAll('input[aria-label="Account"]')].filter(i => i.value === 'New card').pop())).asElement(); await nameBox.fill('Twin Card'); await nameBox.evaluate(e => e.blur()); await p.waitForTimeout(700) }
+      const tw = p.locator('.card:has-text("Listed more than once")'); ok((await tw.count()) === 1 && /Twin Card/.test(await tw.textContent()) && (await st()).n === s0.n + 2, 'an account on file twice is listed under "Listed more than once"')
+      await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(900); await p.locator('.alist a:has-text("listed more than once")').click(); await p.waitForTimeout(1200)
+      ok(await p.evaluate(() => location.hash === '#/accounts?focus=twins' && !!document.querySelector('[data-id="twins"].focus-hit')), 'the dashboard notice opens the repeated accounts and marks them')
+      await p.locator('button:has-text("Merge into one")').first().click(); await p.waitForTimeout(300); await p.click('.modal button:has-text("Merge into one")'); await p.waitForTimeout(1300)
+      const s3 = await st(); const left = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.filter(a => a.name === 'Twin Card').length)
+      ok(s3.n === s0.n + 1 && left === 1 && (await p.locator('.card:has-text("Listed more than once")').count()) === 0, `Merge into one leaves a single copy (${left})`) }
   }
   ok(!errors.length, `${W}: no page errors ${errors.slice(0, 3).join(' | ')}`); await p.close()
 }

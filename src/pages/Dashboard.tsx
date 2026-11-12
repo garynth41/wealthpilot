@@ -8,6 +8,7 @@ import { periodStat, rangeStat } from '../lib/budget'
 import { upcoming, STATUS_PILL } from '../lib/recurring'
 import { cashCalendar, burn, runwayProjection, netWorthSeries, safeToSpend, accountPaymentsDue } from '../lib/forecast'
 import { cashOnHand, netWorth, liabilities, debtDueState, acctLabel, debtBal } from '../lib/accounts'
+import { accountTwins } from '../lib/accountMerge'
 import { accountState, type RTxn } from '../lib/reconcile'
 import { debtTotals } from '../lib/debts'
 import { goalProgress } from '../lib/goals'
@@ -55,6 +56,7 @@ export function Dashboard() {
   { const n = data.transactions.filter(x => x.status !== 'void' && (x.tags || []).includes(REVIEW_TAG)).length; if (n) attention.push({ c: 'info', t: `${n} transaction${n === 1 ? '' : 's'} flagged for review`, m: 'your payee rules asked you to look at these', d: 'Review' }) }
   if (ps && ps.uncat > 0) attention.push({ c: 'info', t: `${fmtMoney(ps.uncat)} uncategorized this period`, m: 'categorize it so the budget is right', d: 'Uncategorized' })
   // 0.27.0: transactions that may be the same one twice — the engine merges the clear cases itself; these need a person
+  { const tw = accountTwins(data); if (tw.length) attention.push({ c: 'info', id: 'twins', t: `${tw.length} account${tw.length === 1 ? ' is' : 's are'} listed more than once`, m: `${tw.slice(0, 3).map(g => g.name).join(', ')}${tw.length > 3 ? '…' : ''} — fold the copies into one so payments land in one place`, d: 'Accounts' }) }
   if (dupN.review > 0) attention.push({ c: 'info', id: 'dups', t: `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check`, m: 'same payee and amount, or nearly — merge or keep both', d: 'Duplicates' })
   data.hardship.filter(h => !['Closed', 'Not needed', 'Declined', 'Enrolled'].includes(h.status) && h.next_followup && h.next_followup <= t).forEach(h => attention.push({ c: 'warn', id: h.id, t: `Call ${h.entity}`, m: `follow-up ${h.next_followup === t ? 'today' : 'was ' + fmtDY(h.next_followup!)}`, d: 'Hardship' }))
   revalueDue(data, t).forEach(r => attention.push({ c: 'info', id: 'asset:' + r.a.id, t: `Update the value of ${r.a.name}`, m: r.asOf ? `last valued ${fmtDY(r.asOf)} (${r.age} days ago)${r.estimate != null ? ` — the guide estimates ${fmtMoney(r.estimate)} now` : ''}` : 'no as-of date on the value yet', d: 'Accounts' }))

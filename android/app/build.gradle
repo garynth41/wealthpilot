@@ -1,6 +1,6 @@
 apply plugin: 'com.android.application'
 
-// Cresari (0.27.1): the version comes from package.json — 0.27.1 → versionName "0.27.1", versionCode 270100 (+ WP_BUILD_NUMBER, 0–99,
+// Cresari (0.28.0): the version comes from package.json — 0.28.0 → versionName "0.28.0", versionCode 280000 (+ WP_BUILD_NUMBER, 0–99,
 // for a rebuild of the same version, since Google Play needs a higher code for every upload; the iOS build number is the same figure).
 // Release signing reads the upload key from environment variables (CI secrets) and never from the repo; without them a release build
 // is simply unsigned. See docs/MOBILE.md.

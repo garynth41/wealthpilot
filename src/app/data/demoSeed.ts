@@ -18,6 +18,9 @@ export const STARTER_CATEGORIES: Array<[string, string, 'expense' | 'income' | '
 
 let seq = 0
 export const demoId = () => `d${(++seq).toString(36).padStart(5, '0')}`
+/** A demo saved in this browser is loaded back with the ids it had: start numbering after the highest of them (0.28.0). The counter used
+ *  to restart at 1 on every page load, so a row added after a reload could get the id of an older row — and an edit to one changed the other. */
+export function demoIdsAfter(ids: Iterable<unknown>) { for (const id of ids) { const m = typeof id === 'string' && /^d([0-9a-z]{5,})$/.exec(id); if (m) { const n = parseInt(m[1], 36); if (Number.isFinite(n) && n > seq) seq = n } } }
 
 export function demoSeed(): { household: Household; data: Data } {
   seq = 0

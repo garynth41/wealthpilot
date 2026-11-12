@@ -39,6 +39,7 @@ export const accounts: GuidePage = {
         { term: 'As of', text: 'The date that balance was true.' },
         { term: 'Counts as cash', text: 'Include this account in cash on hand, safe-to-spend, the runway and the forecast. Usually on for checking, savings and cash; off for investments and retirement.' },
         { term: 'In net worth', text: 'Include this account in total assets and net worth.' },
+        { term: 'In my figures', text: 'Ticked for every account that is counted. Untick it to leave the whole account out — its balance and every transaction on it — for an account that is not your money, such as a child\'s account linked to your sign-in. It moves to Left out of your figures, where you can tick it again.' },
         { term: 'APY %', text: 'The yearly interest the account earns; used in projections.' },
         { term: 'Status', text: 'Active accounts count everywhere. Closed, Paid off and Hidden accounts keep their history but drop out of totals and lists.' },
         { term: 'ID', text: 'A short reference (A-number) you can quote or search for.' },
@@ -104,6 +105,28 @@ export const accounts: GuidePage = {
       tips: ['Link each goal to the account it is saved in on the Savings Goals page.'],
     },
     {
+      title: 'Listed more than once',
+      what: 'Appears only when the same account is on file several times — the same name, type and institution. Every account list then offers it more than once, and payments land on whichever copy was picked.',
+      how: ['Check the row: which copy is kept, what moves onto it and the balance it will show.', 'Click Merge into one (or Merge all). Every transaction, bill, statement and link on the copies moves onto the kept account and the other copies are deleted.', 'Correct the balance afterwards if it is off.'],
+      fields: [
+        { term: 'Copy that is kept', text: 'The one with a bank feed, else the one with the most transactions, else an active one, else the oldest.' },
+        { term: 'Moves onto it', text: 'How many transactions, bills, statements and other links point at the other copies today.' },
+        { term: 'Balance after', text: 'Taken from the most recently updated copy — the copies describe one debt, so their balances are never added together.' },
+      ],
+      tips: ['Accounts with different last-four digits, or that the bank reports separately, are different accounts and are never offered here.', 'Copies usually come from approving several emails about one creditor at once; email capture now reuses the account it already made.', 'Merging cannot be undone — download a backup first (Settings → Backup & data) if you want one.'],
+    },
+    {
+      title: 'Left out of your figures',
+      what: 'Accounts you can see at the bank that are not your money — a child\'s checking account linked to your sign-in, an account you hold for someone else. They are kept and the bank sync still updates them, but nothing on them is counted or listed anywhere else in the app.',
+      how: ['To leave an account out, untick In my figures on its row under Cash, savings & investments or Credit cards & loans, and confirm.', 'To count it again, tick In my figures here. Everything comes back as it was.'],
+      fields: [
+        { term: 'In my figures', text: 'Unticked while the account is left out. Tick it to count the account, its balance and its transactions again.' },
+        { term: 'Balance at the bank', text: 'The latest figure from the bank feed (or the last balance typed), with its date. It is not part of cash, debt or net worth.' },
+        { term: 'Transactions kept', text: 'How many transactions sit on the account. They are not on the Transactions page, in the budget, in spending or in any report while it is left out.' },
+      ],
+      tips: ['Money you move to a left-out account reads as money out of your own account, and money that comes from it as money in — file it under a category such as family support.', 'Transfers the app had paired between the two accounts are split back into what the bank reported, and are paired again when you count the account again.', 'Bills paid from it, income deposited to it and goals saved in it go with it.', 'Nothing is deleted, and a backup still contains everything.'],
+    },
+    {
       title: 'Statement history',
       what: 'Every card and loan statement saved — from New statement, a statement import, or one approved from email — newest first.',
       fields: [
@@ -120,6 +143,8 @@ export const accounts: GuidePage = {
     },
   ],
   tasks: [
+    { q: 'How do I stop my child\'s account from counting in my figures?', steps: ['Find the account under Cash, savings & investments.', 'Untick In my figures and confirm.', 'It moves to Left out of your figures. Its balance and transactions stop counting everywhere; the bank sync still keeps it up to date.', 'Tick In my figures there to bring it back.'] },
+    { q: 'The same account is listed several times — how do I fix it?', steps: ['Open Accounts. A card called Listed more than once shows each repeated account.', 'Click Merge into one on the row, or Merge all.', 'Check the balance on the kept account and correct it if needed.'] },
     { q: 'How do I record a credit card payment?', steps: ['Find the card under Credit cards & loans.', 'Click Record payment.', 'Pick the amount (minimum, planned, statement or full balance), the date and the account it came from.', 'Click Save payment — the bank balance goes down, the card balance goes down and the statement is marked paid.'] },
     { q: 'How do I find what an account\'s balance was on a past date?', steps: ['Click History on the account in Account balances as last updated.', 'Type the date in "Balance on".', 'The box shows the balance at the end of that day and where it came from.'] },
     { q: 'How do I see my equity in my home or car?', steps: ['Add it under Property & vehicles with today\'s estimate.', 'Choose its mortgage or auto loan in "Loan against it".', 'Equity and loan-to-value appear in the row and the totals.'] },

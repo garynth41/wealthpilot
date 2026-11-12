@@ -13,10 +13,16 @@ import { planDedupe, unpairPatch, type DTxn } from '../lib/dedupe'
 import { paycheckOnFile } from '../lib/paySchedule'
 import { post } from '../lib/ledger'
 import { patchProblem, InputError, isInputError } from '../lib/validate'
-import type { Transaction } from './data/types'
+import type { Account, Transaction } from './data/types'
+import { leaveOut, unpairForLeavingOut, everyAccount } from '../lib/leftOut'
+import { planAccountMerge, feedRemap } from '../lib/accountMerge'
 
 /** Merged duplicates live in data.duplicates, everything else in data.transactions — so every page and engine sees each transaction once. */
 export const splitDups = (d: Data): Data => { const all = [...d.transactions, ...(d.duplicates || [])]; return { ...d, transactions: all.filter(t => !t.duplicate_of), duplicates: all.filter(t => !!t.duplicate_of) } }
+/** What every page reads (0.28.0): each transaction once, and nothing from an account left out of the figures (lib/leftOut.ts → data.off). */
+export const toView = (d: Data): Data => leaveOut(splitDups(d))
+/** writes run a few at a time: quick enough for a few dozen rows, gentle on the connection */
+async function inChunks<T>(items: T[], run: (x: T) => Promise<unknown>, size = 6) { for (let i = 0; i < items.length; i += size) await Promise.all(items.slice(i, i + size).map(run)) }
 
 import { setErrorSink } from '../lib/errors'
 import { saveOffline, loadOffline, clearOffline, makeSnapshot, isNetworkError } from '../lib/offlineCache'
@@ -74,6 +80,10 @@ interface State {
   mergeDuplicates: (keeper: string, dups: string[], patch?: Partial<Transaction>) => Promise<void>
   restoreDuplicate: (id: string) => Promise<void>
   notDuplicates: (ids: string[]) => Promise<void>
+  /** 0.28.0: switch an account out of (off = true) or back into the household's figures; returns how many paired transfers were taken apart */
+  leaveAccountOut: (id: string, off: boolean) => Promise<number>
+  /** 0.28.0: fold copies of one account into the copy to keep (lib/accountMerge.ts); returns how many rows moved */
+  mergeAccounts: (keeperId: string, otherIds: string[]) => Promise<number>
 }
 
 /** Captured before the Supabase client reads and clears the URL: a password-reset link lands with #access_token=…&type=recovery. */
@@ -147,7 +157,7 @@ export const useStore = create<State>((set, get) => ({
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
-    try { const r = await repo.loadAll(); set({ household: r.household, data: splitDups(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {})
+    try { const r = await repo.loadAll(); set({ household: r.household, data: toView(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {})
       const uid = get().user?.id; if (repo.mode === 'db' && uid && !signingOut && get().repo === repo) void saveOffline(makeSnapshot(uid, r, APP_VERSION)) }
     catch (e) { if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
       set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
@@ -181,6 +191,49 @@ export const useStore = create<State>((set, get) => ({
     if (keeper && unpair) { const k = await repo.update('transactions', keeper.id, unpair as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper.id ? k : t) } })) }
   },
   async notDuplicates(ids) { for (const id of ids) await get().update('transactions', id, { dedupe_ok: true }) },
+  // Leaving an account out (0.28.0). The flag goes first, so nothing pairs across the line while the transfers are taken apart; the data is
+  // then read again and split (toView), which is what actually takes the account off every page. If a write fails part-way the flag is
+  // put back, so the account is counted as before and the engine re-pairs whatever was taken apart; and asking again for an account that
+  // is already off finishes any pair an earlier attempt did not reach, so a retry always completes the job.
+  async leaveAccountOut(id, off) {
+    const repo = need(get); const d = get().data
+    const a = everyAccount(d).find(x => x.id === id); if (!a) throw new Error('That account is no longer here — refresh and try again')
+    const was = !!a.excluded; const pairs = off ? unpairForLeavingOut(d, id) : []
+    if (was === off && !pairs.length) return 0
+    if (was !== off) await repo.update('accounts', id, { excluded: off } as Partial<Account>)
+    // restore the merged row first, change the keeper second: whatever stops in between, the keeper is still a paired transfer and the plan finds it again
+    try { await inChunks(pairs, async u => { if (u.restore) await repo.update('transactions', u.restore, { duplicate_of: null }); await repo.update('transactions', u.keeper, u.patch) }) }
+    catch (e) {
+      if (was !== off) { try { await repo.update('accounts', id, { excluded: was } as Partial<Account>) } catch { /* the retry above finishes it */ } }
+      await get().refresh().catch(() => {})
+      throw new Error(`${a.name} could not be left out just now (${(e as Error).message}). Nothing is lost — try again.`)
+    }
+    void repo.logAudit('correction', off ? `${a.name} left out of the figures${pairs.length ? ` — ${pairs.length} transfer${pairs.length === 1 ? '' : 's'} with your other accounts now read as money in or out` : ''}` : `${a.name} counted again`, { excluded: off, unpaired: pairs.map(u => ({ keeper: u.keeper, restored: u.restore || null })) }, id).catch(() => {})
+    await get().refresh()
+    return pairs.length
+  },
+  async mergeAccounts(keeperId, otherIds) {
+    const repo = need(get); const d = get().data
+    const keeper = d.accounts.find(a => a.id === keeperId); const others = d.accounts.filter(a => otherIds.includes(a.id) && a.id !== keeperId)
+    if (!keeper || !others.length) throw new Error('Those accounts are no longer here — refresh and try again')
+    const plan = planAccountMerge(d, keeper, others, get().settings().finmail?.rules || null)
+    // the bank feed's match (which bank account goes into which of ours) is kept by id: a copy that is matched hands its feed to the kept
+    // account before anything else moves. The merge stops when that match cannot be read or — for a copy that is matched — cannot be saved
+    // and read back: a member who may not open Bank connections cannot be shown it, and only an owner may change it.
+    if (get().mode === 'db' && !get().canView('/connections')) throw new Error('Merging accounts needs to check the bank feed\'s matching, which your access does not include — ask an owner to merge them')
+    const st = await repo.syncStatus(); if (get().mode === 'db' && !st.available) throw new Error('The bank feed\'s matching could not be checked just now — nothing was merged; try again')
+    const gone = others.map(o => o.id); const nextMap = feedRemap(st.connection?.account_map || null, keeper.id, gone, keeper.name)
+    if (nextMap) { if (!get().isOwner()) throw new Error(`A copy of ${keeper.name} is matched to the bank feed — ask an owner to merge them`)
+      await repo.syncSetMap(nextMap); const after = (await repo.syncStatus()).connection?.account_map || {}
+      if (Object.values(after).some(v => gone.includes(v))) throw new Error('The bank feed\'s matching could not be moved to the kept account — nothing was merged') }
+    await inChunks(plan.moves, m => repo.update(m.coll, m.id, m.patch as never))
+    if (Object.keys(plan.keeperPatch).length) await repo.update('accounts', keeper.id, plan.keeperPatch)
+    if (plan.rules) await get().saveSettings({ finmail: { ...(get().settings().finmail || {}), rules: plan.rules } })
+    for (const o of others) await repo.remove('accounts', o.id)
+    void repo.logAudit('correction', `Merged ${others.length} cop${others.length === 1 ? 'y' : 'ies'} of ${keeper.name} into one account`, { keeper: keeper.id, removed: others.map(o => ({ id: o.id, ref: o.ref || null, balance: o.balance, status: o.status })), moved: plan.moved, keeperPatch: plan.keeperPatch, feed: !!nextMap }, keeper.id).catch(() => {})
+    await get().refresh()
+    return plan.moves.length
+  },
   async autoDedupe(quiet) {
     if (deduping || !get().canEdit() || !get().repo) return 0
     deduping = true
@@ -275,7 +328,7 @@ function cachedUser(): User | null { try { for (let i = 0; i < localStorage.leng
 /** No connection at start-up: open the read-only copy this device kept (0.25.0); reload once the connection is back. */
 async function openOffline(user: User): Promise<boolean> {
   const snap = await loadOffline(user.id, localStorage.getItem(LS('household'))); if (!snap) return false
-  useStore.setState({ households: [{ id: snap.householdId, name: snap.household.name, role: snap.role }], mode: 'db', repo: new SupabaseRepo(snap.householdId), household: snap.household, data: splitDups(snap.data), role: snap.role, readOnly: snap.readOnly, modules: snap.modules, offlineAt: snap.savedAt, lastRefresh: Date.parse(snap.savedAt), loadError: null })
+  useStore.setState({ households: [{ id: snap.householdId, name: snap.household.name, role: snap.role }], mode: 'db', repo: new SupabaseRepo(snap.householdId), household: snap.household, data: toView(snap.data), role: snap.role, readOnly: snap.readOnly, modules: snap.modules, offlineAt: snap.savedAt, lastRefresh: Date.parse(snap.savedAt), loadError: null })
   window.addEventListener('online', () => location.reload(), { once: true })
   return true
 }

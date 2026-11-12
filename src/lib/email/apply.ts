@@ -4,6 +4,8 @@ import { addDays, today } from '../dates'
 import { debtDueState } from '../accounts'
 import { statementUpdate } from '../statements'
 import { post } from '../ledger'
+import { accountLike } from '../accountMerge'
+import { everyAccount } from '../leftOut'
 import { maskDigits, when, type Fact } from './extract'
 import { key, NEW_CAT, sortForApply, type Evidence, type FactG, type Proposal, type Target } from './propose'
 
@@ -25,12 +27,19 @@ export async function applyOne(ctx: Ctx, p: Proposal, inp: ApplyInput = {}): Pro
   const f = { ...(p.f as FactG) }; const d = ctx.data()
   if (inp.amount != null && inp.amount !== ('' as unknown)) f.amount = +inp.amount
   if (inp.date) { if (f.kind === 'bill' || f.kind === 'pastdue') f.dueDate = inp.date; else f.txnDate = inp.date }
-  const tgt: Target = inp.target || p.target
+  let tgt: Target = inp.target || p.target
   let account: Account | null = tgt.startsWith('account:') ? d.accounts.find(a => a.id === tgt.slice(8)) || null : null
   let recurring: Recurring | null = tgt.startsWith('recurring:') ? d.recurring.find(r => r.id === tgt.slice(10)) || null : null
   let category: Category | null = tgt.startsWith('category:') ? d.categories.find(c => c.id === tgt.slice(9)) || null : recurring ? d.categories.find(c => c.id === recurring!.category_id) || null : null
   const payFrom = inp.accountId || d.accounts.find(a => a.kind === 'checking' && a.status === 'Active')?.id || null
   const rec: Partial<EmailItem> = { kind: f.kind, payee: f.payee, last4: f.last4 || null, amount: f.amount ?? null, min_due: f.minDue ?? null, balance: f.balance ?? f.stmtBal ?? null, fee: f.fee ?? null, due_date: f.dueDate || null, txn_date: f.kind === 'bill' ? f.stmtDate || f.date : f.txnDate || f.date, status: '', autopay: !!f.autopay, src: f.ev[0]?.src || 'gmail', evidence: f.ev.map(e => ({ msg_id: e.msg_id, thread_id: e.thread_id, src: e.src, url: e.url || '', subject: maskDigits(e.subject).slice(0, 160), date: e.date })), notes: '' }
+  if (tgt === 'new-account' && ['bill', 'balance', 'declined', 'pastdue'].includes(f.kind)) {
+    // several emails about one creditor approved together each used to make their own account (0.28.0): the first one makes it, the rest
+    // find it here — read fresh, not from the data this proposal was drawn up against — and update it like any account already on file
+    // (an account left out of the figures counts as already there too: an email about it never makes a second one)
+    const twin = accountLike(everyAccount(ctx.data()), { name: inp.name || f.payee, kind: ACCT_KIND[f.ptype] || 'credit_card', institution: f.payee, last4: f.last4 || null })
+    if (twin) { account = twin; tgt = `account:${twin.id}` }
+  }
   if (tgt === 'new-account' && ['bill', 'balance', 'declined', 'pastdue'].includes(f.kind)) {
     const sd = f.stmtDate || f.date
     account = await ctx.insert('accounts', { name: inp.name || f.payee, kind: ACCT_KIND[f.ptype] || 'credit_card', institution: f.payee, last4: f.last4 || null, apr: 0, balance: +(f.balance ?? f.stmtBal ?? 0) || 0, balance_as_of: sd, statement_date: sd, statement_balance: +(f.stmtBal ?? f.balance ?? 0) || 0, minimum_payment: +(f.minDue ?? 0) || 0, due_date: f.dueDate || null, planned_payment: +(f.minDue ?? 0) || 0, autopay: !!f.autopay, include_in_cash: false, include_in_net_worth: true, status: 'Active', sort_order: d.accounts.length + 1, notes: 'Added from email' + (f.ptype === 'collection' ? ' — collection account' : '') })
