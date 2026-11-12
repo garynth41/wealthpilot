@@ -1,7 +1,7 @@
 // Cresari service worker: makes the app installable and lets it open offline.
 // App shell + hashed assets are cached; index.html is network-first so a new release is picked up on the next load.
 // Nothing from Supabase, Google or Microsoft is ever cached — financial data only comes from the live API.
-const CACHE = 'cresari-v16'
+const CACHE = 'cresari-v17'
 const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg', './icon-192.png', './icon-512.png']
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())) })
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())) })
