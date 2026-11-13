@@ -77,7 +77,7 @@ export const dashboard: GuidePage = {
     {
       title: 'Needs attention',
       what: 'The things that need a decision today, in one list. Each line links to the page where you fix it, usually at the exact bill, account or item.',
-      how: ['Click a line to open the right page.', 'Deal with the red lines first, then amber, then blue.'],
+      how: ['Click a line to open the right page.', 'Deal with the red lines first, then amber, then blue.', 'The heading takes the color of the most urgent line — red, amber or blue — so it stands out; it turns soft green when nothing needs attention.'],
       fields: [
         { term: 'Red lines', text: 'An overdue bill; a failed bank sync (balances are kept from the last good sync); a card or loan payment past its due date; a past-due notice, declined payment or bank alert read from email; or cash running out within the next 30 days.' },
         { term: 'Amber lines', text: 'An account whose book balance differs from its verified bank balance by $1 or more; cash dropping below your reserve floor in the next 30 days; variable spending more than 10% ahead of pace; up to three categories over budget by more than your red threshold; or a hardship follow-up call that is due.' },

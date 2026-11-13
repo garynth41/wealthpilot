@@ -1,6 +1,6 @@
 /* Column resize grips (0.26.0): every table.tbl heading gets one at its right edge (lib/colResize.ts). Drag with a mouse, a pen or a
    finger; double-click (double-tap) puts the column back. `touch-action:none` keeps a finger on the grip from scrolling the page instead.
-   The th is already position:relative (styles.css "table extras"); widths are set inline on the th only, so table-layout stays auto. */
+   The th is position:sticky (styles.css .tbl th), which also places the grip; widths are set inline on the th only, so table-layout stays auto. */
 .tbl th > .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none;-webkit-user-select:none;touch-action:none;z-index:2;border-radius:2px;background:transparent;transition:background .12s}
 .tbl th > .colgrip:hover,.tbl th > .colgrip.active{background:var(--accent-soft)}
 .tbl th > .colgrip.active{box-shadow:inset -2px 0 0 var(--accent)}
