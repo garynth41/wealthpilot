@@ -14,6 +14,7 @@ import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
 import { useModal, useConfirm, useLayer, hasOpenLayer, trapTab, MHead, MBody, Btn } from './ui'
 import { installTableCards } from './tableCards'
+import { installFrozenEdge } from '../lib/frozenCol'
 import { useColumnResize } from '../lib/colResize'
 import { sb } from '../app/supabase'
 import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
@@ -129,6 +130,7 @@ export function Layout({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', k); return () => { clearTimeout(t); window.removeEventListener('keydown', k) } }, [drawer])   // eslint-disable-line react-hooks/exhaustive-deps
   // phones: hand-written tables become cards, and table areas that still scroll get a tab stop (components/tableCards.ts)
   useEffect(() => installTableCards(document.body), [])
+  useEffect(() => installFrozenEdge(), [])   // wide tables: a shadow where scrolled columns slide under the frozen first one (0.28.2)
   useColumnResize()   // every table's columns drag to resize (0.26.0)
   // Skip to content moves focus to the page without changing the route (the hash router read "#main" as a page and opened the dashboard)
   const skip = (e: React.MouseEvent) => { e.preventDefault(); const m = document.getElementById('main'); if (m) { m.focus({ preventScroll: true }); m.scrollIntoView({ block: 'start' }) } }
