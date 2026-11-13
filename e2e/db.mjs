@@ -37,6 +37,20 @@ ok(!!(await viewer.rpc('request_household_deletion', { p_household: hh, p_confir
 const { data: other } = await viewer.from('accounts').select('id').neq('household_id', hh); ok((other || []).length === 0, 'nobody sees another household\'s rows')
 const { error: se } = await owner.from('credit_scores').insert({ household_id: hh, person: 'Me', date: '2026-10-01', score: 731, bureau: 'Experian', model: 'FICO 8' }); ok(!se, 'credit scores save ' + (se?.message || ''))
 const { data: log } = await owner.from('activity_log').select('action, table_name').eq('household_id', hh); ok((log || []).some(l => l.table_name === 'credit_scores'), 'changes are written to the activity log (audit trigger)')
+// 0.29.0 feedback: anyone can send a note (signed in or not), a tester reads back only their own and cannot triage it or see the tester numbers.
+// Five notes in ten minutes is the limit, so a rerun that hits it still counts as the rule working.
+const fbArgs = m => ({ p_kind: 'idea', p_message: m, p_rating: 4, p_page: '/start', p_app_version: 'e2e', p_platform: 'web', p_device: 'CI', p_screen: '1x1', p_look: null, p_demo: false, p_email: null, p_tester: 'e2e' })
+const limited = e => /too many|try again|limit/i.test(e?.message || '')
+const { data: fbId, error: fe } = await owner.rpc('submit_feedback', fbArgs(`[e2e] owner note ${stamp}`)); ok(!fe || limited(fe), 'a signed-in tester sends feedback ' + (fe?.message || ''))
+if (fbId) {
+  const { data: mine } = await owner.from('feedback').select('id, status, tester').eq('id', fbId); ok(mine?.length === 1 && mine[0].status === 'new' && mine[0].tester === 'e2e', 'the tester reads back their own note, marked new')
+  ok(((await viewer.from('feedback').select('id').eq('id', fbId)).data || []).length === 0, 'another person cannot read it')
+  const { data: tri } = await owner.from('feedback').update({ status: 'fixed' }).eq('id', fbId).select('id'); ok(!tri?.length, 'a tester cannot mark their own note fixed (only the operator triages)') }
+const anon = createClient(URL_, KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+const { error: ane } = await anon.rpc('submit_feedback', fbArgs(`[e2e] demo note ${stamp}`)); ok(!ane || limited(ane), 'someone trying the demo, not signed in, can send feedback ' + (ane?.message || ''))
+ok(((await anon.from('feedback').select('id')).data || []).length === 0, 'the public cannot read any feedback')
+ok(!!(await owner.rpc('tester_stats')).error, 'tester numbers are for the operator only')
+ok(!!(await anon.rpc('submit_feedback', fbArgs(' '))).error, 'an empty note is refused')
 
 // --- 0.25.1: membership is the owner's call, limited access, invitations, deleting an account ---
 const { data: { user: viewerUser } } = await viewer.auth.getUser(); const VID = viewerUser.id

@@ -595,3 +595,55 @@ details.techsetup code { overflow-wrap: anywhere; }
 :root[data-style="terminal"] .usebar{height:4px;border-radius:0} :root[data-style="terminal"] .usebar i{border-radius:0}
 :root[data-style="terminal"] .focus-hit{box-shadow:inset 3px 0 0 var(--accent),0 0 0 1px var(--accent)}
 :root[data-style="terminal"] .banner{border-radius:2px}
+
+/* ---- 0.29.0: testers, feedback and Start here ---- */
+/* the public Try Cresari page (pages/Try.tsx) */
+.try{max-width:1060px;margin:0 auto;padding:max(28px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(28px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+.try .brand{border:0;color:var(--ink)} .try .brand small{color:var(--ink-3)}
+.try-hero h1{font-family:var(--display);font-size:clamp(28px,4.4vw,44px);line-height:1.08;letter-spacing:-.03em;margin:22px 0 10px;max-width:22ch}
+.try-hero .lead{font-size:17px;line-height:1.55;color:var(--ink-2);max-width:62ch;margin:0 0 18px}
+.try-ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px;margin:24px 0}
+.try-way,.try-box{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow)}
+.try-way{display:flex;flex-direction:column;gap:10px} .try-way p{margin:0;line-height:1.5} .try-way .btn{margin-top:auto}
+.try-way h2,.try-box h2{font-family:var(--display);font-size:20px;letter-spacing:-.02em;margin:0}
+.try-n{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font:700 15px/1 var(--mono)}
+.try-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px} .try-box ul{padding-left:18px;line-height:1.55} .try-box li{margin:4px 0}
+.try-foot{margin-top:28px;text-align:center}
+.linkbtn{border:0;background:none;color:var(--link);text-decoration:underline;cursor:pointer;font:inherit;font-size:13.5px;padding:4px 0} .linkbtn:disabled{opacity:.5;cursor:default}
+.install ol{padding-left:20px;margin:0 0 10px;line-height:1.5} .install li{margin:3px 0}
+:root[data-style="terminal"] .try-n{border-radius:2px}
+
+/* the Feedback dialog (components/Feedback.tsx) and its button in the menu */
+.fb-kinds,.fb-stars{border:0;padding:0;margin:0 0 12px;min-width:0} .fb-kinds legend,.fb-stars legend{font-weight:600;font-size:13.5px;margin-bottom:6px;padding:0}
+.fb-kinds label{position:relative;display:inline-flex;align-items:center;margin:0 6px 6px 0;padding:7px 13px;border:1px solid var(--line-2);border-radius:999px;cursor:pointer;font-size:13.5px;background:var(--surface)}
+.fb-kinds label.on{background:var(--accent-soft);border-color:var(--accent);color:var(--link);font-weight:600}
+.fb-kinds input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none} .fb-kinds label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.fb-stars button{border:0;background:none;font-size:26px;line-height:1;padding:2px 3px;color:var(--line-2);cursor:pointer} .fb-stars button.on{color:var(--warn)}
+.fb-stars button:focus-visible{outline:2px solid var(--accent);border-radius:4px}
+.fb-ctx{display:block;font-size:13.5px;margin:4px 0 10px} .fb-ctx input{margin-right:6px}
+.fb-mine{list-style:none;padding:0;margin:6px 0 0;font-size:13px} .fb-mine li{padding:5px 0;border-top:1px solid var(--line)} .fb-earlier{margin-top:12px;font-size:13.5px} .fb-earlier summary{cursor:pointer;color:var(--ink-2)}
+.fb-nav{display:flex;align-items:center;gap:10px;width:calc(100% - 16px);margin:6px 8px 8px;padding:8px 10px;border:1px dashed var(--rail-line);border-radius:var(--radius);background:none;color:var(--rail-ink);font:inherit;font-size:13.5px;cursor:pointer;text-align:left}
+.fb-nav:hover{background:var(--rail-hover)}
+.rail-collapsed .fb-nav{justify-content:center;padding:10px 0;border-style:solid} .rail-collapsed .fb-nav .t{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+
+/* Start here (pages/Start.tsx) */
+.start .phase{font-family:var(--display);font-size:19px;letter-spacing:-.02em;margin:10px 0 0;color:var(--ink)}
+.start-phase > .grid{margin-top:10px}
+.start-step .why{margin:0 0 8px;line-height:1.5} .start-steps{padding-left:22px;margin:0 0 8px;line-height:1.55} .start-steps li{margin:5px 0}
+.start-tips{list-style:none;padding:0;margin:0 0 12px;font-size:13px;color:var(--ink-2)} .start-tips li{padding-left:18px;position:relative;margin:4px 0} .start-tips li::before{content:'💡';position:absolute;left:0;font-size:11px;top:2px}
+.start-step.is-next{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)} .start-step.is-done .card-head .ch{color:var(--ink-3)}
+.start-step details summary{cursor:pointer;color:var(--ink-2);font-size:13.5px;margin-bottom:6px}
+.start-list{padding-left:20px;margin:0;line-height:1.55} .start-list li{margin:5px 0}
+:root[data-style="terminal"] .start-step.is-next{box-shadow:inset 3px 0 0 var(--accent)}
+
+/* Feedback & testers (pages/FeedbackInbox.tsx) */
+.fb-filters{flex-wrap:wrap;margin-bottom:8px}
+.fb-inbox{list-style:none;margin:0;padding:0} .fb-item{padding:12px 0;border-top:1px solid var(--line)} .fb-item:first-child{border-top:0}
+.fb-item.st-new{box-shadow:inset 3px 0 0 var(--accent);padding-left:12px}
+.fb-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px} .fb-from{font-size:13px;color:var(--ink-2)} .fb-status{width:auto;margin-left:auto;padding:4px 8px}
+.fb-rating{color:var(--warn);letter-spacing:1px} .fb-rating .dim{opacity:.25}
+.fb-msg{white-space:pre-wrap;margin:8px 0 4px;line-height:1.5} .fb-ctx-line,.fb-item .fb-ctx{margin:0 0 8px}
+.fb-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center} .fb-actions .inp{flex:1 1 220px;min-width:0}
+.inv-link code{display:block;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);word-break:break-all;font-size:13px}
+.inv-msg{white-space:pre-wrap;font:12.5px/1.5 var(--mono);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin:8px 0 0;max-height:320px;overflow:auto}
+@media (max-width:700px){ .try-cols{grid-template-columns:1fr} .fb-status{margin-left:0} }

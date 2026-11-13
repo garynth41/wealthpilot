@@ -348,13 +348,13 @@ for (const W of [1400, 390]) {
     ok(/#\/debts/.test(p.url()) && (await p.locator('.helpdrawer').count()) === 1 && /Help · Debt Payoff/.test(await p.locator('.helpdrawer h2').textContent()), 'a result on another page goes there with the help still open')
     await p.locator('.helpdrawer .seg button:has-text("Glossary")').click(); await p.waitForTimeout(300); ok((await p.locator('.helpdrawer .g-gloss dt').count()) > 40, 'the glossary lists every term A–Z')
     await p.keyboard.press('Escape'); await p.waitForTimeout(200)
-    { const bad = []; for (const path of ['/', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) {
+    { const bad = []; for (const path of ['/', '/start', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) {
       await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(700); const qs = p.locator('.cardhelp'); const n = await qs.count(); if (!n) { bad.push(path + ' (no ?)'); continue }
       await qs.nth(n - 1).click(); await p.waitForTimeout(500); if ((await p.locator('.helpdrawer .g-card.g-focus').count()) !== 1) bad.push(path + ': ' + await qs.nth(n - 1).getAttribute('aria-label'))
       await p.keyboard.press('Escape'); await p.waitForTimeout(150) }
       ok(!bad.length, 'on every page a card\'s ? finds its own help ' + bad.join(', ')) }
     await p.goto('http://localhost:4173/#/help'); await p.waitForTimeout(1000)
-    ok(/Start here/.test(await p.locator('main').textContent()) && (await p.locator('.hc-tile').count()) === 21, 'the Help Center starts with getting started and a tile for every page')
+    ok(/Start here/.test(await p.locator('main').textContent()) && (await p.locator('.hc-tile').count()) === 22, 'the Help Center starts with getting started and a tile for every page')
     await p.fill('input[aria-label="Search the Help Center"]', 'sync failed'); await p.waitForTimeout(400); ok((await p.locator('.g-kind.k-faq').count()) > 0, 'Help Center search finds troubleshooting answers')
     await p.fill('input[aria-label="Search the Help Center"]', ''); await p.click('.hc-index button:has-text("Account Balances")'); await p.waitForTimeout(500)
     await p.click('button:has-text("Expand all cards")'); await p.waitForTimeout(300); ok((await p.locator('.hc-main details.g-card[open]').count()) >= 8, 'a page\'s guide in the Help Center opens every card at once')
@@ -476,10 +476,35 @@ for (const W of [1400, 390]) {
   await ep.reload(); await ep.waitForTimeout(600); await ep.click('text=Open the offline demo'); await ep.waitForTimeout(1000)
   ok(/Get set up/.test(await ep.locator('main').textContent()) && /0 of 7 steps/.test(await ep.locator('main').textContent()), 'an empty household sees the getting-started checklist')
   const badPages = []
-  for (const path of ['/', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) {
+  for (const path of ['/', '/start', '/forecast', '/insights', '/transactions', '/budget', '/bills', '/income', '/accounts', '/debts', '/connections', '/reconcile', '/email', '/investments', '/tax', '/plan', '/goals', '/protection', '/hardship', '/reports', '/trends', '/settings']) {
     await ep.goto('http://localhost:4173/#' + path); await ep.waitForTimeout(700); const txt = await ep.locator('main').textContent().catch(() => '')
     if (/NaN|undefined|Infinity|Invalid Date|\[object Object\]/.test(txt) || /Something went wrong/.test(await ep.locator('body').textContent())) badPages.push(path) }
   ok(!badPages.length && !errs.length, `every page renders for an empty household${badPages.length ? ' — bad: ' + badPages.join(', ') : ''}${errs.length ? ' — errors: ' + errs.slice(0, 2).join(' | ') : ''}`)
   await ep.close() }
+// 0.29.0: testers — an invite link opens the public Try page, the demo goes to Start here, and the Feedback dialog sends what was typed.
+// The send is caught here and answered locally: the smoke build points at production, and a test note must never land there.
+for (const W of [390, 1400]) {
+  const tp = await b.newPage({ viewport: { width: W, height: W === 390 ? 844 : 950 } }); const errs = []; tp.on('pageerror', e => errs.push(e.message))
+  let sent = null; await tp.route('**/rest/v1/rpc/submit_feedback', r => { sent = JSON.parse(r.request().postData() || '{}'); return r.fulfill({ status: 200, contentType: 'application/json', body: '"00000000-0000-4000-8000-000000000001"' }) })
+  await tp.goto('http://localhost:4173/'); await tp.waitForTimeout(600); await tp.evaluate(() => localStorage.clear())
+  await tp.goto('http://localhost:4173/#/try?t=church'); await tp.waitForTimeout(900)
+  const tsw = await tp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  ok(await tp.locator('[data-testid="try-page"]').count() === 1 && await tp.evaluate(() => localStorage.getItem('cresari.tester')) === 'church' && tsw <= 1, `${W}: an invite link opens the Try page without signing in, remembers the invite code and fits the screen (${tsw}px)`)
+  await tp.screenshot({ path: `e2e/shots/${W}_try.png`, fullPage: true })
+  await tp.click('button:has-text("Open the demo")'); await tp.waitForTimeout(1400)
+  const sh = await tp.locator('h1').first().textContent(), ssw = await tp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  ok(await tp.evaluate(() => location.hash) === '#/start' && sh === 'Start here' && (await tp.locator('[id^="start-"]').count()) >= 8 && ssw <= 1, `${W}: Open the demo goes to Start here with every setup step (${sh}, ${ssw}px)`)
+  await tp.screenshot({ path: `e2e/shots/${W}_start.png`, fullPage: true })
+  await tp.goto('http://localhost:4173/#/budget'); await tp.waitForTimeout(900)
+  await tp.locator('[data-testid="feedback-icon"]:visible, [data-testid="feedback-btn"]:visible').first().click(); await tp.waitForTimeout(300)
+  await tp.click('.modal button:has-text("Send feedback")'); await tp.waitForTimeout(200)
+  ok(/few words/.test(await tp.locator('.modal [role="alert"]').textContent().catch(() => '')) && sent === null, `${W}: an empty note is stopped before it is sent`)
+  await tp.fill('#fb-msg', 'Smoke test note'); await tp.screenshot({ path: `e2e/shots/${W}_feedback.png` }); await tp.click('.modal button:has-text("Send feedback")'); await tp.waitForTimeout(800)
+  ok(sent?.p_message === 'Smoke test note' && sent.p_tester === 'church' && sent.p_demo === true && sent.p_page === '/budget' && /Thank you/.test(await tp.locator('.modal').textContent().catch(() => '')), `${W}: the note goes out with the invite code and the page it came from (${sent?.p_page})`)
+  await tp.keyboard.press('Escape'); await tp.goto('http://localhost:4173/#/feedback'); await tp.waitForTimeout(800)
+  const fh = await tp.locator('h1').first().textContent()
+  ok(fh === 'Dashboard' && (await tp.locator('a[href="#/feedback"]').count()) === 0, `${W}: Feedback & testers is out of the menu in the demo, and its address opens the Dashboard (${fh})`)
+  ok(!errs.length, `${W}: no page errors on the tester pages ${errs.slice(0, 2).join(' | ')}`); await tp.close()
+}
 console.log('smoke fails', F); await b.close(); srv.close()
 process.exit(F ? 1 : 0)   // a failed check fails CI (before 0.25.0's follow-up it only printed the count)

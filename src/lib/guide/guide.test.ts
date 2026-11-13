@@ -10,7 +10,7 @@ const ROUTES: Record<string, string[]> = {
   About: ['/settings'], Accounts: ['/accounts'], Allocate: ['/', '/income'], AssetsParts: ['/accounts', '/debts'], BankSync: ['/connections'], Bills: ['/bills'], Budget: ['/budget'], Connections: ['/connections'],
   Coverage: ['/connections'], Dashboard: ['/'], DeleteHousehold: ['/settings'], DeleteAccount: ['/settings'], DashboardParts: ['/'], Debts: ['/debts'], Email: ['/email'], Forecast: ['/forecast'], Goals: ['/goals'], Hardship: ['/hardship'], Income: ['/income'],
   Insights: ['/insights'], Investments: ['/investments'], Lots: ['/investments'], Migrate: ['/connections'], Plan: ['/plan'], Protection: ['/protection'], Reconcile: ['/reconcile'], Reports: ['/reports'],
-  Settings: ['/settings'], Tax: ['/tax'], Transactions: ['/transactions'], Trends: ['/trends'],
+  Settings: ['/settings'], Tax: ['/tax'], Transactions: ['/transactions'], Trends: ['/trends'], Start: ['/start'], FeedbackInbox: ['/feedback'],
 }
 /** Every <Card title=…> in a page file: literal titles, the fixed text of template titles, and the string literals inside expressions. Cards with help="…" use that key. */
 function cardTitles(src: string): Array<{ title: string; raw: string }> {

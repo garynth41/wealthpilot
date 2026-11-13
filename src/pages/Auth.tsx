@@ -12,7 +12,7 @@ import { DeleteAccountCard } from './DeleteAccount'
 type Mode = 'signin' | 'signup' | 'forgot' | 'recover' | 'mfa'
 export function AuthPage({ recover }: { recover?: boolean }) {
   const { signIn, signUp, resetPassword, updatePassword, enterDemo, verifyMfa, verifyRecoveryCode, signInWithPasskey, mfaPending, signOut } = useStore(); const [useRecovery, setUseRecovery] = useState(false)
-  const [mode, setMode] = useState<Mode>(recover ? 'recover' : 'signin'); const [code, setCode] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [msg, setMsg] = useState<{ cls: string; text: string } | null>(null); const [busy, setBusy] = useState(false)
+  const [mode, setMode] = useState<Mode>(() => { if (recover) return 'recover'; try { const m = sessionStorage.getItem('cresari.auth.mode'); sessionStorage.removeItem('cresari.auth.mode'); return m === 'signup' ? 'signup' : 'signin' } catch { return 'signin' } }); const [code, setCode] = useState(''); const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [msg, setMsg] = useState<{ cls: string; text: string } | null>(null); const [busy, setBusy] = useState(false)
   const run = async (fn: () => Promise<unknown>, okMsg?: string) => { setBusy(true); setMsg(null); try { const r = await fn(); if (okMsg) setMsg({ cls: 'good', text: okMsg }); if (r === 'confirm') setMsg({ cls: 'info', text: 'Check your email for a confirmation link, then sign in.' }) } catch (e) { setMsg({ cls: 'crit', text: (e as Error).message }) } finally { setBusy(false) } }
   const submit = (e: FormEvent) => { e.preventDefault(); if (mode === 'signin') run(() => signIn(email, pw)); else if (mode === 'signup') run(() => signUp(email, pw)); else if (mode === 'forgot') run(() => resetPassword(email), 'Reset link sent — check your email.'); else if (mode === 'recover') run(() => updatePassword(pw).then(() => setMode('signin')), 'Password updated. Sign in with it.') }
   return <div className="auth"><div className="box">
@@ -32,7 +32,7 @@ export function AuthPage({ recover }: { recover?: boolean }) {
       {msg && <div className={`msg ${msg.cls}`}>{msg.text}</div>}
       <div className="links">{mode === 'signin' ? <><button type="button" onClick={() => setMode('signup')}>Create an account</button><button type="button" onClick={() => setMode('forgot')}>Forgot password?</button></> : <button type="button" onClick={() => setMode('signin')}>← Back to sign in</button>}</div>
     </form> : <div className="msg crit">Supabase is not configured — copy <code>.env.example</code> to <code>.env</code>.</div>}
-    <div style={{ borderTop: '1px solid var(--line)', marginTop: 18, paddingTop: 14, textAlign: 'center' }}><div className="note" style={{ marginTop: 0, marginBottom: 8 }}>No account? Try everything with sample data first.</div><Btn onClick={() => enterDemo()} block>Open the offline demo</Btn></div>
+    <div style={{ borderTop: '1px solid var(--line)', marginTop: 18, paddingTop: 14, textAlign: 'center' }}><div className="note" style={{ marginTop: 0, marginBottom: 8 }}>No account? Try everything with sample data first.</div><Btn onClick={() => enterDemo()} block>Open the offline demo</Btn><div className="note" style={{ marginTop: 8, marginBottom: 0 }}><a href="#/try">New here? See the ways to try Cresari →</a></div></div>
     <LegalLinks short />
     <div className="note" style={{ textAlign: 'center', marginTop: 6, fontFamily: 'var(--mono)', fontSize: 11 }}>v{APP_VERSION}</div>
   </div></div>
@@ -43,7 +43,7 @@ export function Onboarding() {
     {households.length > 0 && <div style={{ marginBottom: 14 }}><div className="note" style={{ marginTop: 0 }}>Your households</div>{households.map(h => <Btn key={h.id} block onClick={() => openHousehold(h.id)}>{h.name} · {h.role}</Btn>)}</div>}
     <p className="note" style={{ marginTop: 0 }}>A household holds your accounts, budget and transactions. You can invite a partner later from Settings.</p>
     <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. The Rivera household" /></div>
-    <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household') } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
+    <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household'); location.hash = '#/start' } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
     {err && <div className="msg crit">{err}</div>}
     {/* 0.25.1: deleting the account is reachable before any household exists too (both app stores require it inside the app) */}
     <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button><button type="button" aria-expanded={del} onClick={() => setDel(v => !v)}>Delete my account</button></div>

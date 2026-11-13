@@ -3,6 +3,8 @@
 //   POST { action: "digest" }      x-cron-secret: the Monday digest (email + a short push)
 //   POST { action: "test", household_id }   signed-in member: a test push to the caller's devices and a test email to the household address
 //   POST { action: "preview", household_id } signed-in member: the alerts the rules would send right now, without sending
+//   POST { action: "feedback", id }   x-cron-secret: a tester sent feedback (migration 0021's trigger) — push to the operators' devices
+//                                         (app_admins, any household) and an email to their sign-in address; once per piece of feedback
 // Limited access (0.25.1): a member whose modules list only some sections gets only the deletion notice (recipientsFor), and may not use
 // preview or test — both answer 403 "Alerts need full access", since alerts carry money from every section.
 // Delivery: Web Push via VAPID (secrets VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT); email via Resend (RESEND_API_KEY, EMAIL_FROM) —
@@ -59,10 +61,11 @@ async function loadHousehold(hh: string) {
   return { household: h.data, settings, prefs, members: (members.data || []) as NMember[], input: { today: todayET(), now: new Date().toISOString(), deletionScheduledFor: (h.data as { deletion_scheduled_for?: string | null }).deletion_scheduled_for ?? null, accounts: accts.map(num), recurring: recs.map(num), occurrences: occs.map(num), transactions: txns.map(num), paySchedules: pays.map(num), sync: sync.data || null, reserveFloor: Number(settings.reserveFloor || 0), includeRetirementInCash: !!settings.includeRetirementInCash, prefs } as unknown as NInput }
 }
 
-async function sendPush(hh: string, userIds: string[] | null, title: string, body: string, path: string, tag: string): Promise<{ sent: number; failed: number; detail: string }> {
+async function sendPush(hh: string | null, userIds: string[] | null, title: string, body: string, path: string, tag: string): Promise<{ sent: number; failed: number; detail: string }> {
   if (!(await vapid())) return { sent: 0, failed: 0, detail: 'push not configured (VAPID keys)' }
-  let q = admin.from('push_subscriptions').select('id, endpoint, p256dh, auth, user_id, failures').eq('household_id', hh); if (userIds) q = q.in('user_id', userIds)
-  const { data: subs } = await q; if (!subs?.length) return { sent: 0, failed: 0, detail: 'no devices opted in' }
+  let q = admin.from('push_subscriptions').select('id, endpoint, p256dh, auth, user_id, failures'); if (hh) q = q.eq('household_id', hh); if (userIds) q = q.in('user_id', userIds)
+  const { data: rows } = await q; const seenEp = new Set<string>(); const subs = (rows || []).filter(s => !seenEp.has(s.endpoint) && (seenEp.add(s.endpoint), true))   // one device in two households: once
+  if (!subs.length) return { sent: 0, failed: 0, detail: 'no devices opted in' }
   let sent = 0, failed = 0; const errs: string[] = []
   for (const s of subs) {
     try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, JSON.stringify({ title, body, url: APP_URL + '#' + path, tag }), { TTL: 6 * 3600 }); sent++; await admin.from('push_subscriptions').update({ last_used_at: new Date().toISOString(), failures: 0 }).eq('id', s.id) }
@@ -138,10 +141,34 @@ async function runDigest(hh: string) {
   return out
 }
 
+// A tester sent feedback (0.29.0): tell whoever runs the app — a push to their devices and an email to their sign-in address. The feedback's
+// own words go in the email; the push carries the first line only. Sent once (notified_at).
+const FB_KIND: Record<string, string> = { bug: 'Something broke', confusing: 'Confusing', idea: 'Idea', praise: 'Praise', other: 'Other' }
+async function tellOperators(id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('feedback id required')
+  const { data: f, error } = await admin.from('feedback').select('*').eq('id', id).maybeSingle(); if (error) throw error
+  if (!f) return { ok: false, detail: 'no such feedback' }
+  if (f.notified_at) return { ok: true, detail: 'already sent' }
+  const { data: ops } = await admin.from('app_admins').select('user_id'); const ids = (ops || []).map(o => o.user_id as string)
+  if (!ids.length) return { ok: true, detail: 'no operator set (app_admins is empty)' }
+  const stars = f.rating ? ' · ' + '★'.repeat(f.rating) : ''
+  const title = `New feedback: ${FB_KIND[f.kind] || f.kind}${stars}`
+  const where = [f.page, f.app_version ? 'v' + f.app_version : '', f.platform, f.device, f.demo ? 'demo' : ''].filter(Boolean).join(' · ')
+  const push = await sendPush(null, ids, title, String(f.message).slice(0, 140), '/feedback', 'feedback')
+  const mails: string[] = []
+  for (const uid of ids) {
+    const { data: u } = await admin.auth.admin.getUserById(uid); const to = u?.user?.email; if (!to) continue
+    const html = `<div style="font-family:'IBM Plex Sans',Segoe UI,Arial,sans-serif;color:#15181c;max-width:640px"><h2 style="font-weight:700;margin:0 0 4px">${esc(title)}</h2><div style="color:#5b6470;margin-bottom:12px">${esc(where || 'no page or device details')}${f.tester ? ' · invite ' + esc(f.tester) : ''}${f.email ? ' · reply to ' + esc(f.email) : ''}</div><div style="white-space:pre-wrap;border-left:3px solid #d7dbe0;padding:4px 0 4px 12px">${esc(String(f.message))}</div><p style="margin-top:16px"><a href="${APP_URL}#/feedback" style="color:#b53a0a">Open the feedback inbox</a></p></div>`
+    const res = await sendEmail(to, title, html, `${title}\n${where}\n\n${f.message}\n\n${APP_URL}#/feedback`); mails.push(`${to}: ${res.detail}`)
+  }
+  await admin.from('feedback').update({ notified_at: new Date().toISOString() }).eq('id', id)
+  return { ok: true, push: push.sent, push_detail: push.detail, email: mails.join('; ') || 'no address' }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json(405, { error: 'POST only' })
-  let b: { action?: string; household_id?: string }; try { b = await req.json() } catch { return json(400, { error: 'JSON body expected' }) }
+  let b: { action?: string; household_id?: string; id?: string }; try { b = await req.json() } catch { return json(400, { error: 'JSON body expected' }) }
   if (b.action === 'run_daily' || b.action === 'digest') {
     const given = req.headers.get('x-cron-secret') || '', envSecret = Deno.env.get('CRON_SECRET')
     const ok = (!!envSecret && given === envSecret) || (given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)
@@ -152,6 +179,11 @@ Deno.serve(async (req) => {
     // config: which delivery secrets the function can see — names only, never values — so a mis-typed secret name shows up in the cron log
     const seen = Object.keys(Deno.env.toObject()).filter(k => !/^(SUPABASE_|SB_|DENO_|HOME$|PATH$|PWD$|HOSTNAME$|LANG|TZ$|SHLVL|_$)/.test(k)).sort()
     return json(200, { ok: true, results: out, config: { push: await vapid(), email: !!resendKey(), secrets_seen: seen } })
+  }
+  if (b.action === 'feedback') {
+    const given = req.headers.get('x-cron-secret') || ''
+    if (!(given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)) return json(401, { error: 'cron secret required' })
+    try { return json(200, await tellOperators(String(b.id || ''))) } catch (e) { await logError(null, (e as Error).message, { action: 'feedback' }); return json(500, { error: (e as Error).message }) }
   }
   // signed-in actions
   const auth = req.headers.get('Authorization') || ''; if (!auth.startsWith('Bearer ')) return json(401, { error: 'sign in first' })

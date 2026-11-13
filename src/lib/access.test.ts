@@ -13,7 +13,7 @@ describe('modules', () => {
     expect(canViewPath('/transactions', ['transactions'])).toBe(true); expect(canViewPath('/insights', ['transactions'])).toBe(true)
     expect(canViewPath('/accounts', ['transactions'])).toBe(false); expect(canViewPath('/', ['transactions'])).toBe(true); expect(canViewPath('/settings', [])).toBe(true)
     expect(canViewPath('/not-a-page', [])).toBe(true)   // unknown paths are left to the router
-    expect(allowedPaths(['goals'])).toEqual(['/', '/forecast', '/help', '/goals', '/plan', '/reports', '/trends', '/settings'])
+    expect(allowedPaths(['goals'])).toEqual(['/', '/forecast', '/help', '/start', '/feedback', '/goals', '/plan', '/reports', '/trends', '/settings'])
     expect(moduleForPath('/debts')).toBe('accounts')
   })
   it('normalises module lists: full set → null, duplicates and always-on dropped, sorted', () => {

@@ -7,6 +7,7 @@ import { PageGuide, TaskGuide, Glossary, SearchResults } from '../components/Gui
 import { ShortcutsHelp } from '../components/Palette'
 import { VIEWS } from '../components/Layout'
 import { Btn } from '../components/ui'
+import { useStore } from '../app/store'
 
 const TOPICS: Array<[string, string]> = [['start', 'Start here'], ['basics', 'The basics'], ['tasks', 'How do I…'], ['faq', 'Troubleshooting'], ['glossary', 'Glossary'], ['keys', 'Keyboard shortcuts']]
 
@@ -17,16 +18,17 @@ export function HelpPage() {
   useEffect(() => { if (!card) window.scrollTo({ top: 0 }) }, [topic, card])
   const hits = useMemo(() => searchGuide(q, 60), [q])
   const pick = (h: Hit) => { if (h.kind === 'faq') go('faq'); else if (h.kind === 'term' && !h.path) { go('glossary'); setGq(h.title) } else if (h.kind === 'task' && !h.path) go('tasks'); else if (h.path) go(h.path, h.card || null) }
-  const zones = [...new Set(VIEWS.map(v => v.zone))]; const g = topic.startsWith('/') ? guideFor(topic) : null
+  const admin = useStore(s => s.appAdmin); const LIST = VIEWS.filter(v => admin || v.path !== '/feedback')
+  const zones = [...new Set(LIST.map(v => v.zone))]; const g = topic.startsWith('/') ? guideFor(topic) : null
   const tasks = tasksAll()
   return <div className="helpcenter">
     <div className="hc-search"><input className="inp" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help — e.g. “safe to spend”, “record payment”, “utilization”, “sync failed”" aria-label="Search the Help Center" autoFocus />
       {q && <span className="g-hint">{hits.length} result{hits.length === 1 ? '' : 's'}</span>}</div>
     <div className="hc-grid">
       <nav className="hc-index" aria-label="Help topics">
-        <select className="inp hc-pick" value={topic} onChange={e => go(e.target.value)} aria-label="Help topic">{TOPICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}{zones.map(z => <optgroup key={z} label={z}>{VIEWS.filter(v => v.zone === z && v.path !== '/help').map(v => <option key={v.path} value={v.path}>{v.title}</option>)}</optgroup>)}</select>
+        <select className="inp hc-pick" value={topic} onChange={e => go(e.target.value)} aria-label="Help topic">{TOPICS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}{zones.map(z => <optgroup key={z} label={z}>{LIST.filter(v => v.zone === z && v.path !== '/help').map(v => <option key={v.path} value={v.path}>{v.title}</option>)}</optgroup>)}</select>
         <ul className="hc-list">{TOPICS.map(([k, l]) => <li key={k}><button type="button" className={topic === k && !q ? 'on' : ''} onClick={() => go(k)}>{l}</button></li>)}</ul>
-        {zones.map(z => { const vs = VIEWS.filter(v => v.zone === z && v.path !== '/help'); return vs.length ? <div key={z}><div className="hc-zone">{z}</div><ul className="hc-list">{vs.map(v => <li key={v.path}><button type="button" className={topic === v.path && !q ? 'on' : ''} onClick={() => go(v.path)}>{v.title}</button></li>)}</ul></div> : null })}
+        {zones.map(z => { const vs = LIST.filter(v => v.zone === z && v.path !== '/help'); return vs.length ? <div key={z}><div className="hc-zone">{z}</div><ul className="hc-list">{vs.map(v => <li key={v.path}><button type="button" className={topic === v.path && !q ? 'on' : ''} onClick={() => go(v.path)}>{v.title}</button></li>)}</ul></div> : null })}
       </nav>
       <div className="hc-main">
         {q ? <SearchResults hits={hits} q={q} onPick={pick} /> : g ? <article aria-labelledby="hc-h">
@@ -40,8 +42,9 @@ export function HelpPage() {
         : topic === 'glossary' ? <article><h2>Glossary</h2><input className="inp" type="search" value={gq} onChange={e => setGq(e.target.value)} placeholder="Filter terms" aria-label="Filter glossary terms" style={{ maxWidth: 320, marginBottom: 8 }} /><Glossary terms={glossaryAll()} filter={gq} level={3} /></article>
         : topic === 'keys' ? <article><h2>Keyboard shortcuts</h2><ShortcutsHelp /><p className="g-hint">F1 opens help for the page you are on; Esc closes it. H hides or shows amounts.</p></article>
         : <article><h2>Start here</h2><p className="g-summary">{GENERAL.intro}</p>
+          <p><Link to="/start" className="btn primary">Open the step-by-step setup guide →</Link> <span className="g-hint">what to have at hand, where to click, and each step ticked off as you go</span></p>
           <ol className="hc-steps">{GENERAL.start.map(s => <li key={s.title}><b>{s.title}</b><span>{s.text}</span><span className="btnrow"><Link to={s.to} className="btn sm">Open {titleOf(s.to)}</Link><button type="button" className="btn sm" onClick={() => go(s.to)}>Read the guide</button></span></li>)}</ol>
-          <section><h3>Every page</h3><div className="hc-tiles">{VIEWS.filter(v => v.path !== '/help').map(v => { const pg = guideFor(v.path); return <button type="button" key={v.path} className="hc-tile" onClick={() => go(v.path)}><b>{v.title}</b><span>{pg?.summary || v.sub}</span><small>{pg ? `${pg.cards.length} card${pg.cards.length === 1 ? '' : 's'} explained${pg.tasks?.length ? ` · ${pg.tasks.length} how-tos` : ''}` : ''}</small></button> })}</div></section>
+          <section><h3>Every page</h3><div className="hc-tiles">{LIST.filter(v => v.path !== '/help').map(v => { const pg = guideFor(v.path); return <button type="button" key={v.path} className="hc-tile" onClick={() => go(v.path)}><b>{v.title}</b><span>{pg?.summary || v.sub}</span><small>{pg ? `${pg.cards.length} card${pg.cards.length === 1 ? '' : 's'} explained${pg.tasks?.length ? ` · ${pg.tasks.length} how-tos` : ''}` : ''}</small></button> })}</div></section>
           <p className="g-hint">Tip: the small ? beside any card's heading opens help for exactly that card. <button type="button" className="btn sm" onClick={() => nav('/')}>Back to the dashboard</button></p></article>}
       </div>
     </div>

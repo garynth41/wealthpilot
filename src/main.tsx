@@ -8,7 +8,8 @@ import { installErrorCapture } from './lib/errors'
 import { RootBoundary } from './components/RootBoundary'
 import { reloadForNewVersion } from './lib/chunks'
 import { initDisplay } from './lib/display'
-installErrorCapture(); initDisplay(); markNative()
+import { catchInstallPrompt } from './lib/install'
+installErrorCapture(); initDisplay(); markNative(); catchInstallPrompt()   // the browser offers to install only once per load (0.29.0)
 // the phone apps' launch screen: App hides it once the first screen is ready; this is only a safety net if start-up stalls
 if (isNative()) setTimeout(() => { void hideSplash() }, 8000)
 // Vite fires this when a page's code or CSS cannot be preloaded — after a deploy, the old file names are gone. Reload once to the new version.
