@@ -69,7 +69,7 @@ export const transactions: GuidePage = {
         { term: 'Search this table…', text: 'Shown when there are more than five rows. Keeps the rows, within the current range and filters, whose text in any column contains what you type.' },
         { term: 'CSV / Excel', text: 'Downloads the rows and columns shown. The files keep the real amounts even with privacy mode on.' },
         { term: '⚙ Columns', text: 'Shows or hides columns on this device. Reset shows them all again; Auto-fit widths undoes any resizing.' },
-        { term: 'Sorting and widths', text: 'Click a column heading to sort by it (▲ up, ▼ down; a third click goes back to newest first). Drag the edge of a heading to make that column wider or narrower. On a long list the headings stay pinned at the top while you scroll through it.' },
+        { term: 'Sorting and widths', text: 'Click a column heading to sort by it (▲ up, ▼ down; a third click goes back to newest first). Drag the edge of a heading to make that column wider or narrower. On a long list the headings stay pinned at the top while you scroll through it, and on a wide one the tick box, row number and first column stay in place while you scroll sideways.' },
         { term: 'Pages', text: 'Long lists are split into pages of 50. Use « ‹ › » to move between pages and the box beside them for 25, 100, 250 or 1000 rows a page.' },
         { term: '▦ Table / ▤ Cards', text: 'On a phone, switches between one card per transaction and a table.' },
         { term: 'Categorize (phone)', text: 'Swipe a card to the left (not a transfer) to open it: up to eight likely categories with the suggested one first, then Any category for the full list. One tap sets the category.' },

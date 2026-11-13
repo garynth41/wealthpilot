@@ -206,6 +206,22 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 .envtag{display:inline-block;padding:1px 6px;border-radius:999px;font-size:10px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;background:var(--idle-soft);color:var(--ink-2)}
 .env-development{background:var(--blue-soft);color:var(--info-ink)} .env-staging{background:var(--warn-soft);color:var(--warn-ink)} .env-production{background:var(--good-soft);color:var(--good-ink)}
 
+/* frozen first column (0.28.2): when a wide table scrolls sideways its first column stays put, like a frozen spreadsheet column. The shared
+   Table freezes its tick box, row number and first column (.fz, left offsets measured by lib/frozenCol.ts); a table written on a page freezes
+   its first cell. Frozen cells need a solid background so the columns sliding under them do not show through. Headings sit above the
+   frozen body cells, and the top-left heading above both. .sx (scrolled sideways) adds a soft shadow on the frozen edge. */
+.tbl > thead > tr > th{z-index:2}
+.tbl > tbody > tr > th,.tbl > tfoot > tr > th{position:static;top:auto}   /* a row heading pins sideways only (below), never to the top */
+.tbl-grid .fz,.tbl:not(.tbl-grid) > * > tr > :first-child{position:sticky;left:0}
+.tbl-grid .fz1{left:var(--fz1,0px)} .tbl-grid .fz2{left:var(--fz2,0px)}
+.tbl-grid > tbody > tr > td.fz,.tbl:not(.tbl-grid) > tbody > tr > :first-child{z-index:1} .tbl-grid > tbody > tr > td.fz,.tbl:not(.tbl-grid) > tbody > tr > td:first-child{background:var(--surface)}
+.tbl > tfoot > tr > :first-child{position:sticky;left:0;z-index:1;background:var(--surface-2)}
+.tbl-grid > thead > tr > th.fz,.tbl:not(.tbl-grid) > thead > tr > th:first-child{z-index:3}
+.tbl-grid > tbody > tr.is-selected > td.fz{background:var(--accent-soft)}
+.tbl tr.ex-off > td.fz,.tbl:not(.tbl-grid) tr.ex-off > td:first-child{opacity:1;color:var(--ink-3)} .tbl tr.ex-off > td.fz > *,.tbl:not(.tbl-grid) tr.ex-off > td:first-child > *{opacity:.55}
+.tblwrap.sx .tbl-grid .fz-last{box-shadow:8px 0 8px -8px rgba(15,17,20,.3)} :root[data-theme="dark"] .tblwrap.sx .tbl-grid .fz-last{box-shadow:8px 0 8px -8px rgba(0,0,0,.75)}
+.tblwrap.sx .tbl:not(.tbl-grid) > * > tr > :first-child::after{content:'';position:absolute;top:0;bottom:-1px;right:-8px;width:8px;pointer-events:none;background:linear-gradient(to right,rgba(15,17,20,.14),rgba(15,17,20,0))}
+:root[data-theme="dark"] .tblwrap.sx .tbl:not(.tbl-grid) > * > tr > :first-child::after{background:linear-gradient(to right,rgba(0,0,0,.45),rgba(0,0,0,0))}
 /* table extras (0.4.0): column resize grip, column picker, pager */
 .tbl th[style*="width"]{overflow:hidden;text-overflow:ellipsis} .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none} .colgrip:hover{background:var(--accent-soft)}
 .colpicker{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(21,24,28,.12);box-shadow:var(--shadow);padding:10px 12px;min-width:200px;max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:4px;font-size:13px;text-transform:none;letter-spacing:0}
@@ -479,6 +495,7 @@ details.techsetup code { overflow-wrap: anywhere; }
   table.tbl[data-cards] > * > tr > :first-child, table.tbl[data-cards] > * > tr > [data-label=""], table.tbl[data-cards] > * > tr > :not([data-label]) { grid-column: 1 / -1; }
   table.tbl[data-cards] > * > tr > [data-ctl="wide"] { grid-column: span 2; }
   table.tbl[data-cards] > * > tr > :empty { display: none; }
+  table.tbl[data-cards] > * > tr > * { position: static !important; } table.tbl[data-cards] > * > tr > *::after { content: none !important; }
   table.tbl[data-cards] > tbody > tr > :first-child { font-weight: 600; font-size: 15px; }
   table.tbl[data-cards] > tfoot > tr > :first-child { font-weight: 700; } table.tbl[data-cards] > tfoot > tr > :first-child::before { content: none; }
   table.tbl[data-cards] > * > tr[data-head] { display: block; background: none; border: 0; padding: 10px 2px 2px; margin: 4px 0 4px; }

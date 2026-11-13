@@ -174,7 +174,7 @@ yourself; open the invitation on the phone. Answer the export-compliance questio
 (HTTPS), which is exempt — the app already declares this.
 
 **B7. The listing** — App Store Connect → your app → the version page (**1.0 Prepare for Submission**). First change the version number
-at the top to **0.28.1**, so it matches the build:
+at the top to **0.28.2**, so it matches the build:
 - Name, subtitle, promotional text, description, keywords: `store/listing/apple/*.txt`
 - What's New: `store/listing/apple/release_notes.txt`
 - Screenshots: **iPhone 6.9″** ← `store/screenshots/iphone-6.9/01…06.png`; **iPhone 6.3″** ← `store/screenshots/iphone-6.3/…`
@@ -230,7 +230,7 @@ Enter the email and password only in App Store Connect and Play Console — neve
 ## D. After launch
 
 - **Tell the app a new version exists** (only after it is live in both the App Store and Google Play):
-  `update public.app_meta set value = '0.28.1' where key = 'latest_native_version';` — app users then see "A new version is available".
+  `update public.app_meta set value = '0.28.2' where key = 'latest_native_version';` — app users then see "A new version is available".
   Only for changes an older app would break (such as a database change) also set `min_native_version`, which blocks older apps until
   they update.
 - **Each new version:** raise the version as usual (every release already does), then run **release apps** (`both`). Android lands as a
