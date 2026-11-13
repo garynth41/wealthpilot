@@ -134,6 +134,10 @@ kbd{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(-
 /* ---- tables ---- */
 .tblhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px} .tblhead .n{font-size:12.5px;color:var(--ink-3)} .tblhead .sp{flex:1}
 .tblwrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius-lg);max-width:100%}
+/* 0.28.1: column headings stay in view. A long table scrolls inside its own box (at most a screen tall, less where a page sets a lower
+   maxHeight) and its headings stick to the top of that box. The box has to be the scroller: it already scrolls sideways for wide tables,
+   and a heading can only stick inside the nearest box that scrolls. Phones' card view and print lift the cap (below). */
+.tblwrap{max-height:calc(100vh - 150px);max-height:calc(100dvh - 150px)}
 .tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13.5px}
 .tbl th{position:sticky;top:0;background:var(--surface-2);text-align:left;font-size:11.5px;letter-spacing:0;text-transform:none;font-weight:600;color:var(--ink-3);padding:9px 8px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer;user-select:none;z-index:1}
 .tbl th.num,.tbl td.num{text-align:right;font-variant-numeric:tabular-nums} .tbl th .arrow{opacity:.5;margin-left:3px;font-size:10px}
@@ -193,6 +197,7 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
   .modal,.modal.wide,.modal.xwide{width:100%;max-height:calc(100dvh - env(safe-area-inset-top) - 12px);border-radius:12px 12px 0 0;border-bottom:0} .mhead{padding:14px 16px} .mbody{padding:14px 16px} .mfoot{padding:12px 16px calc(12px + env(safe-area-inset-bottom))} .mfoot .btn{flex:1;justify-content:center}
   .mclose{width:44px;height:44px;display:grid;place-items:center;margin:-8px -10px -8px 0}
   .toasts{bottom:calc(76px + env(safe-area-inset-bottom));left:12px;right:12px;transform:none;align-items:stretch} .toast{max-width:none;text-align:center}
+  .tblwrap{max-height:calc(100dvh - 190px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
   .card{padding:14px} .card-head .ch{font-size:15px} .chart{min-height:220px} .tblwrap{-webkit-overflow-scrolling:touch} .slicers{gap:10px;margin-bottom:10px}
   .histnav{display:none}
 }
@@ -202,7 +207,7 @@ details.gm-skip{margin-top:10px;font-size:12.5px;color:var(--ink-3)} details.gm-
 .env-development{background:var(--blue-soft);color:var(--info-ink)} .env-staging{background:var(--warn-soft);color:var(--warn-ink)} .env-production{background:var(--good-soft);color:var(--good-ink)}
 
 /* table extras (0.4.0): column resize grip, column picker, pager */
-.tbl th{position:relative} .tbl th[style*="width"]{overflow:hidden;text-overflow:ellipsis} .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none} .colgrip:hover{background:var(--accent-soft)}
+.tbl th[style*="width"]{overflow:hidden;text-overflow:ellipsis} .colgrip{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;user-select:none} .colgrip:hover{background:var(--accent-soft)}
 .colpicker{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:0 8px 24px rgba(21,24,28,.12);box-shadow:var(--shadow);padding:10px 12px;min-width:200px;max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:4px;font-size:13px;text-transform:none;letter-spacing:0}
 .colpicker label{display:flex;gap:6px;align-items:center;white-space:nowrap}
 .pager{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-top:8px}
@@ -535,6 +540,16 @@ details.techsetup code { overflow-wrap: anywhere; }
 :root[data-style="terminal"] .card-head .ch{font:600 11px/1.3 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--ink)}
 :root[data-style="terminal"] .card-head .hint{display:none} :root[data-style="terminal"] .card-head .ch-right{gap:10px}
 .card-head .meta{font:500 11.5px/1 var(--mono);color:var(--ink-3);white-space:nowrap}
+/* the Dashboard's Needs attention card (0.28.1): a strip and heading chip in the color of its most urgent line */
+.card.attn-crit{--attn:var(--crit);--attn-ink:var(--crit-ink)} .card.attn-warn{--attn:var(--warn);--attn-ink:var(--warn-ink)} .card.attn-info{--attn:var(--info);--attn-ink:var(--info-ink)} .card.attn-good{--attn:var(--good);--attn-ink:var(--good-ink)}
+.card.attn:not(.attn-good){border-top:3px solid var(--attn)}
+.card.attn > .card-head .ch{display:inline-flex;align-items:center;gap:6px;background:var(--attn);color:var(--surface);padding:3px 11px 3px 9px;border-radius:999px;line-height:1.3}
+.card.attn > .card-head .ch::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.card.attn > .card-head .meta{color:var(--attn-ink);font-weight:700}
+.card.attn-good > .card-head .ch{background:var(--good-soft);color:var(--good-ink);box-shadow:inset 0 0 0 1px var(--good)}
+:root[data-style="terminal"] .card.attn > .card-head .ch{border-radius:2px;padding:3px 8px 3px 7px}
+@media (prefers-reduced-motion:no-preference){.card.attn-crit > .card-head .ch::before{animation:attn-pulse 2s ease-in-out infinite}}
+@keyframes attn-pulse{50%{opacity:.35}}
 :root[data-style="terminal"] .card-head .meta{font:500 10.5px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
 /* -- KPIs: tracked label, mono figure, the note takes the colour (no coloured bottom bar) -- */
 :root[data-style="terminal"] .kpi{border-bottom-width:1px;border-bottom-color:var(--line);padding:14px 16px}
