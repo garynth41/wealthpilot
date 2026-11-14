@@ -2094,18 +2094,23 @@ end $$;
 revoke all on function public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text) from public;
 grant execute on function public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text) to anon, authenticated;
 
--- For the operator: every note with the private note column (never the network hash), newest first. The inbox reads it a page at a time.
-create or replace function public.feedback_inbox() returns table (id uuid, created_at timestamptz, updated_at timestamptz, kind text, rating smallint,
+-- For the operator: every note with the private note column (never the network hash), newest first, a page at a time. Pages follow the
+-- last row seen (its time and id), not a row count, so a note deleted or sent while the inbox loads cannot shift a page and skip or repeat one.
+drop function if exists public.feedback_inbox();
+create or replace function public.feedback_inbox(p_before timestamptz default null, p_before_id uuid default null, p_limit int default 1000)
+returns table (id uuid, created_at timestamptz, updated_at timestamptz, kind text, rating smallint,
   message text, page text, app_version text, platform text, device text, screen text, look text, demo boolean, user_id uuid, email text, tester text,
   status text, admin_note text, issue_url text, notified_at timestamptz)
 language plpgsql stable security definer set search_path = '' as $$
 begin
   if not public.is_app_admin() then raise exception 'Only the app''s operator can open the feedback inbox' using errcode = '42501'; end if;
   return query select f.id, f.created_at, f.updated_at, f.kind, f.rating, f.message, f.page, f.app_version, f.platform, f.device, f.screen, f.look,
-    f.demo, f.user_id, f.email, f.tester, f.status, f.admin_note, f.issue_url, f.notified_at from public.feedback f order by f.created_at desc, f.id;
+    f.demo, f.user_id, f.email, f.tester, f.status, f.admin_note, f.issue_url, f.notified_at from public.feedback f
+    where p_before is null or f.created_at < p_before or (f.created_at = p_before and f.id > p_before_id)
+    order by f.created_at desc, f.id limit least(greatest(coalesce(p_limit, 1000), 1), 1000);
 end $$;
-revoke all on function public.feedback_inbox() from public;
-grant execute on function public.feedback_inbox() to authenticated;
+revoke all on function public.feedback_inbox(timestamptz, uuid, int) from public;
+grant execute on function public.feedback_inbox(timestamptz, uuid, int) to authenticated;
 
 -- For the operator: how each invite code is doing. Counts only — no names or addresses.
 create or replace function public.tester_stats() returns table (tester text, signed_up bigint, active_7d bigint, households bigint, feedback bigint)
@@ -2129,6 +2134,6 @@ grant execute on function public.tester_stats() to authenticated;
 
 -- down: (the reverse — run only to roll back. Every piece of feedback is lost; export it from the inbox first.)
 --   drop trigger if exists trg_feedback_notify on public.feedback; drop function if exists public.feedback_notify();
---   drop function if exists public.feedback_inbox(); drop function if exists public.tester_stats(); drop function if exists public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text);
+--   drop function if exists public.feedback_inbox(timestamptz, uuid, int); drop function if exists public.tester_stats(); drop function if exists public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text);
 --   drop table if exists public.feedback; drop function if exists public.feedback_touch(); drop function if exists public.is_app_admin(); drop table if exists public.app_admins;
 

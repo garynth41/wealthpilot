@@ -112,7 +112,7 @@ export const useStore = create<State>((set, get) => ({
       if (localStorage.getItem(LS('mode')) === 'demo') { await get().enterDemo(); return }
       if (!hasSupabase()) { set({ booting: false }); return }
       const { data: { session } } = await sb().auth.getSession()
-      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
+      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), appAdmin: null }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
       set({ session, user: session?.user || null })
       // offline with an expired token: the session cannot be refreshed, but the copy this device kept can still be shown read-only
       if (!session && typeof navigator !== 'undefined' && navigator.onLine === false) { const u = cachedUser(); if (u && await openOffline(u)) { set({ user: u }); return } }

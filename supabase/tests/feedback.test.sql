@@ -61,6 +61,11 @@ select pg_temp.ok((select count(*) = 13 from public.feedback) and (select count(
 update public.feedback set status = 'planned', admin_note = 'next release', issue_url = 'https://github.com/x/y/issues/1' where id = :'f2';
 select pg_temp.ok((select status = 'planned' and admin_note = 'next release' from public.feedback_inbox() where id = :'f2'), 'the operator can triage, and reads the private note through the inbox');
 select pg_temp.ok(pg_temp.refused($q$select client_hash from public.feedback$q$), 'nobody signed in reads the network hash, not even the operator');
+-- the inbox pages by the last row seen: three pages of five, then nothing, every note exactly once
+create temp table pg_temp.seen as select * from public.feedback_inbox(null, null, 5);
+insert into pg_temp.seen select * from public.feedback_inbox((select created_at from pg_temp.seen order by created_at, id desc limit 1), (select id from pg_temp.seen order by created_at, id desc limit 1), 5);
+insert into pg_temp.seen select * from public.feedback_inbox((select created_at from pg_temp.seen order by created_at, id desc limit 1), (select id from pg_temp.seen order by created_at, id desc limit 1), 5);
+select pg_temp.ok((select count(*) = 13 and count(distinct id) = 13 from pg_temp.seen), 'the inbox pages through every note once, by the last one seen');
 select pg_temp.ok(pg_temp.refused($q$update public.feedback set message = 'edited' where true$q$), 'even the operator cannot rewrite what a tester said');
 select pg_temp.ok((select signed_up = 2 and active_7d = 1 and feedback = 1 from public.tester_stats() where tester = 'church'), 'tester numbers per invite code: sign-ups, recent sign-ins, feedback');
 select set_config('request.jwt.claims', json_build_object('sub', :'A')::text, false) \gset
