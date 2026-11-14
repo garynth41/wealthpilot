@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useStore } from './app/store'
-import { ModalHost } from './components/ui'
+import { ModalHost, Btn } from './components/ui'
 import { IdleLock } from './components/IdleLock'
 import { Layout, applySavedTheme } from './components/Layout'
 import { AuthPage, Onboarding, FirstSignIn, ResetPassword } from './pages/Auth'
@@ -42,7 +42,7 @@ applySavedTheme()
 if (olPopupRelay()) { /* this window was the Microsoft sign-in popup; it has posted the code back and is closing */ }
 
 export default function App() {
-  const { booting, boot, mode, household, user, loadError, mustChangePassword, recovering } = useStore(); const hash = useHash()
+  const { booting, boot, mode, household, user, loadError, mustChangePassword, recovering, mfaPending, refresh, signOut } = useStore(); const hash = useHash()
   useEffect(() => { boot() }, [boot])
   useEffect(() => { if (!booting) void hideSplash() }, [booting])   // phone apps: off the launch screen as soon as any screen is ready (0.25.1)
   if (booting) return <div className="auth"><div className="note">Loading…</div></div>
@@ -50,8 +50,10 @@ export default function App() {
   // the public invitation page (0.29.0): open to everyone, signed in or not
   if (/^#\/try(\?|$)/.test(hash)) return <ModalHost><Suspense fallback={<div className="auth"><div className="note">Loading…</div></div>}><TryPage /></Suspense></ModalHost>
   if (user && mustChangePassword()) return <FirstSignIn />
-  if (!mode) { if (user) return <Onboarding />; return <AuthPage /> }
-  if (!household) return <div className="auth"><div className="box">{loadError ? <div className="msg crit">{loadError}</div> : <div className="note">Opening your household…</div>}</div></div>
+  // a two-factor code still owed goes to the code prompt, not the welcome screen (0.29.1)
+  if (!mode) { if (user && !mfaPending) return <Onboarding />; return <AuthPage /> }
+  // a household that cannot be opened (0.29.1: now also after switching) keeps a way forward: try again, or sign out
+  if (!household) return <div className="auth"><div className="box">{loadError ? <><div className="msg crit" role="alert">{loadError}</div><Btn primary block onClick={() => void refresh()}>Try again</Btn><div className="links"><button type="button" onClick={() => void signOut()}>Sign out</button></div></> : <div className="note" role="status">Opening your household…</div>}</div></div>
   return <HashRouter><ModalHost><IdleLock><Layout><Suspense fallback={<div className="empty" aria-live="polite">Loading…</div>}><Routes>
     <Route path="/" element={<Dashboard />} /><Route path="/forecast" element={<ForecastPage />} /><Route path="/budget" element={<BudgetPage />} /><Route path="/transactions" element={<TransactionsPage />} /><Route path="/bills" element={<BillsPage />} /><Route path="/income" element={<IncomePage />} />
     <Route path="/reconcile" element={<ReconcilePage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/debts" element={<DebtsPage />} /><Route path="/goals" element={<GoalsPage />} /><Route path="/plan" element={<PlanPage />} /><Route path="/protection" element={<ProtectionPage />} /><Route path="/trends" element={<TrendsPage />} /><Route path="/insights" element={<InsightsPage />} /><Route path="/tax" element={<TaxPage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/connections" element={<ConnectionsPage />} /><Route path="/investments" element={<InvestmentsPage />} /><Route path="/hardship" element={<HardshipPage />} /><Route path="/email" element={<EmailPage />} /><Route path="/settings" element={<SettingsPage />} />

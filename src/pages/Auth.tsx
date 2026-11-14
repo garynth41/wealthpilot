@@ -38,12 +38,25 @@ export function AuthPage({ recover }: { recover?: boolean }) {
   </div></div>
 }
 export function Onboarding() {
-  const { createHousehold, user, signOut, households, openHousehold } = useStore(); const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [del, setDel] = useState(false)
-  return <div className="auth"><div className="box"><h2 style={{ marginTop: 0 }}>Welcome{user?.email ? `, ${user.email}` : ''}</h2>
-    {households.length > 0 && <div style={{ marginBottom: 14 }}><div className="note" style={{ marginTop: 0 }}>Your households</div>{households.map(h => <Btn key={h.id} block onClick={() => openHousehold(h.id)}>{h.name} · {h.role}</Btn>)}</div>}
-    <p className="note" style={{ marginTop: 0 }}>A household holds your accounts, budget and transactions. You can invite a partner later from Settings.</p>
-    <div className="field"><label>Household name</label><input className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. The Rivera household" /></div>
-    <Btn primary block disabled={busy} onClick={async () => { setBusy(true); setErr(''); try { await createHousehold(name || 'My household'); location.hash = '#/start' } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }}>Create household</Btn>
+  const { createHousehold, user, signOut, households, householdsFor, householdsError, reloadHouseholds, openHousehold } = useStore(); const [name, setName] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [del, setDel] = useState(false); const [another, setAnother] = useState(false)
+  const act = (fn: () => Promise<unknown>) => async () => { if (busy) return; setBusy(true); setErr(''); try { await fn() } catch (e) { setErr((e as Error).message) } finally { setBusy(false) } }
+  // 0.29.1: until the list of this person's households has come back, this is only a loading screen. It used to show "Create household"
+  // for the seconds sign-in takes, and one click there made a second, empty household and opened it in place of the real one.
+  if (!user || householdsFor !== user.id) return <div className="auth"><div className="box">
+    {householdsError ? <><div className="msg crit" role="alert">Could not load your households — {householdsError}</div><Btn primary block disabled={busy} onClick={act(() => reloadHouseholds())}>Try again</Btn></>
+      : <div className="note" role="status" aria-live="polite">Opening your household…</div>}
+    {err && <div className="msg crit">{err}</div>}
+    <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button></div>
+  </div></div>
+  const has = households.length > 0
+  const create = act(async () => { await createHousehold(name.trim() || 'My household'); location.hash = '#/start' })
+  return <div className="auth"><div className="box"><h2 style={{ marginTop: 0 }}>Welcome{user.email ? `, ${user.email}` : ''}</h2>
+    {has && <div style={{ marginBottom: 14 }}><div className="note" style={{ marginTop: 0 }}>Your {households.length === 1 ? 'household' : 'households'}</div>{households.map((h, i) => <div key={h.id} style={{ marginTop: i ? 8 : 0 }}><Btn primary={i === 0} block disabled={busy} onClick={act(() => openHousehold(h.id))}>Open {h.name} · {h.role}</Btn></div>)}</div>}
+    {has && !another ? <div className="links" style={{ justifyContent: 'center' }}><button type="button" onClick={() => setAnother(true)}>Create another household</button></div> : <>
+      <p className="note" style={{ marginTop: 0 }}>{has ? 'A new household starts empty — your other households are not changed.' : 'A household holds your accounts, budget and transactions. You can invite a partner later from Settings.'}</p>
+      <div className="field"><label htmlFor="hh-name">{has ? 'New household name' : 'Household name'}</label><input id="hh-name" className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. The Rivera household" /></div>
+      <Btn primary={!has} block disabled={busy || (has && !name.trim())} onClick={create}>{has ? 'Create this household' : 'Create household'}</Btn>
+    </>}
     {err && <div className="msg crit">{err}</div>}
     {/* 0.25.1: deleting the account is reachable before any household exists too (both app stores require it inside the app) */}
     <div className="links"><button type="button" onClick={() => signOut()}>Sign out</button><button type="button" aria-expanded={del} onClick={() => setDel(v => !v)}>Delete my account</button></div>

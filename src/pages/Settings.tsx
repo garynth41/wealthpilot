@@ -54,7 +54,7 @@ export function SettingsPage() {
   return <>
     <div style={{ marginBottom: 14 }}><Seg value={tab} options={tabs} onChange={setTab} /></div>
     {tab === 'general' && <div className="grid g12">
-      <Card span={6} title="Household"><Field label="Name"><input className="inp" value={name} onChange={e => setName(e.target.value)} disabled={!isOwner} /></Field><Note>Signed in as {mode === 'demo' ? 'demo' : user?.email} · {APP_NAME} v{APP_VERSION} · build {APP_BUILD}</Note></Card>
+      <Card span={6} title="Household"><Field label="Name"><input className="inp" value={name} onChange={e => setName(e.target.value)} disabled={!isOwner} /></Field><OtherHouseholds /><Note>Signed in as {mode === 'demo' ? 'demo' : user?.email} · {APP_NAME} v{APP_VERSION} · build {APP_BUILD}</Note></Card>
       <Card span={6} title="Budget cadence" hint="how the Budget page slices time"><Field label="Budget by"><select className="inp" value={s.periodType} onChange={e => setS({ ...s, periodType: e.target.value as PeriodType })}><option value="month">Calendar month</option><option value="pay">Pay period (from your primary income source)</option><option value="biweekly">Every 2 weeks (from an anchor date)</option><option value="semimonthly">Twice a month</option><option value="week">Week (Mon–Sun)</option></select></Field>
         {s.periodType === 'biweekly' && <Field label="A period start date (anchor)"><input className="inp" type="date" value={s.periodAnchor || ''} onChange={e => setS({ ...s, periodAnchor: e.target.value })} /></Field>}
         {s.periodType === 'semimonthly' && <Field label="Period start days" hint="e.g. 1 and 15"><div className="grid2"><input className="inp" inputMode="numeric" value={s.semimonthlyDays?.[0] ?? 1} onChange={e => setS({ ...s, semimonthlyDays: [+e.target.value || 1, s.semimonthlyDays?.[1] ?? 15] })} /><input className="inp" inputMode="numeric" value={s.semimonthlyDays?.[1] ?? 15} onChange={e => setS({ ...s, semimonthlyDays: [s.semimonthlyDays?.[0] ?? 1, +e.target.value || 15] })} /></div></Field>}
@@ -179,6 +179,16 @@ function SecurityTab() {
   </div>
 }
 function KPIs({ items }: { items: Array<[string, string, string]> }) { return <>{items.map(([l, v, s]) => <div key={l} className="kpi info"><div className="l">{l}</div><div className="v">{v}</div><div className="s">{s}</div></div>)}</> }
+
+/** 0.29.1: someone in more than one household opens another from here, without signing out (the app opens the last one used). */
+function OtherHouseholds() {
+  const { households, household, mode, guarded } = useData(); const others = mode === 'db' ? households.filter(h => h.id !== household?.id) : []
+  if (!others.length) return null
+  const open = (h: { id: string; name: string }) => guarded(async () => { location.hash = '#/'; await useStore.getState().openHousehold(h.id) }, `Opened ${h.name}`)
+  return <Field label={others.length === 1 ? 'Your other household' : 'Your other households'} hint="opens it here; you can come back from Settings in that household">
+    <div className="hh-others">{others.map(h => <Btn key={h.id} onClick={() => open(h)}>Open {h.name} <span className="note" style={{ margin: 0 }}>· {h.role}</span></Btn>)}</div>
+  </Field>
+}
 
 // ---------------- Members: who is in the household and what each can see ----------------
 type AccessPick = { level: AccessLevel; modules: string[]; editWithin: boolean }
