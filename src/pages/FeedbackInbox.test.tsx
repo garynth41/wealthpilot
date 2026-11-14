@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 const calls: Array<{ op: string; table?: string; args?: unknown }> = []
+let statsFail = false
 const rows = [
   { id: 'f1', created_at: '2026-11-13T15:00:00Z', kind: 'bug', rating: 2, message: 'Budget total is off after a split', page: '/budget', app_version: '0.29.0', platform: 'web', device: 'Mac · Safari', screen: '1440×900', look: 'graphite light', demo: false, user_id: 'u1', email: 'tester@x.test', tester: 'church', status: 'new', admin_note: null, issue_url: null },
   { id: 'f2', created_at: '2026-11-12T09:00:00Z', kind: 'praise', rating: 5, message: 'Love the forecast', page: '/forecast', app_version: '0.29.0', platform: 'installed', device: 'iPhone · Safari', screen: '390×844', look: 'terminal dark', demo: true, user_id: null, email: null, tester: null, status: 'fixed', admin_note: null, issue_url: null },
@@ -20,7 +21,9 @@ const chain = (table: string) => {
 }
 vi.mock('../app/supabase', () => ({
   hasSupabase: () => true,
-  sb: () => ({ from: (t: string) => chain(t), rpc: (name: string, args: unknown) => { calls.push({ op: 'rpc', args: { name, ...(args as object) } }); return Promise.resolve({ data: name === 'tester_stats' ? [{ tester: 'church', signed_up: 3, active_7d: 2, households: 2, feedback: 1 }] : 'new-id', error: null }) } }),
+  sb: () => ({ from: (t: string) => chain(t), rpc: (name: string, args: unknown) => { calls.push({ op: 'rpc', args: { name, ...(args as object) } })
+    if (name === 'feedback_inbox') { const q: Record<string, unknown> = {}; q.order = () => q; q.range = (a: number) => { calls.push({ op: 'range', args: a }); return Promise.resolve({ data: a === 0 ? rows : [], error: null }) }; return q }
+    return Promise.resolve(name === 'tester_stats' && statsFail ? { data: null, error: { message: 'timeout' } } : { data: name === 'tester_stats' ? [{ tester: 'church', signed_up: 3, active_7d: 2, households: 2, feedback: 1 }] : 'new-id', error: null }) } }),
 }))
 
 import { useStore } from '../app/store'
@@ -28,7 +31,7 @@ import { ModalHost } from '../components/ui'
 import { FeedbackInboxPage } from './FeedbackInbox'
 import { FeedbackDialog } from '../components/Feedback'
 
-beforeEach(() => { calls.length = 0; localStorage.clear() })
+beforeEach(() => { calls.length = 0; statsFail = false; localStorage.clear() })
 
 describe('Feedback & testers', () => {
   it('is closed to everyone but the operator', () => {
@@ -49,6 +52,16 @@ describe('Feedback & testers', () => {
     expect(within(item).getByRole('link', { name: /Make GitHub issue/ }).getAttribute('href')).toMatch(/^https:\/\/github\.com\/garynth41\/wealthpilot\/issues\/new\?/)
     fireEvent.change(within(item).getByLabelText('Status'), { target: { value: 'planned' } })
     await waitFor(() => expect(calls).toContainEqual({ op: 'update', table: 'feedback', args: { status: 'planned' } }))
+    expect(calls.some(c => c.op === 'rpc' && (c.args as { name: string }).name === 'feedback_inbox')).toBe(true)   // full rows (with the private note) come only through the operator's inbox function
+  })
+  it('waits for the operator check instead of turning the operator away, and says when the tester numbers fail', async () => {
+    useStore.setState({ mode: 'db', appAdmin: null, user: { id: 'op', email: 'gary@x.test' } as never })
+    const { unmount } = render(<ModalHost><FeedbackInboxPage /></ModalHost>)
+    expect(screen.getByText(/Checking that this is your page/)).toBeTruthy(); unmount()
+    statsFail = true; useStore.setState({ appAdmin: true })
+    render(<ModalHost><FeedbackInboxPage /></ModalHost>)
+    expect((await screen.findByText(/Could not load the numbers: timeout/)).textContent).toMatch(/Refresh/)
+    expect(screen.getByText('Budget total is off after a split')).toBeTruthy()
   })
 })
 

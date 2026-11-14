@@ -41,7 +41,8 @@ interface State {
   /** 0.25.0: set while showing the read-only offline copy (or once the connection drops): when that copy was saved */
   offlineAt: string | null
   /** 0.29.0: this account runs the app (app_admins) — sees Feedback & testers */
-  appAdmin: boolean
+  /** the person runs Cresari (app_admins): true / false, or null while the check is still out */
+  appAdmin: boolean | null
   requestDeletion: (confirm: string) => Promise<string>; cancelDeletion: () => Promise<void>
   accountDeletionPreview: () => Promise<AccountDeletionPlan>; deleteAccount: (password: string) => Promise<{ households_deleted: number }>
   settings: () => Settings
@@ -97,7 +98,7 @@ const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: bool
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, nativeMin: null, appAdmin: false, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   // a household scheduled for deletion is read-only for everyone (0.25.0); so is an offline copy
   canEdit: () => { const s = get(); return (s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly)) && !s.household?.deletion_scheduled_for && !s.offlineAt },

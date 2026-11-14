@@ -2,10 +2,18 @@
 // page shows them in order with where to click, ticks each one off from the household's own data, and points at the next one.
 import { Link } from 'react-router-dom'
 import { useData } from '../app/hooks'
-import { Card, Note } from '../components/ui'
+import { Btn, Card, Note } from '../components/ui'
 import { InstallSteps } from '../components/Install'
 import { FeedbackButton } from '../components/Feedback'
 import { GATHER, START_STEPS, startProgress, startState, type StartStep, type StepState } from '../lib/startGuide'
+
+/** Scroll to a step without touching the address: the app's pages live in the #/… part, so a plain #start-… link would leave Start here. */
+function goToStep(key: string) {
+  const el = document.getElementById('start-' + key); if (!el) return
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  const d = el.querySelector('details'); if (d && !d.open) d.open = true
+  const h = el.querySelector<HTMLElement>('h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }) }   // keyboard and screen-reader users land there too
+}
 
 export function StartPage() {
   const { data, settings, mode } = useData()
@@ -15,7 +23,7 @@ export function StartPage() {
   return <div className="grid g12 start">
     <Card span={12} title="Your progress" hint={pr.all ? 'every required step is done — the rest are optional' : `${pr.done} of ${pr.total} required steps done · about ${pr.minutesLeft} minutes of steps left`}>
       <div className="mix" style={{ height: 10, marginBottom: 10 }} role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Setup progress"><span style={{ width: pct + '%', background: 'var(--good)' }} /></div>
-      {pr.next ? <p style={{ margin: 0 }}>Next: <b>{pr.next.title}</b> — {pr.next.why} <a className="btn sm primary" href={'#start-' + pr.next.key}>Go to step {START_STEPS.indexOf(pr.next) + 1}</a></p>
+      {pr.next ? <p style={{ margin: 0 }}>Next: <b>{pr.next.title}</b> — {pr.next.why} <Btn sm primary onClick={() => goToStep(pr.next!.key)}>Go to step {START_STEPS.indexOf(pr.next) + 1}</Btn></p>
         : <p style={{ margin: 0 }}>You are set up. Keep the weekly check-in (step {START_STEPS.findIndex(s => s.key === 'routine') + 1}) and your numbers stay true.</p>}
       <Note>Each step ticks itself off from your own data — there is nothing to mark by hand. Stop whenever you like and come back here from the menu (Help → Start here).{mode === 'demo' ? ' You are in the demo, so most steps are already done with sample data: read them to see how setup works, then create your own account.' : ''}</Note>
     </Card>

@@ -18,7 +18,7 @@ export function HelpPage() {
   useEffect(() => { if (!card) window.scrollTo({ top: 0 }) }, [topic, card])
   const hits = useMemo(() => searchGuide(q, 60), [q])
   const pick = (h: Hit) => { if (h.kind === 'faq') go('faq'); else if (h.kind === 'term' && !h.path) { go('glossary'); setGq(h.title) } else if (h.kind === 'task' && !h.path) go('tasks'); else if (h.path) go(h.path, h.card || null) }
-  const admin = useStore(s => s.appAdmin); const LIST = VIEWS.filter(v => admin || v.path !== '/feedback')
+  const admin = useStore(s => s.appAdmin); const LIST = VIEWS.filter(v => admin === true || v.path !== '/feedback')
   const zones = [...new Set(LIST.map(v => v.zone))]; const g = topic.startsWith('/') ? guideFor(topic) : null
   const tasks = tasksAll()
   return <div className="helpcenter">

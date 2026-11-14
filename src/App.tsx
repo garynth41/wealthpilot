@@ -56,6 +56,7 @@ export default function App() {
     <Route path="/" element={<Dashboard />} /><Route path="/forecast" element={<ForecastPage />} /><Route path="/budget" element={<BudgetPage />} /><Route path="/transactions" element={<TransactionsPage />} /><Route path="/bills" element={<BillsPage />} /><Route path="/income" element={<IncomePage />} />
     <Route path="/reconcile" element={<ReconcilePage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/debts" element={<DebtsPage />} /><Route path="/goals" element={<GoalsPage />} /><Route path="/plan" element={<PlanPage />} /><Route path="/protection" element={<ProtectionPage />} /><Route path="/trends" element={<TrendsPage />} /><Route path="/insights" element={<InsightsPage />} /><Route path="/tax" element={<TaxPage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/connections" element={<ConnectionsPage />} /><Route path="/investments" element={<InvestmentsPage />} /><Route path="/hardship" element={<HardshipPage />} /><Route path="/email" element={<EmailPage />} /><Route path="/settings" element={<SettingsPage />} />
     <Route path="/help" element={<HelpPage />} /><Route path="/start" element={<StartPage />} /><Route path="/feedback" element={<FeedbackInboxPage />} />
+    <Route path="/try" element={null} />{/* the invitation page: App shows it in place of the app (useHash), so the catch-all must not send it to the Dashboard first */}
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></Suspense></Layout></IdleLock></ModalHost></HashRouter>
 }

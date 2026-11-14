@@ -17,18 +17,32 @@ const OPEN = ['new', 'seen', 'planned']
 
 export function FeedbackInboxPage() {
   const { appAdmin, mode, user, toast } = useStore()
+  if (mode === 'db' && appAdmin === null) return <div className="grid g12"><Card span={12} title="Feedback & testers"><p className="note" style={{ margin: 0 }} aria-live="polite">Checking that this is your page…</p></Card></div>
   if (mode !== 'db' || !appAdmin) return <div className="grid g12"><Card span={12} title="Feedback & testers">
     <p style={{ marginTop: 0 }}>Only the person who runs Cresari can open this page.</p><Note>To send feedback yourself, use the ✉ Feedback button at the top of any screen.</Note></Card></div>
   return <Inbox userEmail={user?.email || ''} toast={toast} />
 }
 
+/** Every note, a page at the time (the server hands back at most 1,000 rows per request), so an old open note is never cut off. */
+async function loadAll(): Promise<{ rows: Feedback[]; error: string | null }> {
+  const PAGE = 1000, rows: Feedback[] = []
+  for (let from = 0; from < 100_000; from += PAGE) {
+    const { data, error } = await sb().rpc('feedback_inbox').order('created_at', { ascending: false }).order('id').range(from, from + PAGE - 1)
+    if (error) return { rows, error: error.message }
+    rows.push(...((data || []) as Feedback[])); if (!data || data.length < PAGE) break
+  }
+  return { rows, error: null }
+}
+
 function Inbox({ userEmail, toast }: { userEmail: string; toast: (t: string, err?: boolean) => void }) {
   const [rows, setRows] = useState<Feedback[] | null>(null); const [stats, setStats] = useState<Stat[]>([]); const [err, setErr] = useState<string | null>(null)
+  const [statsErr, setStatsErr] = useState<string | null>(null)
   const [view, setView] = useState<View>('open'); const [kind, setKind] = useState(''); const [q, setQ] = useState('')
   const confirm = useConfirm()
   const load = useCallback(async () => {
-    const [f, s] = await Promise.all([sb().from('feedback').select('*').order('created_at', { ascending: false }).limit(2000), sb().rpc('tester_stats')])
-    if (f.error) { setErr(f.error.message); return } setErr(null); setRows((f.data || []) as Feedback[]); setStats(((s.data || []) as Stat[]))
+    const [f, s] = await Promise.all([loadAll(), sb().rpc('tester_stats')])
+    if (s.error) setStatsErr(s.error.message); else { setStatsErr(null); setStats((s.data || []) as Stat[]) }
+    if (f.error) { setErr(f.error); return } setErr(null); setRows(f.rows)
   }, [])
   useEffect(() => { void load() }, [load])
   const sum = useMemo(() => feedbackSummary(rows || []), [rows])
@@ -52,7 +66,8 @@ function Inbox({ userEmail, toast }: { userEmail: string; toast: (t: string, err
     <div className="grid g12" style={{ marginTop: 16 }}>
       <InviteCard from={userEmail} />
       <Card span={5} title="Testers by invite code" hint="counts only — no names" right={<Btn sm onClick={() => void load()}>Refresh</Btn>}>
-        {stats.length ? <div className="tblwrap"><table className="tbl"><thead><tr><th scope="col">Invite code</th><th scope="col" className="num">Signed up</th><th scope="col" className="num">Active 7 days</th><th scope="col" className="num">Households</th><th scope="col" className="num">Feedback</th></tr></thead>
+        {statsErr ? <div className="msg crit" role="alert">Could not load the numbers: {statsErr}. Press Refresh to try again.</div>
+          : stats.length ? <div className="tblwrap"><table className="tbl"><thead><tr><th scope="col">Invite code</th><th scope="col" className="num">Signed up</th><th scope="col" className="num">Active 7 days</th><th scope="col" className="num">Households</th><th scope="col" className="num">Feedback</th></tr></thead>
           <tbody>{stats.map(s => <tr key={s.tester || '-'}><td>{s.tester || <span className="note" style={{ margin: 0 }}>no code</span>}</td><td className="num">{s.signed_up}</td><td className="num">{s.active_7d}</td><td className="num">{s.households}</td><td className="num">{s.feedback}</td></tr>)}</tbody></table></div>
           : <Note>No sign-ups or feedback yet. Share an invite link to start.</Note>}
         <Note>“No code” includes you and anyone who signed up without an invite link.</Note>

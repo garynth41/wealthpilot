@@ -155,14 +155,17 @@ async function tellOperators(id: string) {
   const title = `New feedback: ${FB_KIND[f.kind] || f.kind}${stars}`
   const where = [f.page, f.app_version ? 'v' + f.app_version : '', f.platform, f.device, f.demo ? 'demo' : ''].filter(Boolean).join(' · ')
   const push = await sendPush(null, ids, title, String(f.message).slice(0, 140), '/feedback', 'feedback')
-  const mails: string[] = []
+  const mails: string[] = []; let mailed = 0
   for (const uid of ids) {
     const { data: u } = await admin.auth.admin.getUserById(uid); const to = u?.user?.email; if (!to) continue
     const html = `<div style="font-family:'IBM Plex Sans',Segoe UI,Arial,sans-serif;color:#15181c;max-width:640px"><h2 style="font-weight:700;margin:0 0 4px">${esc(title)}</h2><div style="color:#5b6470;margin-bottom:12px">${esc(where || 'no page or device details')}${f.tester ? ' · invite ' + esc(f.tester) : ''}${f.email ? ' · reply to ' + esc(f.email) : ''}</div><div style="white-space:pre-wrap;border-left:3px solid #d7dbe0;padding:4px 0 4px 12px">${esc(String(f.message))}</div><p style="margin-top:16px"><a href="${APP_URL}#/feedback" style="color:#b53a0a">Open the feedback inbox</a></p></div>`
-    const res = await sendEmail(to, title, html, `${title}\n${where}\n\n${f.message}\n\n${APP_URL}#/feedback`); mails.push(`${to}: ${res.detail}`)
+    const res = await sendEmail(to, title, html, `${title}\n${where}\n\n${f.message}\n\n${APP_URL}#/feedback`); mails.push(`${to}: ${res.detail}`); if (res.ok) mailed++
   }
+  const report = { push: push.sent, push_detail: push.detail, email: mails.join('; ') || 'no address' }
+  // marked as told only when a push or an email actually went out; otherwise it stays eligible to be sent again
+  if (!push.sent && !mailed) return { ok: false, ...report }
   await admin.from('feedback').update({ notified_at: new Date().toISOString() }).eq('id', id)
-  return { ok: true, push: push.sent, push_detail: push.detail, email: mails.join('; ') || 'no address' }
+  return { ok: true, ...report }
 }
 
 Deno.serve(async (req) => {
@@ -183,7 +186,8 @@ Deno.serve(async (req) => {
   if (b.action === 'feedback') {
     const given = req.headers.get('x-cron-secret') || ''
     if (!(given.length >= 32 && (await admin.rpc('cron_secret_ok', { p: given })).data === true)) return json(401, { error: 'cron secret required' })
-    try { return json(200, await tellOperators(String(b.id || ''))) } catch (e) { await logError(null, (e as Error).message, { action: 'feedback' }); return json(500, { error: (e as Error).message }) }
+    try { const r = await tellOperators(String(b.id || '')); if (!r.ok && 'push' in r) await logError(null, `feedback ${b.id}: nothing delivered`, { action: 'feedback', push_detail: r.push_detail }); return json(r.ok ? 200 : 502, r) }
+    catch (e) { await logError(null, (e as Error).message, { action: 'feedback' }); return json(500, { error: (e as Error).message }) }
   }
   // signed-in actions
   const auth = req.headers.get('Authorization') || ''; if (!auth.startsWith('Bearer ')) return json(401, { error: 'sign in first' })

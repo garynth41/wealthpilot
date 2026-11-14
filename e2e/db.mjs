@@ -50,6 +50,7 @@ const anon = createClient(URL_, KEY, { auth: { persistSession: false, autoRefres
 const { error: ane } = await anon.rpc('submit_feedback', fbArgs(`[e2e] demo note ${stamp}`)); ok(!ane || limited(ane), 'someone trying the demo, not signed in, can send feedback ' + (ane?.message || ''))
 ok(((await anon.from('feedback').select('id')).data || []).length === 0, 'the public cannot read any feedback')
 ok(!!(await owner.rpc('tester_stats')).error, 'tester numbers are for the operator only')
+ok(!!(await owner.rpc('feedback_inbox')).error && !!(await owner.from('feedback').select('admin_note').limit(1)).error, "a tester cannot open the operator's inbox or read the operator's private note")
 ok(!!(await anon.rpc('submit_feedback', fbArgs(' '))).error, 'an empty note is refused')
 
 // --- 0.25.1: membership is the owner's call, limited access, invitations, deleting an account ---

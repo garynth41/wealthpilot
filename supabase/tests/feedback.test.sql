@@ -36,6 +36,8 @@ update public.feedback set status = 'fixed' where id = :'f2';
 select pg_temp.ok((select status = 'new' from public.feedback where id = :'f2'), 'a tester cannot change the status of their own feedback');
 select pg_temp.ok(pg_temp.refused($q$update public.feedback set message = 'changed' where true$q$), 'a tester cannot change the message');
 select pg_temp.ok(pg_temp.refused($q$select * from public.tester_stats()$q$), 'a tester cannot see the tester numbers');
+select pg_temp.ok(pg_temp.refused($q$select * from public.feedback_inbox()$q$), 'a tester cannot open the operator''s inbox');
+select pg_temp.ok(pg_temp.refused($q$select admin_note from public.feedback$q$) and pg_temp.refused($q$select client_hash from public.feedback$q$) and pg_temp.refused($q$select * from public.feedback$q$), 'a tester cannot read the operator''s note or the network hash, even on their own note');
 select set_config('request.jwt.claims', json_build_object('sub', :'B')::text, false) \gset
 select pg_temp.ok((select count(*) = 0 from public.feedback), 'another tester sees none of it');
 -- limits: 5 in 10 minutes from one account
@@ -55,9 +57,10 @@ select pg_temp.ok((select client_hash is not null and client_hash !~ '203|198' f
 -- the operator reads and triages everything, and sees the numbers per invite code
 set role authenticated; select set_config('request.jwt.claims', json_build_object('sub', :'OP')::text, false) \gset
 select pg_temp.ok((select public.is_app_admin()), 'the operator is recognised');
-select pg_temp.ok((select count(*) = 13 from public.feedback), 'the operator reads every piece of feedback');
+select pg_temp.ok((select count(*) = 13 from public.feedback) and (select count(*) = 13 from public.feedback_inbox()), 'the operator reads every piece of feedback');
 update public.feedback set status = 'planned', admin_note = 'next release', issue_url = 'https://github.com/x/y/issues/1' where id = :'f2';
-select pg_temp.ok((select status = 'planned' and admin_note = 'next release' from public.feedback where id = :'f2'), 'the operator can triage');
+select pg_temp.ok((select status = 'planned' and admin_note = 'next release' from public.feedback_inbox() where id = :'f2'), 'the operator can triage, and reads the private note through the inbox');
+select pg_temp.ok(pg_temp.refused($q$select client_hash from public.feedback$q$), 'nobody signed in reads the network hash, not even the operator');
 select pg_temp.ok(pg_temp.refused($q$update public.feedback set message = 'edited' where true$q$), 'even the operator cannot rewrite what a tester said');
 select pg_temp.ok((select signed_up = 2 and active_7d = 1 and feedback = 1 from public.tester_stats() where tester = 'church'), 'tester numbers per invite code: sign-ups, recent sign-ins, feedback');
 select set_config('request.jwt.claims', json_build_object('sub', :'A')::text, false) \gset

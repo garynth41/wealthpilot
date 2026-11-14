@@ -15,11 +15,12 @@ const go = (hash: string) => { location.hash = hash }
 export const AUTH_MODE_KEY = 'cresari.auth.mode'
 
 export function TryPage() {
-  const { enterDemo, mode, user } = useStore()
+  const { enterDemo, exitDemo, mode, user } = useStore()
   useEffect(() => { rememberCode(codeFromHash(location.hash)); const t = document.title; document.title = `Try ${APP_NAME}`; return () => { document.title = t } }, [])
   const signedIn = !!mode || !!user
   const demo = async () => { await enterDemo(); go('#/start') }
-  const account = (signup: boolean) => { try { sessionStorage.setItem(AUTH_MODE_KEY, signup ? 'signup' : 'signin') } catch { /* private mode */ } go('#/') }
+  const hasAccount = mode === 'db' || !!user   // someone in the demo can still go on to create an account (the demo's data stays on this device)
+  const account = (signup: boolean) => { try { sessionStorage.setItem(AUTH_MODE_KEY, signup ? 'signup' : 'signin') } catch { /* private mode */ } if (mode === 'demo') exitDemo(); go('#/') }
   return <div className="try" data-testid="try-page">
     <header className="try-hero">
       <div className="brand" style={{ padding: 0 }}><span className="mark"><Logo size={36} /></span><div><b>{APP_NAME}</b><small>Budget · bills · savings · planning</small></div></div>
@@ -34,8 +35,8 @@ export function TryPage() {
         <Btn primary block onClick={() => void demo()} disabled={mode === 'db'}>Open the demo</Btn></div>
       <div className="try-way"><span className="try-n">2</span><h2>Set up your own</h2>
         <p>Create a free account and set up your own budget. <b>Start here</b> walks you through it step by step — accounts, income, bills, budget, spending, savings and debts — in about an hour, at your own pace.</p>
-        <Btn primary block onClick={() => account(true)} disabled={signedIn}>Create my account</Btn>
-        <button type="button" className="linkbtn" onClick={() => account(false)} disabled={signedIn}>I already have an account — sign in</button></div>
+        <Btn primary block onClick={() => account(true)} disabled={hasAccount}>Create my account</Btn>
+        <button type="button" className="linkbtn" onClick={() => account(false)} disabled={hasAccount}>I already have an account — sign in</button></div>
       <div className="try-way"><span className="try-n">3</span><h2>Put it on your phone</h2><InstallSteps /></div>
     </section>
 

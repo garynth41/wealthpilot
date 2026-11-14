@@ -51,8 +51,12 @@ create index if not exists feedback_user on public.feedback (user_id) where user
 create index if not exists feedback_client on public.feedback (client_hash, created_at) where client_hash is not null;
 alter table public.feedback enable row level security;
 revoke all on public.feedback from anon, authenticated;
--- a signed-in tester reads their own (to see what became of it); the operator reads, triages and removes everything
-grant select, delete on public.feedback to authenticated;
+-- a signed-in tester reads their own (to see what became of it); the operator reads, triages and removes everything. Reading is granted
+-- column by column: row security limits rows, not columns, so the operator's private note and the network hash are left out here and the
+-- operator reads the full rows through feedback_inbox() below.
+grant select (id, created_at, updated_at, kind, rating, message, page, app_version, platform, device, screen, look, demo, user_id, email, tester,
+  status, issue_url, notified_at) on public.feedback to authenticated;
+grant delete on public.feedback to authenticated;
 grant update (status, admin_note, issue_url) on public.feedback to authenticated;
 drop policy if exists feedback_read on public.feedback;
 create policy feedback_read on public.feedback for select to authenticated using (user_id = (select auth.uid()) or (select public.is_app_admin()));
@@ -87,6 +91,8 @@ begin
   if p_rating is not null and p_rating not between 1 and 5 then raise exception 'A rating is 1 to 5 stars' using errcode = '22023'; end if;
   if em is not null and (char_length(em) > 254 or em !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$') then raise exception 'That email address does not look right' using errcode = '22023'; end if;
   if t is not null and t !~ '^[A-Za-z0-9_-]{1,40}$' then t := null; end if;
+  -- one note at a time, so two sent at the same moment cannot both slip under a limit
+  perform pg_advisory_xact_lock(hashtextextended('feedback:submit', 0));
   begin ip := btrim(split_part(coalesce(current_setting('request.headers', true)::json ->> 'x-forwarded-for', ''), ',', 1)); exception when others then ip := ''; end;
   ch := case when ip <> '' then encode(sha256(convert_to('cresari-feedback:' || ip, 'UTF8')), 'hex') end;
   if uid is not null or ch is not null then
@@ -106,6 +112,19 @@ begin
 end $$;
 revoke all on function public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text) from public;
 grant execute on function public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text) to anon, authenticated;
+
+-- For the operator: every note with the private note column (never the network hash), newest first. The inbox reads it a page at a time.
+create or replace function public.feedback_inbox() returns table (id uuid, created_at timestamptz, updated_at timestamptz, kind text, rating smallint,
+  message text, page text, app_version text, platform text, device text, screen text, look text, demo boolean, user_id uuid, email text, tester text,
+  status text, admin_note text, issue_url text, notified_at timestamptz)
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not public.is_app_admin() then raise exception 'Only the app''s operator can open the feedback inbox' using errcode = '42501'; end if;
+  return query select f.id, f.created_at, f.updated_at, f.kind, f.rating, f.message, f.page, f.app_version, f.platform, f.device, f.screen, f.look,
+    f.demo, f.user_id, f.email, f.tester, f.status, f.admin_note, f.issue_url, f.notified_at from public.feedback f order by f.created_at desc, f.id;
+end $$;
+revoke all on function public.feedback_inbox() from public;
+grant execute on function public.feedback_inbox() to authenticated;
 
 -- For the operator: how each invite code is doing. Counts only — no names or addresses.
 create or replace function public.tester_stats() returns table (tester text, signed_up bigint, active_7d bigint, households bigint, feedback bigint)
@@ -143,5 +162,5 @@ create trigger trg_feedback_notify after insert on public.feedback for each row 
 
 -- down: (the reverse — run only to roll back. Every piece of feedback is lost; export it from the inbox first.)
 --   drop trigger if exists trg_feedback_notify on public.feedback; drop function if exists public.feedback_notify();
---   drop function if exists public.tester_stats(); drop function if exists public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text);
+--   drop function if exists public.feedback_inbox(); drop function if exists public.tester_stats(); drop function if exists public.submit_feedback(text, text, int, text, text, text, text, text, text, boolean, text, text);
 --   drop table if exists public.feedback; drop function if exists public.feedback_touch(); drop function if exists public.is_app_admin(); drop table if exists public.app_admins;

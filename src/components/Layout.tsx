@@ -68,8 +68,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const loc = useLocation(), nav = useNavigate(); const { household, mode, user, signOut, exitDemo, resetDemo, role, readOnly, modules, offlineAt } = useStore()
   const appAdmin = useStore(s => s.appAdmin)
   // 0.29.0: is this the account that runs the app? Then Feedback & testers shows (the database checks again on every read)
-  useEffect(() => { if (mode !== 'db' || !user) { useStore.setState({ appAdmin: false }); return } let on = true; Promise.resolve(sb().rpc('is_app_admin')).then(r => { if (on) useStore.setState({ appAdmin: r.data === true }) }, () => {}); return () => { on = false } }, [mode, user?.id])
-  const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path) && (v.path !== '/feedback' || appAdmin)) }, [mode, modules, appAdmin])
+  useEffect(() => { if (mode !== 'db' || !user) { useStore.setState({ appAdmin: false }); return } let on = true; useStore.setState({ appAdmin: null }); Promise.resolve(sb().rpc('is_app_admin')).then(r => { if (on) useStore.setState({ appAdmin: r.data === true }) }, () => { if (on) useStore.setState({ appAdmin: false }) }); return () => { on = false } }, [mode, user?.id])
+  const visible = useMemo(() => { const ok = mode === 'demo' ? null : modules; const paths = new Set(allowedPaths(ok)); return VIEWS.filter(v => paths.has(v.path) && (v.path !== '/feedback' || appAdmin === true)) }, [mode, modules, appAdmin])
   // the icon rail is the Terminal default (the analyst's desk keeps the width for figures); Graphite opens the full rail. Only a choice the
   // user made with the toggle is saved (0.27.1) — the style's default is not, so switching styles moves the rail until the user sets it
   const [railChoice, setRailChoice] = useState<'collapsed' | 'open' | null>(() => { try { const v = localStorage.getItem(LS('rail')); return v === 'collapsed' || v === 'open' ? v : null } catch { return null } })
@@ -107,7 +107,8 @@ export function Layout({ children }: { children: ReactNode }) {
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [loc.pathname])   // eslint-disable-line react-hooks/exhaustive-deps
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
-  const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname)
+  // an operator who reloads on Feedback & testers waits for the check (the page says so) instead of being sent to the Dashboard
+  const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname) && !(loc.pathname === '/feedback' && appAdmin === null)
   // the phone apps (0.25.1): back button, refresh on return to the app, reminder taps, and reminders kept in step with the data
   const navRef = useRef(nav); navRef.current = nav
   useEffect(() => {

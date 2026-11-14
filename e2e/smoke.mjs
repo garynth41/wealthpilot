@@ -495,6 +495,8 @@ for (const W of [390, 1400]) {
   const sh = await tp.locator('h1').first().textContent(), ssw = await tp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   ok(await tp.evaluate(() => location.hash) === '#/start' && sh === 'Start here' && (await tp.locator('[id^="start-"]').count()) >= 8 && ssw <= 1, `${W}: Open the demo goes to Start here with every setup step (${sh}, ${ssw}px)`)
   await tp.screenshot({ path: `e2e/shots/${W}_start.png`, fullPage: true })
+  await tp.click('button:has-text("Go to step")'); await tp.waitForTimeout(600)
+  ok(await tp.evaluate(() => location.hash) === '#/start' && await tp.locator('h1').first().textContent() === 'Start here', `${W}: Go to step scrolls to the step and stays on Start here`)
   await tp.goto('http://localhost:4173/#/budget'); await tp.waitForTimeout(900)
   await tp.locator('[data-testid="feedback-icon"]:visible, [data-testid="feedback-btn"]:visible').first().click(); await tp.waitForTimeout(300)
   await tp.click('.modal button:has-text("Send feedback")'); await tp.waitForTimeout(200)
@@ -504,6 +506,9 @@ for (const W of [390, 1400]) {
   await tp.keyboard.press('Escape'); await tp.goto('http://localhost:4173/#/feedback'); await tp.waitForTimeout(800)
   const fh = await tp.locator('h1').first().textContent()
   ok(fh === 'Dashboard' && (await tp.locator('a[href="#/feedback"]').count()) === 0, `${W}: Feedback & testers is out of the menu in the demo, and its address opens the Dashboard (${fh})`)
+  // from the demo, back on the invitation: Create my account leaves the demo for the sign-up form
+  await tp.goto('http://localhost:4173/#/try'); await tp.waitForTimeout(700); await tp.click('button:has-text("Create my account")'); await tp.waitForTimeout(900)
+  ok((await tp.locator('h2:has-text("Create account")').count()) === 1 && await tp.evaluate(() => !localStorage.getItem('wealthpilot.mode')), `${W}: someone in the demo can go on to create an account from the invitation`)
   ok(!errs.length, `${W}: no page errors on the tester pages ${errs.slice(0, 2).join(' | ')}`); await tp.close()
 }
 console.log('smoke fails', F); await b.close(); srv.close()
