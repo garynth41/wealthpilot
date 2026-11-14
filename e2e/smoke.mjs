@@ -511,11 +511,11 @@ for (const W of [390, 1400]) {
     const g = await tp.evaluate(() => { const c = document.querySelector('.card.subs-card'), ch = c?.querySelector('.subs-chart'), m = [...document.querySelectorAll('.card')].find(x => x.querySelector('h2')?.textContent?.includes('Merchants')); if (!c || !ch || !m) return null
       const parts = [...c.querySelectorAll('.subs-part')].map(x => Math.round(x.getBoundingClientRect().height)), cb = c.getBoundingClientRect(), hb = ch.getBoundingClientRect(), mb = m.getBoundingClientRect()
       return { same: Math.abs(cb.height - mb.height) < 2, parts, equal: parts.length >= 2 && Math.max(...parts) - Math.min(...parts) <= 2, gap: Math.round(cb.bottom - hb.bottom) } })
-    ok(!!g && g.same && g.equal && g.gap <= 30, `Subscriptions & recurring charges is as tall as Merchants and split into equal parts, the chart at the bottom (${g?.parts?.join('/')}px, gap ${g?.gap}px)`)
+    ok(!!g && g.same && g.equal && g.gap >= 0 && g.gap <= 30, `Subscriptions & recurring charges is as tall as Merchants and split into equal parts, the chart at the bottom (${g?.parts?.join('/')}px, gap ${g?.gap}px)`)
     await tp.goto('http://localhost:4173/#/bills'); await tp.locator('.cash-day-card svg.main-svg').first().waitFor({ timeout: 15000 }).catch(() => {}); await tp.waitForTimeout(300)
     const cd = await tp.evaluate(() => { const c = document.querySelector('.card.cash-day-card'), ch = c?.querySelector('.cash-day-chart'), n = [...document.querySelectorAll('.card')].find(x => x.querySelector('h2')?.textContent?.includes('Coming up')); if (!c || !ch || !n) return null
       const cb = c.getBoundingClientRect(); return { same: Math.abs(cb.height - n.getBoundingClientRect().height) < 2, gap: Math.round(cb.bottom - ch.getBoundingClientRect().bottom) } })
-    ok(!!cd && cd.same && cd.gap <= 30, `Cash needed by day fills its card, the chart down to the bottom edge (gap ${cd?.gap}px)`) }
+    ok(!!cd && cd.same && cd.gap >= 0 && cd.gap <= 30, `Cash needed by day fills its card, the chart down to the bottom edge (gap ${cd?.gap}px)`) }
   // from the demo, back on the invitation: Create my account leaves the demo for the sign-up form
   await tp.goto('http://localhost:4173/#/try'); await tp.click('button:has-text("Create my account")'); await tp.locator('h2:has-text("Create account")').waitFor({ timeout: 10000 }).catch(() => {})
   ok((await tp.locator('h2:has-text("Create account")').count()) === 1 && await tp.evaluate(() => !localStorage.getItem('wealthpilot.mode')), `${W}: someone in the demo can go on to create an account from the invitation`)

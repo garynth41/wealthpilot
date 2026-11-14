@@ -230,7 +230,7 @@ Enter the email and password only in App Store Connect and Play Console — neve
 ## D. After launch
 
 - **Tell the app a new version exists** (only after it is live in both the App Store and Google Play):
-  `update public.app_meta set value = '0.29.1' where key = 'latest_native_version';` — app users then see "A new version is available".
+  `insert into public.app_meta (key, value) values ('latest_native_version', '0.29.1') on conflict (key) do update set value = excluded.value, updated_at = now();` (an insert, so it also works the first time — no migration adds this row) — app users then see "A new version is available".
   Only for changes an older app would break (such as a database change) also set `min_native_version`, which blocks older apps until
   they update.
 - **Each new version:** raise the version as usual (every release already does), then run **release apps** (`both`). Android lands as a

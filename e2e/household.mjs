@@ -24,9 +24,11 @@ let F = 0; const ok = (c, m) => { if (!c) F++; console.log((c ? 'PASS ' : 'FAIL 
 const TWO = { id: '00000000-0000-4000-8000-00000000d001', email: 'two-households@cresari.test' }
 const CODE = { id: '00000000-0000-4000-8000-00000000d002', email: 'two-factor@cresari.test', totp: true }
 const FRESH = { id: '00000000-0000-4000-8000-00000000d003', email: 'brand-new@cresari.test' }
-const PEOPLE = [TWO, CODE, FRESH]
+const SHAKY = { id: '00000000-0000-4000-8000-00000000d004', email: 'shaky@cresari.test' }   // their household fails to load once
+const PEOPLE = [TWO, CODE, FRESH, SHAKY]
+let shakyFails = 1
 const HH = { first: { id: '00000000-0000-4000-8000-0000000000e1', name: 'Fixture Main household' }, second: { id: '00000000-0000-4000-8000-0000000000e2', name: 'Fixture Rental household' } }
-const memberOf = u => u?.id === TWO.id ? [HH.first, HH.second] : u?.id === CODE.id ? [HH.first] : []
+const memberOf = u => u?.id === TWO.id ? [HH.first, HH.second] : u?.id === CODE.id || u?.id === SHAKY.id ? [HH.first] : []
 const INVITES_MS = 2500   // accepting invites answers slowly, as it can on a busy day — the window the bad click landed in
 const now = () => Math.floor(Date.now() / 1000)
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -59,6 +61,7 @@ async function standIn(route) {
     if (hid) return json(mine.some(h => h.id === hid) ? [{ household_id: hid, user_id: who.id, role: 'owner', read_only: false, modules: null }] : [])
     return json(mine.map(h => ({ household_id: h.id, role: 'owner', households: { name: h.name } })))
   }
+  if (p === '/rest/v1/households' && method === 'GET' && who?.id === SHAKY.id && shakyFails > 0) { shakyFails--; return json({ code: 'XX000', message: 'the database is busy' }, 500) }
   if (p === '/rest/v1/households' && method === 'GET') { const h = memberOf(who).find(x => x.id === eq('id')); return h ? json(wantsOne ? household(h) : [household(h)]) : json({ code: 'PGRST116', message: 'no rows' }, 406) }
   if (method === 'GET' || method === 'HEAD') return wantsOne ? json({ code: 'PGRST116', message: 'no rows' }, 406) : json([])
   return json([], 201)   // writes (last seen, error reports) are accepted and dropped
@@ -117,6 +120,14 @@ try {
     const form = await pg.locator('button', { hasText: 'Create household' }).waitFor({ timeout: INVITES_MS + 15000 }).then(() => true, () => false)
     ok(form && (await pg.locator('h2').first().textContent()).startsWith('Welcome'), 'someone with no household yet sees Welcome and Create household')
     await pg.screenshot({ path: 'e2e/shots/household_welcome.png' })
+    await ctx.close() }
+
+  // 5. a household that fails to open keeps a way forward: Try again opens it (and Sign out is there)
+  { const { ctx, pg } = await fresh(); await pg.goto(SITE); await signIn(pg, SHAKY)
+    const err = await pg.getByRole('alert').filter({ hasText: 'the database is busy' }).waitFor({ timeout: INVITES_MS + 15000 }).then(() => true, () => false)
+    ok(err && await pg.locator('button', { hasText: 'Try again' }).count() === 1 && await pg.locator('button', { hasText: 'Sign out' }).count() === 1, 'a household that cannot be opened shows why, with Try again and Sign out')
+    await pg.locator('button', { hasText: 'Try again' }).click()
+    ok(await onDashboard(pg) && (await eyebrow(pg)).includes(HH.first.name), 'Try again opens it once the database answers')
     await ctx.close() }
 
   ok(hits.includes('POST /rest/v1/rpc/accept_invites') && !hits.includes('POST /rest/v1/rpc/create_household'), `the app talked only to the stand-in server (${hits.length} requests answered here) and created nothing`)

@@ -76,6 +76,28 @@ describe('the welcome screen while signing in', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open GaryThomas · owner' }))
     await waitFor(() => expect(opened).toEqual(['hh-thomas']))
   })
+  it('a sign-in that is still reading the list when the person signs out opens nothing afterwards', async () => {
+    const release = slowInvites(); lists = [{ data: [{ household_id: 'hh-thomas', role: 'owner', households: { name: 'GaryThomas' } }], error: null }]
+    useStore.setState({ user: USER as never })
+    const signingIn = useStore.getState().signIn(USER.email, 'test-fixture-only')
+    await waitFor(() => expect(calls).toContain('rpc accept_invites'))
+    await useStore.getState().signOut().catch(() => {})
+    release(); await signingIn
+    expect(opened).toEqual([])
+    expect(useStore.getState()).toMatchObject({ householdsFor: null, mode: null })
+  })
+  it('a household load that finishes after another household was opened is dropped, success or failure', async () => {
+    let finishA!: (v: unknown) => void, failA!: (e: Error) => void
+    const repoA = { mode: 'db', loadAll: () => new Promise((res, rej) => { finishA = res; failA = rej }) }, repoB = { mode: 'db', loadAll: () => new Promise(() => {}) }
+    useStore.setState({ repo: repoA as never, household: null, loadError: null })
+    const a = useStore.getState().refresh()
+    useStore.setState({ repo: repoB as never })   // the person opened another household meanwhile
+    finishA({ household: { id: 'hh-a', name: 'A', settings: {} }, data: {}, role: 'owner', readOnly: false, modules: null }); await a
+    expect(useStore.getState().household).toBeNull()
+    useStore.setState({ repo: repoA as never }); const again = useStore.getState().refresh(); useStore.setState({ repo: repoB as never })
+    failA(new Error('A could not load')); await again
+    expect(useStore.getState().loadError).toBeNull()
+  })
   it('signing out forgets whose list was read, so the next person waits for their own', async () => {
     useStore.setState({ user: USER as never, householdsFor: USER.id, householdsError: 'old' })
     await useStore.getState().signOut().catch(() => {})
