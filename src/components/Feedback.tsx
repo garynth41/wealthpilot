@@ -45,11 +45,13 @@ export function FeedbackDialog({ pageTitle = '' }: { pageTitle?: string }) {
   const send = async () => {
     const p = feedbackProblem(kind, message, rating, email); if (p) { setErr(p); return }
     if (!hasSupabase()) { setErr('Feedback cannot be sent from this copy of the app.'); return }
-    setBusy(true); setErr(null)
+    setBusy(true); setErr(null); const snap = { kind, message, rating }
     try {
       const { error } = await sb().rpc('submit_feedback', feedbackArgs(kind, message, rating, email, testerCode(), withCtx ? ctx : null))
       if (error) throw new Error(/fetch|network|Failed/i.test(error.message) ? 'Could not reach Cresari — check your connection. Your note is kept here.' : error.message)
-      saveDraft(null); setSent(true)
+      // clear the kept draft only if it is still this note (the dialog may have been closed and a new note started while this one was sending)
+      const cur = loadDraft(); if (!cur || (cur.message === snap.message && cur.kind === snap.kind && (cur.rating ?? null) === snap.rating)) saveDraft(null)
+      setSent(true)
     } catch (e) { setErr(/fetch|network|Failed/i.test((e as Error).message) ? 'Could not reach Cresari — check your connection. Your note is kept here.' : (e as Error).message) }
     finally { setBusy(false) }
   }

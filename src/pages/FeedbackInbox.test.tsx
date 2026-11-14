@@ -5,6 +5,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 
 const calls: Array<{ op: string; table?: string; args?: unknown }> = []
 let statsFail = false
+let pending: Promise<void> | null = null
 const rows = [
   { id: 'f1', created_at: '2026-11-13T15:00:00Z', kind: 'bug', rating: 2, message: 'Budget total is off after a split', page: '/budget', app_version: '0.29.0', platform: 'web', device: 'Mac · Safari', screen: '1440×900', look: 'graphite light', demo: false, user_id: 'u1', email: 'tester@x.test', tester: 'church', status: 'new', admin_note: null, issue_url: null },
   { id: 'f2', created_at: '2026-11-12T09:00:00Z', kind: 'praise', rating: 5, message: 'Love the forecast', page: '/forecast', app_version: '0.29.0', platform: 'installed', device: 'iPhone · Safari', screen: '390×844', look: 'terminal dark', demo: true, user_id: null, email: null, tester: null, status: 'fixed', admin_note: null, issue_url: null },
@@ -23,6 +24,7 @@ vi.mock('../app/supabase', () => ({
   hasSupabase: () => true,
   sb: () => ({ from: (t: string) => chain(t), rpc: (name: string, args: unknown) => { calls.push({ op: 'rpc', args: { name, ...(args as object) } })
     if (name === 'feedback_inbox') { const q: Record<string, unknown> = {}; q.order = () => q; q.range = (a: number) => { calls.push({ op: 'range', args: a }); return Promise.resolve({ data: a === 0 ? rows : [], error: null }) }; return q }
+    if (name === 'submit_feedback' && pending) return pending.then(() => ({ data: 'new-id', error: null }))
     return Promise.resolve(name === 'tester_stats' && statsFail ? { data: null, error: { message: 'timeout' } } : { data: name === 'tester_stats' ? [{ tester: 'church', signed_up: 3, active_7d: 2, households: 2, feedback: 1 }] : 'new-id', error: null }) } }),
 }))
 
@@ -31,7 +33,7 @@ import { ModalHost } from '../components/ui'
 import { FeedbackInboxPage } from './FeedbackInbox'
 import { FeedbackDialog } from '../components/Feedback'
 
-beforeEach(() => { calls.length = 0; statsFail = false; localStorage.clear() })
+beforeEach(() => { calls.length = 0; statsFail = false; pending = null; localStorage.clear() })
 
 describe('Feedback & testers', () => {
   it('is closed to everyone but the operator', () => {
@@ -80,6 +82,16 @@ describe('the Feedback dialog', () => {
     const sent = calls.find(c => c.op === 'rpc')!.args as Record<string, unknown>
     expect(sent).toMatchObject({ name: 'submit_feedback', p_kind: 'idea', p_message: 'A yearly view of bills', p_rating: 4, p_email: null, p_tester: 'church', p_demo: true, p_app_version: expect.any(String) })
     expect(localStorage.getItem('cresari.feedback.draft')).toBeNull()
+  })
+  it('keeps a newer draft when an earlier note finishes sending after the dialog was closed', async () => {
+    useStore.setState({ mode: 'demo', user: null }); let release = () => {}; pending = new Promise<void>(r => { release = r })
+    const { unmount } = render(<ModalHost><FeedbackDialog /></ModalHost>)
+    fireEvent.change(screen.getByLabelText('Your note'), { target: { value: 'The first note' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
+    expect((screen.getByLabelText('Your note') as HTMLTextAreaElement).readOnly).toBe(true)   // nothing can be typed while it sends
+    unmount(); localStorage.setItem('cresari.feedback.draft', JSON.stringify({ kind: 'idea', message: 'A second note', rating: null }))
+    release(); await waitFor(() => expect(calls.some(c => c.op === 'rpc')).toBe(true)); await new Promise(r => setTimeout(r, 10))
+    expect(JSON.parse(localStorage.getItem('cresari.feedback.draft')!).message).toBe('A second note')
   })
   it('sends only the note when the page and device are unticked', async () => {
     useStore.setState({ mode: 'demo', user: null })

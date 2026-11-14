@@ -26,7 +26,7 @@ export function FeedbackInboxPage() {
 /** Every note, a page at the time (the server hands back at most 1,000 rows per request), so an old open note is never cut off. */
 async function loadAll(): Promise<{ rows: Feedback[]; error: string | null }> {
   const PAGE = 1000, rows: Feedback[] = []
-  for (let from = 0; from < 100_000; from += PAGE) {
+  for (let from = 0; ; from += PAGE) {   // no cap: a short page ends it
     const { data, error } = await sb().rpc('feedback_inbox').order('created_at', { ascending: false }).order('id').range(from, from + PAGE - 1)
     if (error) return { rows, error: error.message }
     rows.push(...((data || []) as Feedback[])); if (!data || data.length < PAGE) break
