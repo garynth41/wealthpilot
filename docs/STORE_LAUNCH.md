@@ -38,7 +38,7 @@ the Android app can go public (Google's 14-day testing rule, below). Apple usual
 6. **Email that reaches everyone — required before strangers can sign up.** Supabase's built-in email service only delivers to members
    of your Supabase organization (since September 2024); anyone else gets "Email address not authorized", so their sign-up confirmation
    and password-reset emails never arrive — including the App Review team's. Check Supabase → Authentication → **Emails → SMTP Settings**:
-   if custom SMTP is off, turn it on with a real email provider. Two ways:
+   if custom SMTP is off, turn it on with a real email provider (click-by-click steps for both ways: [TESTING.md, step 1](TESTING.md)). Two ways:
    - *Best:* buy a domain for the app's name (about $10–15 a year), verify it in **Resend** (already used for the alert emails), and use
      Resend's SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = a Resend API key, sender `no-reply@<your domain>`. Then set
      the edge-function secrets `EMAIL_FROM` and `INVITE_FROM` to `Cresari <alerts@<your domain>>` too — Resend's test sender

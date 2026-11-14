@@ -23,8 +23,43 @@ Supabase's built-in email only delivers to members of your Supabase organization
 **can open the demo but cannot create an account** — their confirmation email never arrives. The sign-up screen now says this in plain
 words instead of a code, so nobody is left waiting.
 
-Set it up exactly as [STORE_LAUNCH.md section 0, item 6](STORE_LAUNCH.md) describes (Resend with your own domain, or a dedicated Gmail
-with an app password). Then sign up with a second email address of your own to check the confirmation arrives.
+Two ways — pick one. **A** is the one to keep; **B** gets a small beta going today.
+
+### A. Your own domain through Resend (recommended, about 30 minutes plus DNS time)
+
+Cresari already uses Resend for alert and household-invitation emails, so one domain fixes all three kinds of email.
+
+1. **Buy a domain** for the app (about $10–15 a year at any registrar). Cloudflare and GoDaddy domains can be set up in Resend with one
+   click (Auto Configure); others take a few copy-and-paste DNS records.
+2. **Add it to Resend** — resend.com → **Domains → Add Domain**. Enter a subdomain such as `mail.<your domain>` (Resend's advice: keep
+   app email on a subdomain so it never disturbs mail sent from the main domain). Region: US East.
+3. **Add the DNS records** on the domain's **Records** tab in Resend (a few records under `send.mail…` and `resend._domainkey.mail…`;
+   newer domains may show CNAME records instead of MX/TXT) — use **Auto Configure** if offered, otherwise paste each one at your
+   registrar exactly as shown, with only the part before your domain in the Name field. Click **Verify DNS Records**; it usually turns
+   green within 15 minutes (up to 72 hours).
+4. **Make an API key** — Resend → **API Keys → Create API key**, permission *Sending access*, limited to the new domain. Copy it now; it is
+   shown once.
+5. **Turn on custom SMTP in Supabase** — production project → **Authentication → Emails → SMTP Settings** → **Enable custom SMTP**:
+   sender email `no-reply@mail.<your domain>`, sender name `Cresari`, host `smtp.resend.com`, port `465`, username `resend`, password =
+   the API key. **Save**.
+6. **Raise the email limit** — **Authentication → Rate Limits → Email sent**: Supabase starts custom SMTP at 30 an hour; 60 is plenty for a
+   beta. (Resend's free plan sends up to 100 emails a day — alerts and invitations included; Pro is $20 a month when you outgrow it.)
+7. **Point Cresari's own emails at the domain** — **Edge Functions → Secrets**: set `EMAIL_FROM` and `INVITE_FROM` to
+   `Cresari <alerts@mail.<your domain>>` (or ask Claude to). Until then alert and invitation emails reach only you.
+8. **Test it** — open your invite link in a private window, **Create my account** with a second address of yours, and check the
+   confirmation arrives (Resend → **Emails** shows each one sent). Also check **Authentication → URL Configuration**: the Site URL must be
+   `https://garynth41.github.io/wealthpilot/`, or confirmation links open the wrong page.
+
+### B. A dedicated Gmail account (about 10 minutes, fine for a small beta)
+
+1. Create a new Gmail account just for Cresari (not your personal one — the address is visible to testers).
+2. Turn on **2-Step Verification** (myaccount.google.com → Security), then create an **App password** (myaccount.google.com/apppasswords,
+   name it "Cresari"). Copy the 16 characters without spaces.
+3. Supabase → **Authentication → Emails → SMTP Settings → Enable custom SMTP**: sender email = the new Gmail address, sender name
+   `Cresari`, host `smtp.gmail.com`, port `465`, username = the Gmail address, password = the app password. **Save**.
+4. Do A6 and A8 above. Gmail allows about 500 emails a day; mail from a Gmail address lands in spam a little more often than mail from
+   your own domain, so ask testers to check spam once. Alert and invitation emails stay on Resend's test sender (reaching only you) until
+   you do A.
 
 ## Step 2 — Turn on the feedback inbox (once)
 
