@@ -157,9 +157,13 @@ async function tellOperators(id: string) {
   const push = await sendPush(null, ids, title, String(f.message).slice(0, 140), '/feedback', 'feedback')
   const mails: string[] = []; let mailed = 0
   for (const uid of ids) {
-    const { data: u } = await admin.auth.admin.getUserById(uid); const to = u?.user?.email; if (!to) continue
+    let to: string | undefined
+    try { const { data: u } = await admin.auth.admin.getUserById(uid); to = u?.user?.email } catch (e) { mails.push(`operator ${mails.length + 1}: address lookup failed (${(e as Error).message})`); continue }
+    if (!to) continue
     const html = `<div style="font-family:'IBM Plex Sans',Segoe UI,Arial,sans-serif;color:#15181c;max-width:640px"><h2 style="font-weight:700;margin:0 0 4px">${esc(title)}</h2><div style="color:#5b6470;margin-bottom:12px">${esc(where || 'no page or device details')}${f.tester ? ' · invite ' + esc(f.tester) : ''}${f.email ? ' · reply to ' + esc(f.email) : ''}</div><div style="white-space:pre-wrap;border-left:3px solid #d7dbe0;padding:4px 0 4px 12px">${esc(String(f.message))}</div><p style="margin-top:16px"><a href="${APP_URL}#/feedback" style="color:#b53a0a">Open the feedback inbox</a></p></div>`
-    const res = await sendEmail(to, title, html, `${title}\n${where}\n\n${f.message}\n\n${APP_URL}#/feedback`); mails.push(`${to}: ${res.detail}`); if (res.ok) mailed++
+    // one operator's failed lookup or email (a network error included) must not stop the others, nor undo a push that already went out
+    try { const res = await sendEmail(to, title, html, `${title}\n${where}\n\n${f.message}\n\n${APP_URL}#/feedback`); mails.push(`${to}: ${res.detail}`); if (res.ok) mailed++ }
+    catch (e) { mails.push(`${to}: failed (${(e as Error).message})`) }
   }
   const report = { push: push.sent, push_detail: push.detail, email: mails.join('; ') || 'no address' }
   // marked as told only when a push or an email actually went out; otherwise it stays eligible to be sent again

@@ -507,12 +507,12 @@ for (const W of [390, 1400]) {
   const fh = await tp.locator('h1').first().textContent()
   ok(fh === 'Dashboard' && (await tp.locator('a[href="#/feedback"]').count()) === 0, `${W}: Feedback & testers is out of the menu in the demo, and its address opens the Dashboard (${fh})`)
   // Spending Intelligence: Subscriptions & recurring charges is as tall as Merchants beside it, and its chart reaches the bottom edge
-  if (W === 1400) { await tp.goto('http://localhost:4173/#/insights'); await tp.waitForTimeout(2000)
+  if (W === 1400) { await tp.goto('http://localhost:4173/#/insights'); await tp.locator('.subs-card .subs-chart svg.main-svg').first().waitFor({ timeout: 15000 }).catch(() => {}); await tp.waitForTimeout(300)   // Plotly drawn, then one resize pass
     const g = await tp.evaluate(() => { const c = document.querySelector('.card.subs-card'), ch = c?.querySelector('.subs-chart'), m = [...document.querySelectorAll('.card')].find(x => x.querySelector('h2')?.textContent?.includes('Merchants')); if (!c || !ch || !m) return null
       const cb = c.getBoundingClientRect(), hb = ch.getBoundingClientRect(), mb = m.getBoundingClientRect(); return { same: Math.abs(cb.height - mb.height) < 2, gap: Math.round(cb.bottom - hb.bottom), h: Math.round(hb.height) } })
     ok(!!g && g.same && g.gap <= 30 && g.h >= 200, `the subscriptions chart fills its card down to the bottom (gap ${g?.gap}px, chart ${g?.h}px)`) }
   // from the demo, back on the invitation: Create my account leaves the demo for the sign-up form
-  await tp.goto('http://localhost:4173/#/try'); await tp.waitForTimeout(700); await tp.click('button:has-text("Create my account")'); await tp.waitForTimeout(900)
+  await tp.goto('http://localhost:4173/#/try'); await tp.click('button:has-text("Create my account")'); await tp.locator('h2:has-text("Create account")').waitFor({ timeout: 10000 }).catch(() => {})
   ok((await tp.locator('h2:has-text("Create account")').count()) === 1 && await tp.evaluate(() => !localStorage.getItem('wealthpilot.mode')), `${W}: someone in the demo can go on to create an account from the invitation`)
   ok(!errs.length, `${W}: no page errors on the tester pages ${errs.slice(0, 2).join(' | ')}`); await tp.close()
 }

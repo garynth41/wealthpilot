@@ -18,7 +18,7 @@ import { installTableCards } from './tableCards'
 import { installFrozenEdge } from '../lib/frozenCol'
 import { useColumnResize } from '../lib/colResize'
 import { sb } from '../app/supabase'
-import { allowedPaths, describeAccess, accessLevel } from '../lib/access'
+import { allowedPaths, describeAccess, accessLevel, routeBlocked } from '../lib/access'
 import { focusIdFrom, highlight, clearHighlight, linkTo } from '../lib/focus'
 import { Palette, ShortcutsHelp } from './Palette'
 import type { HelpTab } from './HelpDrawer'
@@ -108,7 +108,7 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [loc.pathname])   // eslint-disable-line react-hooks/exhaustive-deps
   const view = VIEWS.find(v => v.path === loc.pathname) || VIEWS[0]
   // an operator who reloads on Feedback & testers waits for the check (the page says so) instead of being sent to the Dashboard
-  const blocked = VIEWS.some(v => v.path === loc.pathname) && !visible.some(v => v.path === loc.pathname) && !(loc.pathname === '/feedback' && appAdmin === null)
+  const blocked = routeBlocked(loc.pathname, VIEWS.map(v => v.path), visible.map(v => v.path), appAdmin)
   // the phone apps (0.25.1): back button, refresh on return to the app, reminder taps, and reminders kept in step with the data
   const navRef = useRef(nav); navRef.current = nav
   useEffect(() => {

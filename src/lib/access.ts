@@ -129,3 +129,8 @@ export function inviteEmailDraft(i: InviteDraftInput): { subject: string; body: 
   return { subject, body: lines.join('\n') }
 }
 export const mailtoLink = (to: string, subject: string, body: string) => `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+
+/** Whether a page's address sends someone back to the Dashboard: a known page the household cannot see does — except Feedback & testers
+ *  while the operator check is still out (appAdmin null), so an operator who signs in or reloads there is not turned away (0.29.0). */
+export const routeBlocked = (path: string, known: string[], visible: string[], appAdmin: boolean | null) =>
+  known.includes(path) && !visible.includes(path) && !(path === '/feedback' && appAdmin === null)
