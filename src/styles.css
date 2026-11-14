@@ -666,3 +666,5 @@ details.techsetup code { overflow-wrap: anywhere; }
 /* Cash needed by day (Bills, 0.29.1): the card is as tall as Coming up & overdue beside it; the total sits under the heading and the chart
    fills the rest, down to the card's bottom edge (on a phone it keeps its 240px). */
 .cash-day-card > .cash-day-sum{margin:0 0 8px;flex:none}
+/* 0.29.1: Settings → General — the other households you can open */
+.hh-others{display:flex;flex-wrap:wrap;gap:8px}

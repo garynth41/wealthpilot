@@ -37,6 +37,8 @@ interface State {
   mode: Mode; booting: boolean; user: User | null; session: Session | null
   repo: Repo | null; household: Household | null; data: Data; role: Role; readOnly: boolean; modules: string[] | null
   households: Array<{ id: string; name: string; role: Role }>
+  /** 0.29.1: whose household list has been read (a user id), and why it could not be — the welcome screen waits for this */
+  householdsFor: string | null; householdsError: string | null; reloadHouseholds: () => Promise<void>
   latest: string | null; nativeMin: string | null; nativeLatest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean; recovering: boolean
   /** 0.25.0: set while showing the read-only offline copy (or once the connection drops): when that copy was saved */
   offlineAt: string | null
@@ -98,7 +100,7 @@ const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: bool
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], householdsFor: null, householdsError: null, latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   // a household scheduled for deletion is read-only for everyone (0.25.0); so is an offline copy
   canEdit: () => { const s = get(); return (s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly)) && !s.household?.deletion_scheduled_for && !s.offlineAt },
@@ -112,7 +114,7 @@ export const useStore = create<State>((set, get) => ({
       if (localStorage.getItem(LS('mode')) === 'demo') { await get().enterDemo(); return }
       if (!hasSupabase()) { set({ booting: false }); return }
       const { data: { session } } = await sb().auth.getSession()
-      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), appAdmin: null }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
+      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), appAdmin: null, householdsFor: null, householdsError: null }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
       set({ session, user: session?.user || null })
       // offline with an expired token: the session cannot be refreshed, but the copy this device kept can still be shown read-only
       if (!session && typeof navigator !== 'undefined' && navigator.onLine === false) { const u = cachedUser(); if (u && await openOffline(u)) { set({ user: u }); return } }
@@ -136,7 +138,7 @@ export const useStore = create<State>((set, get) => ({
   // stop live updates first, so a refresh already on its way cannot write the offline copy back after it is cleared (0.25.1)
   // signing out here ends this device's session only (0.25.1 — the library's default also signed out every other device and the phone);
   // Settings → Security → Sign out everywhere does that on purpose
-  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null, appAdmin: null }); await clearOffline() } finally { signingOut = false } },
+  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], householdsFor: null, householdsError: null, mfaPending: false, offlineAt: null, appAdmin: null }); await clearOffline() } finally { signingOut = false } },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -146,7 +148,9 @@ export const useStore = create<State>((set, get) => ({
   async updatePassword(pw) { const { data, error } = await sb().auth.updateUser({ password: pw, data: { must_change_password: false } }); if (error) throw error; if (data.user) set({ user: data.user }) },
   async openHousehold(id) {
     unsub?.(); const repo = new SupabaseRepo(id); localStorage.setItem(LS('household'), id)
-    set({ mode: 'db', repo }); await get().refresh(); attach(repo)
+    // 0.29.1: switching to another household shows "Opening your household…" rather than the last one's figures under the new one's name
+    const other = !!get().household && get().household!.id !== id
+    set({ mode: 'db', repo, ...(other ? { household: null, data: emptyData(), loadError: null } : {}) }); await get().refresh(); attach(repo)
     // error monitoring: browser errors go to app_errors for this household (migration 0009); the table missing is not itself an error
     setErrorSink(async r => { const uid = get().user?.id; if (!uid) return; const { error } = await sb().from('app_errors').insert({ household_id: id, user_id: uid, source: r.source, version: r.version, message: r.message, stack: r.stack || null, url: r.url, user_agent: r.user_agent, context: r.context || {} }); if (error && !/app_errors/.test(error.message)) throw error })
     void get().checkLatest(); startVersionWatch(get)
@@ -158,6 +162,7 @@ export const useStore = create<State>((set, get) => ({
   async cancelDeletion() { await need(get).cancelDeletion(); await get().refresh() },
   // the website's release (reload to get it) and, for the phone apps (0.25.1), the newest build in the stores and the oldest still allowed
   async checkLatest() { try { const { data } = await sb().from('app_meta').select('key, value').in('key', ['latest_version', 'latest_native_version', 'min_native_version']); const v = (k: string) => (data || []).find(r => r.key === k)?.value || null; set({ latest: v('latest_version'), nativeLatest: v('latest_native_version'), nativeMin: v('min_native_version') }) } catch { /* optional */ } },
+  async reloadHouseholds() { const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async createHousehold(name) { const { data, error } = await sb().rpc('create_household', { p_name: name }); if (error) throw error; const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user); await get().openHousehold(data as string) },
   async refresh() {
     const repo = get().repo; if (!repo) return
@@ -326,13 +331,16 @@ const need = (get: () => State) => { const r = get().repo; if (!r) throw new Err
 /** Throw a plain-language InputError when a write would put an empty or negative value where the database refuses one. */
 function refuseBad(coll: Collection, patch: Record<string, unknown>) { const p = patchProblem(coll, patch || {}); if (p) throw new InputError(p) }
 function attach(repo: Repo) { unsub?.(); unsub = repo.subscribe(() => { if (refreshTimer) clearTimeout(refreshTimer); refreshTimer = setTimeout(() => useStore.getState().refresh(), repo.mode === 'demo' ? 0 : 700) }) }
+// 0.29.1: until this has read the list, the welcome screen says "Opening your household…" — it used to offer "Create household" for the
+// few seconds sign-in takes, and a click there made a second, empty household and opened it in place of the real one (Nov 14)
 async function loadHouseholds(user: User) {
+  useStore.setState({ householdsError: null })
   try { await sb().rpc('accept_invites') } catch { /* no invites */ }
   let res; try { res = await sb().from('household_members').select('household_id, role, households(name)').eq('user_id', user.id) } catch (e) { res = { data: null, error: e as Error } }
   const { data, error } = res
-  if (error) { if (isNetworkError(error) && await openOffline(user)) return; throw error }
+  if (error) { if (isNetworkError(error) && await openOffline(user)) return; useStore.setState({ householdsError: error.message || 'the connection failed' }); throw error }
   const list = (data || []).map(r => ({ id: r.household_id as string, name: ((r as unknown as { households: { name: string } | null }).households?.name) || 'Household', role: r.role as Role }))
-  useStore.setState({ households: list })
+  useStore.setState({ households: list, householdsFor: user.id })
   const want = localStorage.getItem(LS('household'))
   const pick = list.find(h => h.id === want) || list[0]
   if (pick) await useStore.getState().openHousehold(pick.id)
