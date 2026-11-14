@@ -647,3 +647,11 @@ details.techsetup code { overflow-wrap: anywhere; }
 .inv-link code{display:block;padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);word-break:break-all;font-size:13px}
 .inv-msg{white-space:pre-wrap;font:12.5px/1.5 var(--mono);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin:8px 0 0;max-height:320px;overflow:auto}
 @media (max-width:700px){ .try-cols{grid-template-columns:1fr} .fb-status{margin-left:0} }
+
+/* Subscriptions & recurring charges (Spending Intelligence, 0.29.0): the card stretches to the height of the Merchants card beside it. The
+   two tables keep their natural size with even space between them, and the cost chart grows into the rest, down to the card's bottom edge
+   (Chart fill) — no blank strip under it. On a phone the card stands alone and the chart keeps its 200px. */
+.subs-card > .tblwrap, .subs-card > .subs-detected{flex:none}
+.subs-card > .subs-detected{margin-top:18px}
+.subs-card > .subs-detected .gm-h{margin:0 0 6px}
+.subs-card > .subs-chart{margin-top:18px}

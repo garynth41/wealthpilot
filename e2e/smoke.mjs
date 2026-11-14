@@ -506,6 +506,11 @@ for (const W of [390, 1400]) {
   await tp.keyboard.press('Escape'); await tp.goto('http://localhost:4173/#/feedback'); await tp.waitForTimeout(800)
   const fh = await tp.locator('h1').first().textContent()
   ok(fh === 'Dashboard' && (await tp.locator('a[href="#/feedback"]').count()) === 0, `${W}: Feedback & testers is out of the menu in the demo, and its address opens the Dashboard (${fh})`)
+  // Spending Intelligence: Subscriptions & recurring charges is as tall as Merchants beside it, and its chart reaches the bottom edge
+  if (W === 1400) { await tp.goto('http://localhost:4173/#/insights'); await tp.waitForTimeout(2000)
+    const g = await tp.evaluate(() => { const c = document.querySelector('.card.subs-card'), ch = c?.querySelector('.subs-chart'), m = [...document.querySelectorAll('.card')].find(x => x.querySelector('h2')?.textContent?.includes('Merchants')); if (!c || !ch || !m) return null
+      const cb = c.getBoundingClientRect(), hb = ch.getBoundingClientRect(), mb = m.getBoundingClientRect(); return { same: Math.abs(cb.height - mb.height) < 2, gap: Math.round(cb.bottom - hb.bottom), h: Math.round(hb.height) } })
+    ok(!!g && g.same && g.gap <= 30 && g.h >= 200, `the subscriptions chart fills its card down to the bottom (gap ${g?.gap}px, chart ${g?.h}px)`) }
   // from the demo, back on the invitation: Create my account leaves the demo for the sign-up form
   await tp.goto('http://localhost:4173/#/try'); await tp.waitForTimeout(700); await tp.click('button:has-text("Create my account")'); await tp.waitForTimeout(900)
   ok((await tp.locator('h2:has-text("Create account")').count()) === 1 && await tp.evaluate(() => !localStorage.getItem('wealthpilot.mode')), `${W}: someone in the demo can go on to create an account from the invitation`)
