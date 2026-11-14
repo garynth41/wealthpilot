@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useStore } from './app/store'
 import { ModalHost } from './components/ui'
@@ -32,23 +32,31 @@ const PlanPage = lazy(retryingImport(() => import('./pages/Plan').then(m => ({ d
 const ProtectionPage = lazy(retryingImport(() => import('./pages/Protection').then(m => ({ default: m.ProtectionPage }))))
 const HelpPage = lazy(retryingImport(() => import('./pages/Help').then(m => ({ default: m.HelpPage }))))
 const InvestmentsPage = lazy(retryingImport(() => import('./pages/Investments').then(m => ({ default: m.InvestmentsPage }))))
+const StartPage = lazy(retryingImport(() => import('./pages/Start').then(m => ({ default: m.StartPage }))))
+const FeedbackInboxPage = lazy(retryingImport(() => import('./pages/FeedbackInbox').then(m => ({ default: m.FeedbackInboxPage }))))
+const TryPage = lazy(retryingImport(() => import('./pages/Try').then(m => ({ default: m.TryPage }))))
+/** The address after # — watched outside the router too, for the public Try page (0.29.0). */
+function useHash() { const [h, setH] = useState(() => location.hash); useEffect(() => { const f = () => setH(location.hash); window.addEventListener('hashchange', f); return () => window.removeEventListener('hashchange', f) }, []); return h }
 
 applySavedTheme()
 if (olPopupRelay()) { /* this window was the Microsoft sign-in popup; it has posted the code back and is closing */ }
 
 export default function App() {
-  const { booting, boot, mode, household, user, loadError, mustChangePassword, recovering } = useStore()
+  const { booting, boot, mode, household, user, loadError, mustChangePassword, recovering } = useStore(); const hash = useHash()
   useEffect(() => { boot() }, [boot])
   useEffect(() => { if (!booting) void hideSplash() }, [booting])   // phone apps: off the launch screen as soon as any screen is ready (0.25.1)
   if (booting) return <div className="auth"><div className="note">Loading…</div></div>
   if (recovering) return <ResetPassword />
+  // the public invitation page (0.29.0): open to everyone, signed in or not
+  if (/^#\/try(\?|$)/.test(hash)) return <ModalHost><Suspense fallback={<div className="auth"><div className="note">Loading…</div></div>}><TryPage /></Suspense></ModalHost>
   if (user && mustChangePassword()) return <FirstSignIn />
   if (!mode) { if (user) return <Onboarding />; return <AuthPage /> }
   if (!household) return <div className="auth"><div className="box">{loadError ? <div className="msg crit">{loadError}</div> : <div className="note">Opening your household…</div>}</div></div>
   return <HashRouter><ModalHost><IdleLock><Layout><Suspense fallback={<div className="empty" aria-live="polite">Loading…</div>}><Routes>
     <Route path="/" element={<Dashboard />} /><Route path="/forecast" element={<ForecastPage />} /><Route path="/budget" element={<BudgetPage />} /><Route path="/transactions" element={<TransactionsPage />} /><Route path="/bills" element={<BillsPage />} /><Route path="/income" element={<IncomePage />} />
     <Route path="/reconcile" element={<ReconcilePage />} /><Route path="/accounts" element={<AccountsPage />} /><Route path="/debts" element={<DebtsPage />} /><Route path="/goals" element={<GoalsPage />} /><Route path="/plan" element={<PlanPage />} /><Route path="/protection" element={<ProtectionPage />} /><Route path="/trends" element={<TrendsPage />} /><Route path="/insights" element={<InsightsPage />} /><Route path="/tax" element={<TaxPage />} /><Route path="/reports" element={<ReportsPage />} /><Route path="/connections" element={<ConnectionsPage />} /><Route path="/investments" element={<InvestmentsPage />} /><Route path="/hardship" element={<HardshipPage />} /><Route path="/email" element={<EmailPage />} /><Route path="/settings" element={<SettingsPage />} />
-    <Route path="/help" element={<HelpPage />} />
+    <Route path="/help" element={<HelpPage />} /><Route path="/start" element={<StartPage />} /><Route path="/feedback" element={<FeedbackInboxPage />} />
+    <Route path="/try" element={null} />{/* the invitation page: App shows it in place of the app (useHash), so the catch-all must not send it to the Dashboard first */}
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></Suspense></Layout></IdleLock></ModalHost></HashRouter>
 }

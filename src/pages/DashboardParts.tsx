@@ -14,6 +14,7 @@ export function SetupCard() {
   if (pr.all || settings.setupDismissed) return null
   return <Card span={12} title="Get set up" hint={`${pr.done} of ${pr.total} steps · each one is ticked from your own data`} right={canEdit ? <Btn sm onClick={() => guarded(() => saveSettings({ setupDismissed: true }), 'Checklist hidden — bring it back under Settings → General')}>Hide</Btn> : undefined}>
     <div className="mix" style={{ height: 8, marginBottom: 10 }}><span style={{ width: Math.round(pr.done / Math.max(1, pr.total) * 100) + '%', background: 'var(--good)' }} /></div>
+    <p className="note" style={{ margin: '0 0 8px' }}>New to this? <Link to="/start">Start here</Link> walks through every step — what to have at hand, where to click and what each step is for.</p>
     <ol className="setup">{steps.map(x => <li key={x.key} className={x.done ? 'done' : ''}><span className="tick" aria-hidden>{x.done ? '✓' : ''}</span><span><b>{x.label}</b>{x.optional ? <span className="note" style={{ display: 'inline', margin: '0 0 0 6px' }}>optional</span> : null}<span className="note" style={{ display: 'block', margin: 0 }}>{x.why}</span></span>{!x.done && <Link className="btn sm" to={x.to}>{x === pr.next ? 'Start' : 'Go'}</Link>}<span className="sr-only">{x.done ? 'done' : 'not done'}</span></li>)}</ol>
   </Card>
 }

@@ -25,6 +25,7 @@ export const toView = (d: Data): Data => leaveOut(splitDups(d))
 async function inChunks<T>(items: T[], run: (x: T) => Promise<unknown>, size = 6) { for (let i = 0; i < items.length; i += size) await Promise.all(items.slice(i, i + size).map(run)) }
 
 import { setErrorSink } from '../lib/errors'
+import { testerCode } from '../lib/invite'
 import { saveOffline, loadOffline, clearOffline, makeSnapshot, isNetworkError } from '../lib/offlineCache'
 let signingOut = false   // set while signOut runs: a refresh finishing then must not write the offline copy back
 export type Mode = 'db' | 'demo' | null
@@ -39,6 +40,9 @@ interface State {
   latest: string | null; nativeMin: string | null; nativeLatest: string | null; loadError: string | null; toasts: Toast[]; busy: number; lastRefresh: number | null; mfaPending: boolean; recovering: boolean
   /** 0.25.0: set while showing the read-only offline copy (or once the connection drops): when that copy was saved */
   offlineAt: string | null
+  /** 0.29.0: this account runs the app (app_admins) — sees Feedback & testers */
+  /** the person runs Cresari (app_admins): true / false, or null while the check is still out */
+  appAdmin: boolean | null
   requestDeletion: (confirm: string) => Promise<string>; cancelDeletion: () => Promise<void>
   accountDeletionPreview: () => Promise<AccountDeletionPlan>; deleteAccount: (password: string) => Promise<{ households_deleted: number }>
   settings: () => Settings
@@ -94,7 +98,7 @@ const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: bool
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, nativeMin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   // a household scheduled for deletion is read-only for everyone (0.25.0); so is an offline copy
   canEdit: () => { const s = get(); return (s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly)) && !s.household?.deletion_scheduled_for && !s.offlineAt },
@@ -108,7 +112,7 @@ export const useStore = create<State>((set, get) => ({
       if (localStorage.getItem(LS('mode')) === 'demo') { await get().enterDemo(); return }
       if (!hasSupabase()) { set({ booting: false }); return }
       const { data: { session } } = await sb().auth.getSession()
-      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData() }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
+      sb().auth.onAuthStateChange((e, s) => { if (e === 'PASSWORD_RECOVERY') set({ recovering: true }); set({ session: s, user: s?.user || null }); if (!s) { unsub?.(); unsub = null; set({ mode: null, repo: null, household: null, data: emptyData(), appAdmin: null }) } if (e === 'SIGNED_OUT') void clearOffline() })   // signed out anywhere (another tab, a revoked device): this device forgets its copy too
       set({ session, user: session?.user || null })
       // offline with an expired token: the session cannot be refreshed, but the copy this device kept can still be shown read-only
       if (!session && typeof navigator !== 'undefined' && navigator.onLine === false) { const u = cachedUser(); if (u && await openOffline(u)) { set({ user: u }); return } }
@@ -128,11 +132,11 @@ export const useStore = create<State>((set, get) => ({
   async verifyMfa(code) { const { data: f, error: e1 } = await sb().auth.mfa.listFactors(); if (e1) throw e1; const factor = f.totp.find(x => x.status === 'verified') || f.totp[0]; if (!factor) throw new Error('No authenticator is enrolled'); const { error } = await sb().auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.replace(/\s+/g, '') }); if (error) throw error; set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async verifyRecoveryCode(code) { const { error } = await sb().auth.mfa.recoveryCodes.verify({ code: code.trim() }); if (error) throw new Error(authMessage(error)); set({ mfaPending: false }); const { data: { user } } = await sb().auth.getUser(); if (user) await loadHouseholds(user) },
   async signInWithPasskey() { const { data, error } = await sb().auth.signInWithPasskey(); if (error) throw new Error(authMessage(error)); const user = data?.user || (await sb().auth.getUser()).data.user; if (!user) throw new Error('The passkey was accepted but no session came back — try again'); set({ mfaPending: false }); await loadHouseholds(user) },
-  async signUp(email, password) { const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: publicUrl() } }); if (error) throw error; if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
+  async signUp(email, password) { const tester = testerCode(); const { data, error } = await sb().auth.signUp({ email, password, options: { emailRedirectTo: publicUrl(), ...(tester ? { data: { tester } } : {}) } }); if (error) throw new Error(signUpMessage(error)); if (data.session) { await loadHouseholds(data.user!); return 'ready' } return 'confirm' },
   // stop live updates first, so a refresh already on its way cannot write the offline copy back after it is cleared (0.25.1)
   // signing out here ends this device's session only (0.25.1 — the library's default also signed out every other device and the phone);
   // Settings → Security → Sign out everywhere does that on purpose
-  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null }); await clearOffline() } finally { signingOut = false } },
+  async signOut() { signingOut = true; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], mfaPending: false, offlineAt: null, appAdmin: null }); await clearOffline() } finally { signingOut = false } },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -296,6 +300,16 @@ export const useStore = create<State>((set, get) => ({
 /** A second factor is owed when the account has one and this session has not used it. A passkey sign-in already is two factors
  *  (the device you hold + its fingerprint, face or PIN), so it is not asked for a code on top. */
 async function needsMfa() { try { const { data } = await sb().auth.mfa.getAuthenticatorAssuranceLevel(); if (!data || data.nextLevel !== 'aal2' || data.currentLevel === 'aal2') return false; return !(data.currentAuthenticationMethods || []).some(m => /passkey|webauthn/i.test(typeof m === 'string' ? m : String(m.method))) } catch { return false } }
+/** Sign-up errors in plain words (0.29.0). Until the app sends email through its own provider, Supabase's built-in sender reaches only
+ *  the project's own team ("email address not authorized") and two emails an hour ("email rate limit exceeded"): say what to do instead. */
+export function signUpMessage(e: { message?: string; code?: string } | null | undefined): string {
+  const m = String(e?.message || ''), c = String(e?.code || '')
+  if (c === 'email_address_not_authorized' || /not authorized/i.test(m)) return 'Cresari cannot send the confirmation email to this address yet — new sign-ups open soon. Meanwhile, try the offline demo below, or ask whoever invited you.'
+  if (c === 'over_email_send_rate_limit' || /rate limit/i.test(m)) return 'Too many sign-ups in the last hour — please try again in an hour, or look around the offline demo meanwhile.'
+  if (c === 'user_already_exists' || /already registered|already exists/i.test(m)) return 'There is already an account with this email — sign in instead, or use Forgot password?'
+  if (c === 'weak_password' || /password/i.test(m)) return m || 'Choose a longer password.'
+  return m || 'Something went wrong — try again.'
+}
 /** Plain-language messages for the auth errors people actually hit with passkeys and recovery codes. */
 export function authMessage(e: { message?: string; code?: string; name?: string } | null | undefined): string {
   const m = String(e?.message || ''), c = String(e?.code || '')

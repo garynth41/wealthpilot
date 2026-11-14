@@ -59,7 +59,7 @@ export const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard', '/forecast': 'Cash Flow Forecast', '/insights': 'Spending Intelligence', '/transactions': 'Transactions', '/budget': 'Budget', '/bills': 'Bills & Subscriptions',
   '/income': 'Income & Pay Periods', '/accounts': 'Account Balances', '/debts': 'Debt Payoff', '/connections': 'Cash & Account Operations', '/reconcile': 'Checkbook Reconciliation',
   '/email': 'Email Money Capture', '/investments': 'Investments & Retirement', '/tax': 'Tax Planning', '/plan': 'Plan', '/goals': 'Savings Goals', '/protection': 'Insurance & Estate',
-  '/hardship': 'Hardship & Creditor Outreach', '/reports': 'Reports', '/trends': 'Trends & Analysis', '/settings': 'Settings', '/help': 'Help Center',
+  '/hardship': 'Hardship & Creditor Outreach', '/reports': 'Reports', '/trends': 'Trends & Analysis', '/settings': 'Settings', '/help': 'Help Center', '/start': 'Start here', '/feedback': 'Feedback & testers',
 }
 export const titleOf = (path: string | null) => (path ? PAGE_TITLES[path] || path : 'Using Cresari')
 export { GENERAL }

@@ -38,7 +38,7 @@ the Android app can go public (Google's 14-day testing rule, below). Apple usual
 6. **Email that reaches everyone — required before strangers can sign up.** Supabase's built-in email service only delivers to members
    of your Supabase organization (since September 2024); anyone else gets "Email address not authorized", so their sign-up confirmation
    and password-reset emails never arrive — including the App Review team's. Check Supabase → Authentication → **Emails → SMTP Settings**:
-   if custom SMTP is off, turn it on with a real email provider. Two ways:
+   if custom SMTP is off, turn it on with a real email provider (click-by-click steps for both ways: [TESTING.md, step 1](TESTING.md)). Two ways:
    - *Best:* buy a domain for the app's name (about $10–15 a year), verify it in **Resend** (already used for the alert emails), and use
      Resend's SMTP: host `smtp.resend.com`, port `465`, user `resend`, password = a Resend API key, sender `no-reply@<your domain>`. Then set
      the edge-function secrets `EMAIL_FROM` and `INVITE_FROM` to `Cresari <alerts@<your domain>>` too — Resend's test sender
@@ -174,7 +174,7 @@ yourself; open the invitation on the phone. Answer the export-compliance questio
 (HTTPS), which is exempt — the app already declares this.
 
 **B7. The listing** — App Store Connect → your app → the version page (**1.0 Prepare for Submission**). First change the version number
-at the top to **0.28.2**, so it matches the build:
+at the top to **0.29.0**, so it matches the build:
 - Name, subtitle, promotional text, description, keywords: `store/listing/apple/*.txt`
 - What's New: `store/listing/apple/release_notes.txt`
 - Screenshots: **iPhone 6.9″** ← `store/screenshots/iphone-6.9/01…06.png`; **iPhone 6.3″** ← `store/screenshots/iphone-6.3/…`
@@ -230,7 +230,7 @@ Enter the email and password only in App Store Connect and Play Console — neve
 ## D. After launch
 
 - **Tell the app a new version exists** (only after it is live in both the App Store and Google Play):
-  `update public.app_meta set value = '0.28.2' where key = 'latest_native_version';` — app users then see "A new version is available".
+  `update public.app_meta set value = '0.29.0' where key = 'latest_native_version';` — app users then see "A new version is available".
   Only for changes an older app would break (such as a database change) also set `min_native_version`, which blocks older apps until
   they update.
 - **Each new version:** raise the version as usual (every release already does), then run **release apps** (`both`). Android lands as a

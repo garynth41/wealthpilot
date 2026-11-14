@@ -6,7 +6,7 @@ import type { Role } from '../app/data/types'
 export interface Module { k: string; label: string; paths: string[]; tables: string[]; hint?: string }
 /** Every page belongs to exactly one module. `overview`, `reports` and `settings` are always visible (they only show what the member can already see). */
 export const MODULES: Module[] = [
-  { k: 'overview', label: 'Dashboard & forecast', paths: ['/', '/forecast', '/help'], tables: [], hint: 'always on — shows only what the member can see' },
+  { k: 'overview', label: 'Dashboard & forecast', paths: ['/', '/forecast', '/help', '/start', '/feedback'], tables: [], hint: 'always on — shows only what the member can see' },
   { k: 'transactions', label: 'Transactions & insights', paths: ['/transactions', '/insights'], tables: ['transactions'] },
   { k: 'budget', label: 'Budget', paths: ['/budget'], tables: ['budget_periods', 'budget_lines', 'planned_items'] },
   { k: 'bills', label: 'Bills & subscriptions', paths: ['/bills'], tables: ['recurring', 'bill_occurrences'] },
@@ -129,3 +129,8 @@ export function inviteEmailDraft(i: InviteDraftInput): { subject: string; body: 
   return { subject, body: lines.join('\n') }
 }
 export const mailtoLink = (to: string, subject: string, body: string) => `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+
+/** Whether a page's address sends someone back to the Dashboard: a known page the household cannot see does — except Feedback & testers
+ *  while the operator check is still out (appAdmin null), so an operator who signs in or reloads there is not turned away (0.29.0). */
+export const routeBlocked = (path: string, known: string[], visible: string[], appAdmin: boolean | null) =>
+  known.includes(path) && !visible.includes(path) && !(path === '/feedback' && appAdmin === null)

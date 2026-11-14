@@ -29,9 +29,9 @@ export function search(q: string, data: ReturnType<typeof useStore.getState>['da
   return (out as Array<Hit & { sc: number }>).sort((a, b) => b.sc - a.sc).slice(0, 12)
 }
 export function Palette({ onClose }: { onClose: () => void }) {
-  const nav = useNavigate(); const data = useStore(s => s.data); const mode = useStore(s => s.mode); const modules = useStore(s => s.modules)
+  const nav = useNavigate(); const data = useStore(s => s.data); const mode = useStore(s => s.mode); const modules = useStore(s => s.modules); const appAdmin = useStore(s => s.appAdmin)
   const [q, setQ] = useState(''); const [ix, setIx] = useState(0); const ref = useRef<HTMLInputElement>(null); const box = useRef<HTMLDivElement>(null)
-  const visible = useMemo(() => new Set(allowedPaths(mode === 'demo' ? null : modules)), [mode, modules])
+  const visible = useMemo(() => new Set(allowedPaths(mode === 'demo' ? null : modules).filter(p => p !== '/feedback' || appAdmin === true)), [mode, modules, appAdmin])   // Feedback & testers: the operator only
   const hits = useMemo(() => search(q, data, visible), [q, data, visible])
   useLayer(true, onClose); useDialogFocus(box, { initial: '.pal-in' }); useEffect(() => { setIx(0) }, [q])
   const go = (h: Hit) => { onClose(); nav(h.to) }
