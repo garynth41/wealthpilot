@@ -63,16 +63,18 @@ export function InsightsPage() {
           </tbody></table></div></>}
       </Card>
 
-      <Card span={5} className="fill subs-card" title="Subscriptions & recurring charges" hint="from Bills plus charges detected in the ledger">
-        <div className="tblwrap"><table className="tbl"><thead><tr><th>Service</th><th className="num">/mo</th><th className="num">/yr</th><th>Last</th><th></th></tr></thead><tbody>
+      <Card span={5} className="subs-card" title="Subscriptions & recurring charges" hint="from Bills plus charges detected in the ledger">
+        <div className={`subs-body parts-${subs.detectedUnknown.length > 0 ? 3 : 2}`} data-testid="subs-body">
+        <section className="subs-part" aria-label="Subscriptions and recurring charges"><div className="tblwrap"><table className="tbl"><thead><tr><th>Service</th><th className="num">/mo</th><th className="num">/yr</th><th>Last</th><th></th></tr></thead><tbody>
           {subs.items.map((s, i) => <tr key={i}><td><b>{s.name}</b>{s.rising && <> <Pill cls="warn">↑ price</Pill></>}</td><td className="num">{fm2(s.monthly)}</td><td className="num">{fm2(s.annual)}</td><td>{s.lastCharged ? fmtD(s.lastCharged) : '—'}</td><td>{s.source === 'detected' ? <Pill cls="info">detected</Pill> : null}</td></tr>)}
           <tr><td><b>Total</b></td><td className="num"><b>{fm2(subs.monthly)}</b></td><td className="num"><b>{fm2(subs.annual)}</b></td><td colSpan={2}></td></tr>
-        </tbody></table></div>
-        {subs.detectedUnknown.length > 0 && <div className="subs-detected"><div className="gm-h">Recurring charges not in Bills &amp; Subscriptions <span className="hint">add them so the forecast, reminders and alerts include them</span></div>
+        </tbody></table></div></section>
+        {subs.detectedUnknown.length > 0 && <section className="subs-part" aria-label="Recurring charges not in Bills"><div className="gm-h">Recurring charges not in Bills &amp; Subscriptions <span className="hint">add them so the forecast, reminders and alerts include them</span></div>
           <div className="tblwrap"><table className="tbl"><caption className="sr-only">Detected recurring charges</caption><thead><tr><th scope="col">Charge</th><th scope="col">Every</th><th scope="col" className="num">Amount</th><th scope="col">Next expected</th><th scope="col" /></tr></thead><tbody>
             {subs.detectedUnknown.map(r => <tr key={r.key}><td><b>{r.name}</b> <span className="note" style={{ display: 'inline', margin: 0 }}>seen {r.count}×</span></td><td>{r.cadence === 'other' ? `${r.everyDays} days` : r.cadence}</td><td className="num">{fm2(r.lastAmount || r.amount)}</td><td>{fmtD(r.next)}</td><td>{canEdit ? <Btn sm primary onClick={() => addToBills(r)}>+ Add to Bills</Btn> : <Link to="/bills">Bills</Link>}</td></tr>)}
-          </tbody></table></div></div>}
-        <Chart title="Subscription cost by service" data={[{ type: 'bar', x: subs.items.slice(0, 10).map(s => s.name), y: subs.items.slice(0, 10).map(s => s.monthly), marker: { color: c.blue }, hovertemplate: '%{x}: $%{y:,.2f}/mo<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={200} fill className="subs-chart" />
+          </tbody></table></div></section>}
+        <section className="subs-part subs-chartpart"><Chart title="Subscription cost by service" data={[{ type: 'bar', x: subs.items.slice(0, 10).map(s => s.name), y: subs.items.slice(0, 10).map(s => s.monthly), marker: { color: c.blue }, hovertemplate: '%{x}: $%{y:,.2f}/mo<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={150} fill className="subs-chart" /></section>
+        </div>
       </Card>
     </div>
   </>
