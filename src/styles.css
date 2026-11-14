@@ -648,10 +648,21 @@ details.techsetup code { overflow-wrap: anywhere; }
 .inv-msg{white-space:pre-wrap;font:12.5px/1.5 var(--mono);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin:8px 0 0;max-height:320px;overflow:auto}
 @media (max-width:700px){ .try-cols{grid-template-columns:1fr} .fb-status{margin-left:0} }
 
-/* Subscriptions & recurring charges (Spending Intelligence, 0.29.0): the card stretches to the height of the Merchants card beside it. The
-   two tables keep their natural size with even space between them, and the cost chart grows into the rest, down to the card's bottom edge
-   (Chart fill) — no blank strip under it. On a phone the card stands alone and the chart keeps its 200px. */
-.subs-card > .tblwrap, .subs-card > .subs-detected{flex:none}
-.subs-card > .subs-detected{margin-top:18px}
-.subs-card > .subs-detected .gm-h{margin:0 0 6px}
-.subs-card > .subs-chart{margin-top:18px}
+/* Subscriptions & recurring charges (Spending Intelligence, 0.29.1): the card takes the height of the Merchants card beside it and splits it
+   into equal parts — the subscriptions table, the recurring charges not in Bills (when there are any) and the cost chart, a third each (half
+   each without the middle table). A table longer than its part scrolls inside it (headings stay put); the chart fills its part to the card's
+   bottom edge. `contain: size` keeps the parts from making the card — and the row — taller than Merchants; min-height gives each part room
+   on its own (a phone, or a short Merchants card). */
+.card.subs-card{display:flex;flex-direction:column}
+.subs-body{flex:1 1 auto;display:grid;row-gap:18px;contain:size}
+.subs-body.parts-3{grid-template-rows:repeat(3,minmax(0,1fr));min-height:780px}
+.subs-body.parts-2{grid-template-rows:repeat(2,minmax(0,1fr));min-height:520px}
+.subs-part{min-height:0;display:flex;flex-direction:column}
+.subs-part > .tblwrap{flex:0 1 auto;min-height:0;max-height:none}
+.subs-part > .gm-h{margin:0 0 6px;flex:none}
+.subs-chartpart > .subs-chart{min-height:0}
+/* one card per row (phones, narrow windows): no neighbour to match, so the parts simply follow one another and the chart keeps 260px */
+@media (max-width:900px){ .subs-body{display:block;contain:none;min-height:0 !important} .subs-part + .subs-part{margin-top:18px} .subs-chartpart{height:260px} }
+/* Cash needed by day (Bills, 0.29.1): the card is as tall as Coming up & overdue beside it; the total sits under the heading and the chart
+   fills the rest, down to the card's bottom edge (on a phone it keeps its 240px). */
+.cash-day-card > .cash-day-sum{margin:0 0 8px;flex:none}

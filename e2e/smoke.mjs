@@ -509,8 +509,13 @@ for (const W of [390, 1400]) {
   // Spending Intelligence: Subscriptions & recurring charges is as tall as Merchants beside it, and its chart reaches the bottom edge
   if (W === 1400) { await tp.goto('http://localhost:4173/#/insights'); await tp.locator('.subs-card .subs-chart svg.main-svg').first().waitFor({ timeout: 15000 }).catch(() => {}); await tp.waitForTimeout(300)   // Plotly drawn, then one resize pass
     const g = await tp.evaluate(() => { const c = document.querySelector('.card.subs-card'), ch = c?.querySelector('.subs-chart'), m = [...document.querySelectorAll('.card')].find(x => x.querySelector('h2')?.textContent?.includes('Merchants')); if (!c || !ch || !m) return null
-      const cb = c.getBoundingClientRect(), hb = ch.getBoundingClientRect(), mb = m.getBoundingClientRect(); return { same: Math.abs(cb.height - mb.height) < 2, gap: Math.round(cb.bottom - hb.bottom), h: Math.round(hb.height) } })
-    ok(!!g && g.same && g.gap <= 30 && g.h >= 200, `the subscriptions chart fills its card down to the bottom (gap ${g?.gap}px, chart ${g?.h}px)`) }
+      const parts = [...c.querySelectorAll('.subs-part')].map(x => Math.round(x.getBoundingClientRect().height)), cb = c.getBoundingClientRect(), hb = ch.getBoundingClientRect(), mb = m.getBoundingClientRect()
+      return { same: Math.abs(cb.height - mb.height) < 2, parts, equal: parts.length >= 2 && Math.max(...parts) - Math.min(...parts) <= 2, gap: Math.round(cb.bottom - hb.bottom) } })
+    ok(!!g && g.same && g.equal && g.gap <= 30, `Subscriptions & recurring charges is as tall as Merchants and split into equal parts, the chart at the bottom (${g?.parts?.join('/')}px, gap ${g?.gap}px)`)
+    await tp.goto('http://localhost:4173/#/bills'); await tp.locator('.cash-day-card svg.main-svg').first().waitFor({ timeout: 15000 }).catch(() => {}); await tp.waitForTimeout(300)
+    const cd = await tp.evaluate(() => { const c = document.querySelector('.card.cash-day-card'), ch = c?.querySelector('.cash-day-chart'), n = [...document.querySelectorAll('.card')].find(x => x.querySelector('h2')?.textContent?.includes('Coming up')); if (!c || !ch || !n) return null
+      const cb = c.getBoundingClientRect(); return { same: Math.abs(cb.height - n.getBoundingClientRect().height) < 2, gap: Math.round(cb.bottom - ch.getBoundingClientRect().bottom) } })
+    ok(!!cd && cd.same && cd.gap <= 30, `Cash needed by day fills its card, the chart down to the bottom edge (gap ${cd?.gap}px)`) }
   // from the demo, back on the invitation: Create my account leaves the demo for the sign-up form
   await tp.goto('http://localhost:4173/#/try'); await tp.click('button:has-text("Create my account")'); await tp.locator('h2:has-text("Create account")').waitFor({ timeout: 10000 }).catch(() => {})
   ok((await tp.locator('h2:has-text("Create account")').count()) === 1 && await tp.evaluate(() => !localStorage.getItem('wealthpilot.mode')), `${W}: someone in the demo can go on to create an account from the invitation`)
