@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./web-u2fzmg4r.js","./dist-DKr1VAKe.js"])))=>i.map(i=>d[i]);
+import{o as e}from"./dist-DKr1VAKe.js";import{t}from"./preload-helper-DclECHGd.js";var n=e(`App`,{web:()=>t(()=>import(`./web-u2fzmg4r.js`).then(e=>new e.AppWeb),__vite__mapDeps([0,1]),import.meta.url)});export{n as App};

@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./web-BZnZ0Kky.js","./dist-DKr1VAKe.js"])))=>i.map(i=>d[i]);
+import{o as e}from"./dist-DKr1VAKe.js";import{t}from"./preload-helper-DclECHGd.js";var n=e(`Browser`,{web:()=>t(()=>import(`./web-BZnZ0Kky.js`).then(e=>new e.BrowserWeb),__vite__mapDeps([0,1]),import.meta.url)});export{n as Browser};
