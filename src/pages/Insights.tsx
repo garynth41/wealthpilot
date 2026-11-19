@@ -73,7 +73,7 @@ export function InsightsPage() {
           <div className="tblwrap"><table className="tbl"><caption className="sr-only">Detected recurring charges</caption><thead><tr><th scope="col">Charge</th><th scope="col">Every</th><th scope="col" className="num">Amount</th><th scope="col">Next expected</th><th scope="col" /></tr></thead><tbody>
             {subs.detectedUnknown.map(r => <tr key={r.key}><td><b>{r.name}</b> <span className="note" style={{ display: 'inline', margin: 0 }}>seen {r.count}×</span></td><td>{r.cadence === 'other' ? `${r.everyDays} days` : r.cadence}</td><td className="num">{fm2(r.lastAmount || r.amount)}</td><td>{fmtD(r.next)}</td><td>{canEdit ? <Btn sm primary onClick={() => addToBills(r)}>+ Add to Bills</Btn> : <Link to="/bills">Bills</Link>}</td></tr>)}
           </tbody></table></div></section>}
-        <section className="subs-part subs-chartpart"><Chart title="Subscription cost by service" data={[{ type: 'bar', x: subs.items.slice(0, 10).map(s => s.name), y: subs.items.slice(0, 10).map(s => s.monthly), marker: { color: c.blue }, hovertemplate: '%{x}: $%{y:,.2f}/mo<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={150} fill className="subs-chart" /></section>
+        <section className="subs-part subs-chartpart"><Chart title="Subscription cost by service" data={[{ type: 'bar', x: subs.items.slice(0, 10).map(s => s.name), y: subs.items.slice(0, 10).map(s => s.monthly), marker: { color: c.blue }, hovertemplate: '%{x}: $%{y:,.2f}/mo<extra></extra>' }]} layout={{ showlegend: false, yaxis: { tickprefix: '$' }, xaxis: { type: 'category' } }} height={150} fill fit className="subs-chart" /></section>
         </div>
       </Card>
     </div>

@@ -15,42 +15,81 @@ export const C = () => ({ accent: cssVar('--accent'), ink: cssVar('--ink'), blue
 export const PALETTE = () => { const c = C(); return [cssVar('--ink'), c.good, c.blue, cssVar('--gold'), c.crit, c.wait, c.soon, c.idle] }
 const isMobile = () => window.matchMedia('(max-width:900px)').matches
 const wrap = (s: string, n: number) => { const words = String(s).split(/\s+/); const lines: string[] = []; let cur = ''; for (const w of words) { if ((cur + ' ' + w).trim().length > n && cur) { lines.push(cur); cur = w } else cur = (cur + ' ' + w).trim() } if (cur) lines.push(cur); return lines.slice(0, 3).join('<br>') }
-export function base(): Layout { const c = C(); return { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: cssVar('--chart-font') || "'IBM Plex Sans', system-ui, sans-serif", size: isMobile() ? 12.5 : 13.5, color: c.ink2 }, margin: { l: 48, r: 18, t: 10, b: 40 }, xaxis: { gridcolor: c.line, zeroline: false, automargin: true, tickfont: { size: isMobile() ? 12 : 13, color: c.ink2 } }, yaxis: { gridcolor: c.line, zeroline: false, automargin: true, tickfont: { size: isMobile() ? 12 : 13, color: c.ink2 } }, hoverlabel: { font: { size: 13.5 } }, legend: { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: isMobile() ? 12 : 13 } } } }
-function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean): { data: Data; layout: Layout } {
+export function base(): Layout { const c = C(); return { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { family: cssVar('--chart-font') || "'IBM Plex Sans', system-ui, sans-serif", size: isMobile() ? 13 : 14.5, color: c.ink2 }, margin: { l: 48, r: 18, t: 10, b: 40 }, xaxis: { gridcolor: c.line, zeroline: false, automargin: true, tickfont: { size: isMobile() ? 12.5 : 14, color: c.ink2 } }, yaxis: { gridcolor: c.line, zeroline: false, automargin: true, tickfont: { size: isMobile() ? 12.5 : 14, color: c.ink2 } }, hoverlabel: { font: { size: 14 } }, legend: { orientation: 'h', x: 0, xanchor: 'left', y: 1.02, yanchor: 'bottom', font: { size: isMobile() ? 12.5 : 14 } } } }
+// 0.29.2: how tall a chart must be to read at a glance — it grows with its width, so a chart is never a thin strip across a wide card.
+// Lines and upright bars: about 0.36 × width + 90 (a full-width chart ≈ 480 px, half width ≈ 360, a phone keeps its own height).
+// Donuts: about 0.62 × width + 60, up to 460. Horizontal bars size by their rows instead (below), so they are left alone here.
+// Category labels are measured at 0.62 em a character (wide enough for the monospaced looks); labels that are wrapped stay level.
+export function readableHeight(W: number, data: Data): number {
+  if (data.some(t => t.type === 'bar' && t.orientation === 'h')) return 0
+  if (data.some(t => t.type === 'pie')) return Math.min(460, Math.round(W * 0.62 + 60))
+  return Math.min(480, Math.round(W * 0.36 + 90))
+}
+function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean, fit = false): { data: Data; layout: Layout } {
   // Plotly writes computed ranges back into the layout it is given, so every draw gets its own copy. And because a redraw (resize, theme)
   // passes the same x/y arrays, Plotly.react would skip recalculating and fall back to default ranges (x −1…6) — draw() bumps
   // layout.datarevision each time to force the recalculation (0.20.0).
   const layout = JSON.parse(JSON.stringify(layout0)) as Layout
   const W = Math.max(260, el.clientWidth || 600); const L: Layout = { ...base(), ...layout, xaxis: { ...base().xaxis, ...(layout.xaxis || {}) }, yaxis: { ...base().yaxis, ...(layout.yaxis || {}) } }
+  if (!big && !fit) L.height = Math.max((L.height as number) || 0, readableHeight(W, data))
   if (big) { L.font = { ...L.font, size: 15 }; (L.xaxis as Record<string, unknown>).tickfont = { size: 14.5 }; (L.yaxis as Record<string, unknown>).tickfont = { size: 14.5 }; L.legend = { ...L.legend, font: { size: 14.5 } } }
   let d = data.map(t => ({ ...t }))
+  const pies = d.filter(t => t.type === 'pie')
+  if (pies.length === 1) {   // the legend goes beside the donut when there is room; below it (as each chart asks) on a narrow screen
+    const H = (L.height as number) || 300, side = W >= 460
+    d = d.map(t => t.type === 'pie' ? { insidetextorientation: 'horizontal', textfont: { size: big ? 16 : isMobile() ? 12.5 : 14 }, ...t } as Partial<Plotly.PlotData> : t)
+    if (side && L.showlegend !== false) {
+      const names = ((pies[0] as Record<string, unknown>).labels as string[] | undefined) || [], legW = Math.min(260, 46 + 8.6 * Math.max(4, ...names.map(n => String(n).length)))
+      const dia = Math.max(160, H - 30), group = Math.min(W - 20, dia + legW + 24), left = Math.max(10, (W - group) / 2)
+      d = d.map(t => t.type === 'pie' && !t.domain ? { ...t, domain: { x: [left / W, Math.min(1, (left + dia) / W)], y: [0, 1] } } : t)
+      L.legend = { ...L.legend, orientation: 'v', x: Math.min(0.98, (left + dia + 24) / W), xanchor: 'left', y: 0.5, yanchor: 'middle' }
+      L.margin = { ...L.margin, l: 0, r: 0, t: 10, b: 10 }; L.showlegend = true
+      ;(L as Record<string, unknown>).__pieSide = true
+    }
+  }
   const money = (ax: Record<string, unknown>, vals: number[]) => { if (ax.tickprefix === '$' && !ax.tickformat) { const m = Math.max(0, ...vals.map(Math.abs)); ax.tickformat = m >= 10000 ? '$~s' : '$,.0f'; delete ax.tickprefix } }
   money(L.yaxis as Record<string, unknown>, d.flatMap(t => (t.orientation === 'h' ? [] : (t.y as number[]) || []).filter(v => typeof v === 'number'))); money(L.xaxis as Record<string, unknown>, d.flatMap(t => (t.orientation === 'h' ? (t.x as number[]) || [] : []).filter(v => typeof v === 'number')))
   const hb = d.filter(t => t.type === 'bar' && t.orientation === 'h' && Array.isArray(t.y))
-  if (hb.length) { const ys = [...new Set(hb.flatMap(t => t.y as string[]))]; if (ys.every(v => typeof v === 'string')) { const n = big ? 40 : W < 520 ? 18 : 28; let lines = 1; d = d.map(t => t.type === 'bar' && t.orientation === 'h' ? { ...t, y: (t.y as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }), customdata: t.customdata || (t.y as string[]) } : t); const row = (big ? 30 : 24) + (lines - 1) * 14; L.height = Math.max((L.height as number) || 0, 70 + ys.length * row + (L.showlegend ? 30 : 0), big ? 0 : 220) } }
+  if (hb.length) { const ys = [...new Set(hb.flatMap(t => t.y as string[]))]; if (ys.every(v => typeof v === 'string')) { const n = big ? 40 : W < 520 ? 18 : 28; let lines = 1; d = d.map(t => t.type === 'bar' && t.orientation === 'h' ? { ...t, y: (t.y as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }), customdata: t.customdata || (t.y as string[]) } : t); const row = (big ? 34 : isMobile() ? 28 : 32) + (lines - 1) * 15; L.height = Math.max((L.height as number) || 0, 70 + ys.length * row + (L.showlegend ? 30 : 0), big ? 0 : 220) } }
   const vx = d.filter(t => ((t.type === 'bar' && t.orientation !== 'h') || t.type === 'scatter') && Array.isArray(t.x))
   if (vx.length) { const xs = [...new Set(vx.flatMap(t => t.x as unknown[]))]; const cat = xs.length && xs.every(v => typeof v === 'string' && !/^\d{4}-\d{2}/.test(v as string)) && (L.xaxis as Record<string, unknown>).type !== 'date'
-    if (cat) { const per = (W - 90) / Math.max(1, xs.length), chars = Math.max(6, Math.floor(per / 7.4)), longest = Math.max(...xs.map(x => String(x).length))
-      if (longest > chars) { if (per < 46) { (L.xaxis as Record<string, unknown>).tickangle = -40; L.height = ((L.height as number) || 260) + Math.min(80, longest * 3.2); if (per < 26) { const k = Math.ceil(26 / per), tv = xs.filter((_, i) => (xs.length - 1 - i) % k === 0); (L.xaxis as Record<string, unknown>).tickvals = tv; (L.xaxis as Record<string, unknown>).ticktext = tv.map(String) } } else { let lines = 1; const n = Math.max(8, chars); d = d.map(t => vx.includes(t) ? { ...t, x: (t.x as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }) } : t); L.height = ((L.height as number) || 260) + (lines - 1) * 15 } } } }
-  if (L.showlegend) { const names = d.filter(t => t.showlegend !== false && t.name).map(t => String(t.name)); const px = (isMobile() ? 12 : 13) * 0.58; let rows = 1, x = 0; names.forEach(nm => { const w = nm.length * px + 44; if (x + w > W - 30 && x > 0) { rows++; x = 0 } x += w }); if (W < 520 && names.length > 2) { const per = Math.max(...names.map(n => n.length)) > 12 ? 1 : 2; L.legend = { ...L.legend, ...({ entrywidth: 1 / per, entrywidthmode: 'fraction' } as Record<string, unknown>) }; rows = Math.ceil(names.length / per) } L.margin = { ...L.margin, t: Math.max((L.margin?.t as number) || 0, big ? 46 : 34) + (rows - 1) * 21 }; L.height = ((L.height as number) || 260) + (rows - 1) * 21 }
+    if (cat) { const fs = big ? 14.5 : isMobile() ? 12.5 : 14, per = (W - 90) / Math.max(1, xs.length), chars = Math.max(6, Math.floor(per / (fs * 0.62))), longest = Math.max(...xs.map(x => String(x).length))
+      if (longest > chars) { if (per < 8 * fs * 0.62 + 6) { (L.xaxis as Record<string, unknown>).tickangle = -40; L.height = ((L.height as number) || 260) + Math.min(80, longest * 3.2); if (per < 26) { const k = Math.ceil(26 / per), tv = xs.filter((_, i) => (xs.length - 1 - i) % k === 0); (L.xaxis as Record<string, unknown>).tickvals = tv; (L.xaxis as Record<string, unknown>).ticktext = tv.map(String) } } else { let lines = 1; const n = Math.max(8, chars); if ((layout.xaxis as Record<string, unknown> | undefined)?.tickangle === undefined) (L.xaxis as Record<string, unknown>).tickangle = 0; d = d.map(t => vx.includes(t) ? { ...t, x: (t.x as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }) } : t); L.height = ((L.height as number) || 260) + (lines - 1) * 15 } } } }
+  if ((L as Record<string, unknown>).__pieSide) delete (L as Record<string, unknown>).__pieSide
+  else if (L.showlegend) { const names = d.filter(t => t.showlegend !== false && t.name).map(t => String(t.name)); const px = (isMobile() ? 12.5 : 14) * 0.58; let rows = 1, x = 0; names.forEach(nm => { const w = nm.length * px + 44; if (x + w > W - 30 && x > 0) { rows++; x = 0 } x += w }); if (W < 520 && names.length > 2) { const per = Math.max(...names.map(n => n.length)) > 12 ? 1 : 2; L.legend = { ...L.legend, ...({ entrywidth: 1 / per, entrywidthmode: 'fraction' } as Record<string, unknown>) }; rows = Math.ceil(names.length / per) } L.margin = { ...L.margin, t: Math.max((L.margin?.t as number) || 0, big ? 46 : 34) + (rows - 1) * 21 }; L.height = ((L.height as number) || 260) + (rows - 1) * 21 }
   if ((L.margin?.l as number) > W * 0.4) L.margin = { ...L.margin, l: Math.round(W * 0.4) }
   // numbers on axes and in hovers follow the reader's locale (0.23.0): Plotly takes the decimal then the grouping character
   if (!L.separators) { const sp = separators(); L.separators = sp.decimal + (sp.group === '\u202f' || sp.group === '\u00a0' ? ' ' : sp.group) }
   return { data: d, layout: L }
 }
-type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; empty?: ReactNode }
+/** fit: size exactly to the card's part (no automatic minimum height) — for layouts split into fixed parts, like Subscriptions on Insights. */
+type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; fit?: boolean; empty?: ReactNode }
 /** A chart with nothing to draw shows a short message instead of empty axes; pass `empty` to say what would fill it. */
 export function Chart(props: ChartProps) {
   if (noData(props.data)) return <div className={`chart-empty ${props.className || ''}`} style={{ minHeight: Math.min(props.height || 260, 200) }} role="img" aria-label={`${props.title || 'Chart'}: nothing to show yet`}>{props.empty || 'Nothing to chart yet — this fills in as transactions, balances and plans are added.'}</div>
   return <ChartInner {...props} />
 }
-function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false }: ChartProps) {
+function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false, fit = false }: ChartProps) {
   const ref = useRef<HTMLDivElement>(null); const { open } = useModal()
   // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
   // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)
   const latest = useRef({ data, layout, height }); latest.current = { data, layout, height }
   const P = useRef<typeof Plotly | null>(null); const alive = useRef(true); const rev = useRef(0)
-  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current; const h = fill ? Math.max(height, Math.floor(el.parentElement?.clientHeight || 0)) : height; const r = readable(el, data, { height: h, ...layout }, false); (r.layout as Record<string, unknown>).datarevision = ++rev.current; if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
+  const draw = () => { const el = ref.current, Pl = P.current; if (!el || !Pl || !alive.current || !el.isConnected) return; const { data, layout, height } = latest.current
+    let r: { data: Data; layout: Layout }
+    if (fill && !fit && el.parentElement) {
+      // a chart that fills its card (0.29.2): work out the height it needs from a fixed starting point — the readable minimum for its
+      // width plus room for its labels — make its holder at least that tall (the card grows with it), then draw at the holder's real size.
+      // Starting from the holder's own height instead would add the label room again on every redraw and the chart would keep growing.
+      r = readable(el, data, { height: Math.max(height, readableHeight(Math.max(260, el.clientWidth || 600), data)), ...layout }, false, true)
+      const want = Math.ceil(r.layout.height as number) + 'px'; if (el.parentElement.style.minHeight !== want) el.parentElement.style.minHeight = want
+      r.layout.height = Math.max(r.layout.height as number, Math.floor(el.parentElement.clientHeight || 0))
+    } else {
+      const h = fill ? Math.max(height, Math.floor(el.parentElement?.clientHeight || 0)) : height
+      r = readable(el, data, { height: h, ...layout }, false, fit)
+      if (fit) r.layout.height = h   // a fixed part gets exactly its height, whatever the labels need
+    }
+    (r.layout as Record<string, unknown>).datarevision = ++rev.current; if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
   useEffect(() => { const el = ref.current; if (!el) return; alive.current = true; loadPlotly().then(p => { P.current = p; draw() })
     const ro = new ResizeObserver(() => draw()); ro.observe(fill && el.parentElement ? el.parentElement : el); return () => { alive.current = false; ro.disconnect(); try { P.current?.purge(el) } catch { /* */ } } }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { draw() }, [data, layout, height])   // eslint-disable-line react-hooks/exhaustive-deps
