@@ -31,24 +31,39 @@ Cresari already uses Resend for alert and household-invitation emails, so one do
 
 1. **Buy a domain** for the app (about $10–15 a year at any registrar). Cloudflare and GoDaddy domains can be set up in Resend with one
    click (Auto Configure); others take a few copy-and-paste DNS records.
-2. **Add it to Resend** — resend.com → **Domains → Add Domain**. Enter a subdomain such as `mail.<your domain>` (Resend's advice: keep
-   app email on a subdomain so it never disturbs mail sent from the main domain). Region: US East.
-3. **Add the DNS records** on the domain's **Records** tab in Resend (a few records under `send.mail…` and `resend._domainkey.mail…`;
-   newer domains may show CNAME records instead of MX/TXT) — use **Auto Configure** if offered, otherwise paste each one at your
+2. **Add it to Resend** — resend.com → **Domains → Add Domain**. Cresari's is the main domain itself, `cresari.org` (a subdomain such as
+   `mail.cresari.org` also works, but then every sender address must end in that subdomain). Region: US East. **Every sender address
+   below must end in exactly the domain Resend verified** — Resend refuses to send from any other.
+3. **Add the DNS records** on the domain's **Records** tab in Resend — use **Auto Configure** if offered, otherwise paste each one at your
    registrar exactly as shown, with only the part before your domain in the Name field. Click **Verify DNS Records**; it usually turns
-   green within 15 minutes (up to 72 hours).
+   green within 15 minutes (up to 72 hours). What `cresari.org` has, for reference: `resend._domainkey` (TXT, the signing key),
+   `send` (CNAME to Resend's sending servers, which covers SPF and bounces) and GoDaddy's `_dmarc` (TXT, `p=quarantine` — fine as is,
+   since Resend signs with the domain's own key).
 4. **Make an API key** — Resend → **API Keys → Create API key**, permission *Sending access*, limited to the new domain. Copy it now; it is
    shown once.
 5. **Turn on custom SMTP in Supabase** — production project → **Authentication → Emails → SMTP Settings** → **Enable custom SMTP**:
-   sender email `no-reply@mail.<your domain>`, sender name `Cresari`, host `smtp.resend.com`, port `465`, username `resend`, password =
+   sender email `no-reply@cresari.org`, sender name `Cresari`, host `smtp.resend.com`, port `465`, username `resend`, password =
    the API key. **Save**.
 6. **Raise the email limit** — **Authentication → Rate Limits → Email sent**: Supabase starts custom SMTP at 30 an hour; 60 is plenty for a
    beta. (Resend's free plan sends up to 100 emails a day — alerts and invitations included; Pro is $20 a month when you outgrow it.)
-7. **Point Cresari's own emails at the domain** — **Edge Functions → Secrets**: set `EMAIL_FROM` and `INVITE_FROM` to
-   `Cresari <alerts@mail.<your domain>>` (or ask Claude to). Until then alert and invitation emails reach only you.
-8. **Test it** — open your invite link in a private window, **Create my account** with a second address of yours, and check the
-   confirmation arrives (Resend → **Emails** shows each one sent). Also check **Authentication → URL Configuration**: the Site URL must be
-   `https://garynth41.github.io/wealthpilot/`, or confirmation links open the wrong page.
+7. **Point Cresari's own emails at the domain** — **Edge Functions → Secrets** (shared by every function), three entries:
+   - `RESEND_API_KEY` = a Resend key that can send from `cresari.org` — the step 4 key works (the same one as the SMTP password). If one
+     is already listed from before the domain existed, keep it only if it has sending access to all domains or to `cresari.org`.
+     Without this key the `notify` function skips email ("email not configured") and `invite-member` sends no invitations.
+   - `EMAIL_FROM` = `Cresari <alerts@cresari.org>` — alerts and feedback notes, from `notify`.
+   - `INVITE_FROM` = `Cresari <alerts@cresari.org>` — household invitations, from `invite-member`.
+
+   Type the values on that Supabase page — pasting them into a chat with Claude does not set them. Until `EMAIL_FROM` is set, alert emails
+   go from Resend's test address, which delivers only to the Resend account's owner; until `INVITE_FROM` is set, invitations are not
+   emailed at all.
+8. **Test it** — three paths, three tests:
+   - *Sign-up (SMTP, step 5):* open your invite link in a private window, **Create my account** with a second address of yours, and check
+     the confirmation arrives from `no-reply@cresari.org`. Also check **Authentication → URL Configuration**: the Site URL must be
+     `https://garynth41.github.io/wealthpilot/`, or confirmation links open the wrong page.
+   - *Alerts (`notify`):* send yourself a **✉ Feedback** note — an email from `alerts@cresari.org` and a phone notification should follow.
+   - *Invitations (`invite-member`):* Settings → **Members** → invite your second address; the invitation email should arrive.
+
+   Resend → **Emails** lists every message sent, and why one bounced.
 
 ### B. A dedicated Gmail account (about 10 minutes, fine for a small beta)
 
