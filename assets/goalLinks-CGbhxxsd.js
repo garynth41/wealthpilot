@@ -1,0 +1,1 @@
+import{q as e}from"./native-D62GOFEJ.js";import{r as t}from"./rules-HKMrD1_s.js";async function n(n){let r=e.getState(),i=new Set(n.map(e=>typeof e==`string`?e:e.id)),a=r.data.transactions.filter(e=>i.has(e.id)),o=t(r.data,a);return o.length?(await r.insertMany(`contributions`,o),o.length):0}export{n as t};
