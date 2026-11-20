@@ -2,7 +2,8 @@
 // The rule: a summary of money, never of people. No member names, no email addresses, no account names or numbers (accounts are
 // "Checking 1", "Credit card 2"), no institution names, no notes or memos. Category, bill and goal names are kept — they are labels of
 // things — but any member's name inside them is taken out. Transactions are sent only when the person has switched that on in
-// Settings, and then a payee is sent only when it is a business the built-in merchant list recognizes; anyone else is "a payee not listed".
+// Settings, and then a payee is sent only as the business name the built-in merchant list recognizes with confidence; anyone else is
+// "a payee not listed". What the person types as their question is theirs: it is sent as typed (minus emails and long numbers).
 // Pure functions. The server scrubs the text again before it leaves (supabase/functions/ask-cresari/core.ts scrub).
 import type { Account, Data, Settings } from '../app/data/types'
 import { ACCOUNT_KIND_LABEL } from '../app/data/types'
@@ -15,7 +16,7 @@ import { goalProgress } from './goals'
 import { portfolio } from './portfolio'
 import { liquidity } from './planning'
 import { currentPeriod } from './periods'
-import { libraryMatch, merchantIdentity } from './merchants'
+import { libraryMatch } from './merchants'
 import { scrub } from '../../supabase/functions/ask-cresari/core'
 import { today, monthStart, monthEnd } from './dates'
 import { round2 } from './money'
@@ -26,12 +27,15 @@ export const DETAIL_DAYS = 90, DETAIL_MAX = 300
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /** A function that removes people's names (whole words, any case), email addresses and long numbers from a label. */
 export function nameScrubber(names: string[] = []) {
-  const words = [...new Set(names.flatMap(n => String(n || '').split('@')[0].split(/[^A-Za-zÀ-ÿ']+/)).map(w => w.replace(/'s$/i, '').toLowerCase()).filter(w => w.length >= 3 && !COMMON.has(w)))]
-  const re = words.length ? new RegExp(`\\b(?:${words.map(esc).join('|')})(?:'s)?\\b`, 'gi') : null
-  return (s: unknown) => { let t = scrub(s); if (re) t = t.replace(re, '').replace(/\s{2,}/g, ' ').replace(/^[\s'’s:–-]+|[\s:–-]+$/g, ''); return t.trim().slice(0, 60) || 'unnamed' }
+  // any script (José, Émile, Мария, 李明), two letters and up (Al, Jo, Li). Everyday words that also turn up in household names are left alone.
+  const words = [...new Set(names.flatMap(n => String(n || '').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2 && !COMMON.has(w)))]
+    .sort((a, b) => b.length - a.length)
+  // a name counts only as a whole word: not preceded or followed by another letter or digit, in any script
+  const re = words.length ? new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])(?:${words.map(esc).join('|')})(?:['’]s)?(?![\\p{L}\\p{M}\\p{N}])`, 'giu') : null
+  return (s: unknown) => { let t = scrub(s); if (re) { let prev = ''; while (prev !== t) { prev = t; t = t.replace(re, '$1') } t = t.replace(/\s{2,}/g, ' ').replace(/^[\s'’:–-]+|[\s:–-]+$/g, '') } return t.trim().slice(0, 60) || 'unnamed' }
 }
 /** Words that are often part of a household's name but are not anybody's name. */
-const COMMON = new Set('the|and|family|household|home|house|budget|money|our|my|main|joint|personal|finance|finances|account|accounts|test|demo|sample'.split('|'))
+const COMMON = new Set('the|and|family|household|home|house|budget|money|our|my|main|joint|personal|finance|finances|account|accounts|test|demo|sample|an|as|at|be|by|do|go|if|in|is|it|me|no|of|on|or|so|to|up|us|we|for|new|old|car|pay|tax|gas|pet|fun'.split('|'))
 
 const monthsBack = (asOf: string, n: number) => { const [y, m] = asOf.slice(0, 7).split('-').map(Number); return Array.from({ length: n }, (_, i) => { const d = new Date(y, m - 1 - (n - 1 - i), 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }) }
 const r0 = (n: number) => Math.round(n)
@@ -82,7 +86,9 @@ export function buildContext(d: Data, s: Settings, o: ContextOptions = {}) {
   if (o.detail) {
     const from = (() => { const x = new Date(asOf + 'T12:00:00'); x.setDate(x.getDate() - DETAIL_DAYS); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` })()
     const cat = (id?: string | null) => d.categories.find(c => c.id === id)?.name
-    const payee = (p: string | null | undefined, kind: 'expense' | 'income') => (p && libraryMatch(p, kind) ? clean(merchantIdentity(p).key) : 'a payee not listed')
+    // only the business name the built-in list recognized with confidence ("kroger") — never the rest of the description, which can
+    // carry a person's name ("DR JANE SMITH DENTAL" is "a payee not listed")
+    const payee = (p: string | null | undefined, kind: 'expense' | 'income') => { const m = p ? libraryMatch(p, kind) : null; return m && m.confidence === 'high' ? clean(m.matched) : 'a payee not listed' }
     ctx.transactions = d.transactions.filter(t => t.status !== 'void' && t.date >= from && t.date <= asOf)
       .sort((a, b) => b.date.localeCompare(a.date) || b.amount - a.amount).slice(0, DETAIL_MAX)
       .map(t => t.kind === 'transfer' ? { date: t.date, type: 'transfer', amount: round2(t.amount), from: label.get(t.account_id || '') || 'an account', to: (t.to_account_id && label.get(t.to_account_id)) || 'an account' }

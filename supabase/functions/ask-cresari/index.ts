@@ -6,7 +6,7 @@
 //   - Who may ask, the daily limits and the model are settings in app_meta the operator changes from Feedback & testers (migration 0023).
 // Secrets: ANTHROPIC_API_KEY
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { prepare, buildRequest, readReply, refusal, type AskBody } from './core.ts'
+import { prepare, buildRequest, readReply, refusal, MAX_BODY_BYTES, type AskBody } from './core.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -22,8 +22,11 @@ Deno.serve(async (req) => {
   const { data: { user }, error: uErr } = await asUser.auth.getUser()
   if (uErr || !user) return json(401, { error: 'Sign in first' })
 
+  // size and shape first: nothing oversized or malformed is parsed or scrubbed (this runs before the access check)
+  if (Number(req.headers.get('content-length') || 0) > MAX_BODY_BYTES) return json(413, { error: 'That is too much to send at once' })
   let b: AskBody
-  try { b = await req.json() } catch { return json(400, { error: 'Bad JSON' }) }
+  try { const raw = await req.text(); if (raw.length > MAX_BODY_BYTES) return json(413, { error: 'That is too much to send at once' }); b = JSON.parse(raw) } catch { return json(400, { error: 'Bad JSON' }) }
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return json(400, { error: 'Bad request' })
   if (!b.household_id || typeof b.household_id !== 'string') return json(400, { error: 'household_id required' })
   const p = prepare(b)
   if ('error' in p) return json(400, { error: p.error })

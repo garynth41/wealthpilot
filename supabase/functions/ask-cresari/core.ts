@@ -1,9 +1,12 @@
 // ask-cresari — the parts with no network or Deno in them, so the app's test suite can run them too (src/lib/advisor.test.ts).
 // What goes to the AI service is: a fixed instruction (SYSTEM), a summary of the household's numbers built on the person's own device
 // (lib/advisor.ts buildContext — no names, emails or account numbers), the last few turns of this conversation, and the question.
+// The question is the person's own words: emails and long numbers are taken out, but a name they type is sent — the screen says so.
 // Everything from the device is scrubbed again here before it leaves, in case an older or altered app sends more than it should.
 
 export const MAX_QUESTION = 2000, MAX_CONTEXT = 60000, MAX_TURNS = 12, MAX_TURN = 6000, MAX_ANSWER_TOKENS = 1400
+/** The largest request the function reads: the summary, the turns and the question, in JSON, with room to spare. */
+export const MAX_BODY_BYTES = 4 * (MAX_CONTEXT + MAX_TURNS * MAX_TURN + MAX_QUESTION)
 export interface Turn { role: 'user' | 'assistant'; content: string }
 export interface AskBody { household_id?: string; question?: string; context?: string; history?: Turn[]; detail?: boolean }
 
@@ -48,9 +51,10 @@ export function prepare(b: AskBody): { error: string } | { question: string; con
   if (question.length < 2) return { error: 'Type a question first' }
   const context = scrub(b.context)
   if (context.length > MAX_CONTEXT) return { error: 'The household summary is too large to send — switch off "Include my recent transactions" and try again' }
-  const turns = Array.isArray(b.history) ? b.history : []
-  const history = turns.filter(t => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string' && t.content.trim())
-    .slice(-MAX_TURNS).map(t => ({ role: t.role, content: scrub(t.content.slice(0, MAX_TURN)) }))
+  // the last few turns only, each cut to size before anything reads it
+  const turns = Array.isArray(b.history) ? b.history.slice(-MAX_TURNS) : []
+  const history = turns.filter(t => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
+    .map(t => ({ role: t.role, content: scrub(t.content.slice(0, MAX_TURN)).trim() })).filter(t => t.content)
   // the service wants the turns to start with the person and alternate; drop a leading answer and merge any doubles
   while (history.length && history[0].role !== 'user') history.shift()
   const tidy: Turn[] = []

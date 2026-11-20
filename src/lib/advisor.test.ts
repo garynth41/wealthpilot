@@ -98,3 +98,25 @@ describe('showing an answer', () => {
     expect(boldRuns('Pay **$200** extra')).toEqual([{ text: 'Pay ', bold: false }, { text: '$200', bold: true }, { text: ' extra', bold: false }])
   })
 })
+
+// Review of 0.32.0 (PR #30)
+describe('review findings', () => {
+  it('names in any script and of any length are taken out of labels', () => {
+    const c = nameScrubber(['José Émile', 'Мария', '李明', 'Al', "O'Brien"])
+    expect(c('José fund')).toBe('fund'); expect(c("Émile's car")).toBe('car'); expect(c('Подарок Мария')).toBe('Подарок'); expect(c('李明 savings')).toBe('savings'); expect(c('Al groceries')).toBe('groceries')
+    expect(c("O'Brien loan")).toBe('loan'); expect(c('Alarm system')).toBe('Alarm system'); expect(c('Josée fund')).toBe('Josée fund'); expect(c('Personal care')).toBe('Personal care')
+    expect(nameScrubber(['An Of'])('An emergency fund of ours')).toBe('An emergency fund of ours')   // everyday words are not treated as names
+  })
+  it('a payee is sent only as the business name the list is sure of — never the rest of the description', () => {
+    const base = data.transactions.find(t => t.kind === 'expense')!
+    const mk = (id: string, payee: string) => ({ ...base, id, payee, date: today() })
+    const d2 = { ...data, transactions: [...data.transactions, mk('n1', 'DR JANE SMITH DENTAL'), mk('n2', 'KROGER #1234 JANE SMITH'), mk('n3', 'SQ *MARIA PIZZA KITCHEN')] }
+    const text = contextText(d2, settings, { detail: true }); const tx = JSON.parse(text).transactions as Array<{ payee?: string }>
+    expect(/jane|smith|maria/i.test(text)).toBe(false); expect(tx.filter(t => t.payee === 'kroger').length).toBeGreaterThan(0); expect(tx.filter(t => t.payee === 'a payee not listed').length).toBeGreaterThanOrEqual(2)
+  })
+  it('history is cut to size before it is read, whatever is sent', () => {
+    const huge = Array.from({ length: 5000 }, (_, i) => ({ role: i % 2 ? 'assistant' as const : 'user' as const, content: 'y'.repeat(50000) }))
+    const t0 = performance.now(); const p = prepare({ question: 'Hi there', history: [...huge, { role: 'user', content: 7 as never }, null as never] }); expect(performance.now() - t0).toBeLessThan(400)
+    if ('error' in p) throw new Error(p.error); expect(p.history.length).toBeLessThanOrEqual(MAX_TURNS); expect(p.history.every(t => t.content.length <= 6000)).toBe(true)
+  })
+})

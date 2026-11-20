@@ -2,8 +2,8 @@
 --   ai_access   who may use the advisor while it is in testing. Rows are added by the operator from Feedback & testers (ai_admin_set), never
 --               from a migration — this repository is public, so no address or id is written here. `daily_limit` overrides the default for
 --               one person; null = the default.
---   ai_usage    one row per question: who, which household, when, whether transaction detail was sent, and the token counts. Never the
---               question, the answer or any money data. It is what the daily limits count.
+--   ai_usage    one row per question: who, which household, when, whether transaction detail was sent, the model and the token counts.
+--               Never the question, the answer or any money data. It is what the daily limits count.
 --   app_meta    the settings the operator changes without a release:
 --                 ai_access        'testers' (default: only people in ai_access and the operator) | 'all' | 'off'
 --                 ai_daily_limit   questions per person in any 24 hours (default 20)
@@ -68,8 +68,8 @@ end $$;
 revoke all on function public.ai_status() from public, anon;
 grant execute on function public.ai_status() to authenticated;
 
--- Before a question goes to the AI service: check access, membership and the limits, and record the question. One at a time per person
--- (an advisory lock), so two questions sent together cannot both slip under the limit. Service role only.
+-- Before a question goes to the AI service: check access, membership and the limits, and record the question. One at a time per person,
+-- and one at a time for the whole-app ceiling (advisory locks), so questions sent together cannot slip under either limit. Service role only.
 create or replace function public.ai_reserve(p_user uuid, p_household uuid, p_detail boolean) returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_limit int; v_used int; v_all int; v_cap int := public.ai_meta_int('ai_global_daily', 500); v_id uuid;
         v_model text := coalesce((select value from public.app_meta where key = 'ai_model' and value ~ '^[A-Za-z0-9._-]{3,80}$'), 'claude-sonnet-5-5');
@@ -83,6 +83,8 @@ begin
   delete from public.ai_usage where not done and created_at < now() - interval '10 minutes';
   select count(*) into v_used from public.ai_usage where user_id = p_user and created_at > now() - interval '24 hours';
   if v_used >= v_limit then return jsonb_build_object('ok', false, 'reason', 'limit', 'limit', v_limit, 'used', v_used); end if;
+  -- the ceiling for everyone is checked one question at a time too (always after the person's own lock, so the two never deadlock)
+  perform pg_advisory_xact_lock(hashtextextended('ai:everyone', 0));
   select count(*) into v_all from public.ai_usage where created_at > now() - interval '24 hours';
   if v_all >= v_cap then return jsonb_build_object('ok', false, 'reason', 'busy', 'limit', v_limit, 'used', v_used); end if;
   insert into public.ai_usage (user_id, household_id, detail, model) values (p_user, p_household, coalesce(p_detail, false), v_model) returning id into v_id;

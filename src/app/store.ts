@@ -102,8 +102,10 @@ interface State {
 const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search)
 // The two automatic passes — merging duplicates and filing new arrivals — both write a transaction's category, so they take turns
 // (0.32.0): one runs to the end before the other starts, in the order they were asked for, and neither is dropped. A pass that is
-// already waiting for its turn is not queued a second time.
-let turn: Promise<unknown> = Promise.resolve(); let dedupeWaiting = false, categorizeWaiting = false
+// already waiting for its turn is not queued a second time: whoever asks again gets that pass's result, and if any of them wanted to be
+// told (not quiet), the pass says what it did.
+let turn: Promise<unknown> = Promise.resolve()
+let dedupeWaiting: Promise<number> | null = null, categorizeWaiting: Promise<number> | null = null, dedupeLoud = false, categorizeLoud = false
 const inTurn = <T,>(fn: () => Promise<T>): Promise<T> => { const run = turn.then(fn, fn); turn = run.catch(() => {}); return run }
 /** paycheck saves still running, per pay schedule (logPaycheck) */
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
@@ -255,11 +257,12 @@ export const useStore = create<State>((set, get) => ({
     return plan.moves.length
   },
   async autoCategorize(quiet) {
-    if (categorizeWaiting || !get().canEdit() || !get().repo) return 0
+    if (!get().canEdit() || !get().repo) return 0
     if (get().settings().autoCategorize === false) return 0
-    categorizeWaiting = true
-    return inTurn(async () => {
-    categorizeWaiting = false
+    if (!quiet) categorizeLoud = true
+    if (categorizeWaiting) return categorizeWaiting
+    return categorizeWaiting = inTurn(async () => {
+    categorizeWaiting = null; const quiet = !categorizeLoud; categorizeLoud = false
     if (!get().canEdit() || !get().repo) return 0
     const s = get().settings(); if (s.autoCategorize === false) return 0
     {
@@ -280,10 +283,11 @@ export const useStore = create<State>((set, get) => ({
     })
   },
   async autoDedupe(quiet) {
-    if (dedupeWaiting || !get().canEdit() || !get().repo) return 0
-    dedupeWaiting = true
-    return inTurn(async () => {
-    dedupeWaiting = false
+    if (!get().canEdit() || !get().repo) return 0
+    if (!quiet) dedupeLoud = true
+    if (dedupeWaiting) return dedupeWaiting
+    return dedupeWaiting = inTurn(async () => {
+    dedupeWaiting = null; const quiet = !dedupeLoud; dedupeLoud = false
     if (!get().canEdit() || !get().repo) return 0
     {
       const plan = planDedupe(get().data.transactions as unknown as DTxn[], get().data.accounts, get().household?.settings?.dedupe); let n = 0

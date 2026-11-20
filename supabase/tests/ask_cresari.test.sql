@@ -71,3 +71,5 @@ set role authenticated; select public.ai_admin_config('off'); select public.ai_a
 select pg_temp.ok(public.ai_limit_for(:'A') = 0 and public.ai_limit_for(:'OP') = 0, 'switched off: nobody can ask');
 delete from auth.users where id = :'B';
 select pg_temp.ok((select count(*) = 0 from public.ai_usage where user_id = :'B'), 'deleting an account takes its usage rows with it');
+-- the whole-app ceiling takes its own lock, after the person's (review of 0.32.0)
+select pg_temp.ok((select prosrc like '%ai:everyone%' and position('ai:everyone' in prosrc) > position('''ai:'' || p_user' in prosrc) from pg_proc where proname = 'ai_reserve'), 'the ceiling for everyone is checked one question at a time, after the person''s own lock');
