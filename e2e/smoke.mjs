@@ -50,6 +50,42 @@ for (const W of [1400, 390]) {
     const h2 = await p.evaluate(() => document.querySelector('.chart')?.getBoundingClientRect().height)
     ok(h1 > 200 && Math.abs(h2 - h1) <= 2, `${W}: the Dashboard chart keeps its size through redraws (${Math.round(h1)} → ${Math.round(h2)}px)`)
   }
+  // 0.30.0: drill-down — the transactions behind a figure, adding up to exactly that figure, and re-filed from the panel
+  { const money = t => Math.round(parseFloat(String(t).replace(/[^0-9.\-−]/g, '').replace('−', '-')) * 100) / 100
+    await p.goto('http://localhost:4173/#/reports'); await p.waitForTimeout(1200); await p.locator('.slicer button', { hasText: 'Everything' }).click(); await p.waitForTimeout(400); await p.selectOption('select.inp', { index: 1 }); await p.waitForTimeout(1300)
+    const card = p.locator('.card', { has: p.locator('button.kpi.pick', { hasText: 'Total spending' }) }).first()
+    const row = card.locator('table.tbl tbody tr', { hasText: 'Groceries' }).first(), name = (await row.locator('td').nth(1).innerText()).trim(), shown = money(await row.locator('td').nth(2).innerText())
+    await row.locator('button.cell-pick').last().click(); const dlg = p.locator('.modal[role=dialog]'); await dlg.waitFor({ timeout: 5000 })
+    const total = money(await dlg.locator('[data-dd=total]').innerText()), count = +(await dlg.locator('[data-dd=count]').innerText()), listed = await dlg.locator('.dd-tbl tbody tr').count()
+    ok((await dlg.locator('h2').innerText()).startsWith(name) && total === shown && count === listed && count > 0, `${W}: Reports — clicking "${name}" lists its ${count} transactions and they add up to the table's ${shown} (${total})`)
+    ok(await dlg.evaluate(e => e.scrollWidth <= e.clientWidth + 1), `${W}: the drill-down panel fits the screen`)
+    // narrow to one merchant, then back
+    const firstM = dlg.locator('button.dd-row').first(); await firstM.click(); await p.waitForTimeout(200); const narrowed = +(await dlg.locator('[data-dd=count]').innerText())
+    ok(narrowed > 0 && narrowed <= count && await dlg.locator('.dd-chip').count() === 1, `${W}: tapping a merchant shows only its transactions (${narrowed} of ${count})`)
+    await dlg.locator('.dd-chip button').click(); await p.waitForTimeout(200)
+    // re-file one: it leaves this category and the total drops by its amount
+    const r1 = dlg.locator('.dd-tbl tbody tr').first(), amt = money(await r1.locator('td').last().innerText()), sel = r1.locator('select')
+    const other = await sel.evaluate(el => [...el.options].find(o => o.value && o.value !== el.value && !o.selected)?.value)
+    await sel.selectOption(other); await p.waitForTimeout(700)
+    const after = money(await dlg.locator('[data-dd=total]').innerText()), afterN = +(await dlg.locator('[data-dd=count]').innerText())
+    ok(afterN === count - 1 && Math.abs(after - (total - amt)) < 0.011, `${W}: re-filing one transaction moves it out — ${count} → ${afterN}, ${total} → ${after}`)
+    // move several at once
+    if (afterN >= 2) { await dlg.locator('.dd-all input').check(); await dlg.locator('.dd-move select').selectOption(other); await dlg.locator('.dd-move button').click(); await p.waitForTimeout(900)
+      ok(await dlg.locator('.empty').count() === 1, `${W}: "Select all" + Move re-files the rest; nothing is left behind the figure`) }
+    await dlg.locator('button', { hasText: 'Done' }).click(); await p.waitForTimeout(400)
+    const left = card.locator('table.tbl tbody tr', { hasText: name }); ok(await left.count() === 0 || money(await left.first().locator('td').nth(2).innerText()) === 0, `${W}: the report shows nothing left in "${name}" this period after everything in it was moved`)
+    // a tile, and a bar on a chart
+    await card.locator('button.kpi.pick', { hasText: 'Total spending' }).click(); await dlg.waitFor(); const tileShown = money(await card.locator('button.kpi.pick', { hasText: 'Total spending' }).locator('.v').innerText())
+    ok(Math.round(money(await dlg.locator('[data-dd=total]').innerText())) === tileShown,   // the tile shows whole dollars, the panel cents
+      `${W}: the Total spending tile opens every purchase and they add up to it (${tileShown})`)
+    await dlg.locator('button', { hasText: 'Open in the ledger' }).click(); await p.waitForTimeout(900)
+    ok(/#\/transactions\?ids=/.test(p.url()) && await p.locator('h1', { hasText: 'Transactions' }).count() === 1, `${W}: "Open in the ledger" lands on those transactions`)
+    if (W === 1400) { await p.goto('http://localhost:4173/#/trends'); await p.waitForTimeout(1500); const ch = p.locator('.chart.pick[aria-label^="Spending by day of week"]'); await ch.scrollIntoViewIfNeeded()
+      const bars = ch.locator('.point'); const n = await bars.count(); let hit = false
+      for (let i = 0; i < n && !hit; i++) { const bb = await bars.nth(i).boundingBox(); if (!bb || bb.height < 6) continue; await p.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2); hit = await dlg.waitFor({ timeout: 2500 }).then(() => true, () => false) }
+      ok(hit && /days · last 90 days$/.test(await dlg.locator('h2').innerText()) && +(await dlg.locator('[data-dd=count]').innerText()) > 0, `${W}: clicking a bar on a chart opens the transactions behind it (${hit ? await dlg.locator('h2').innerText() : 'no panel'})`)
+      if (hit) await dlg.locator('button', { hasText: 'Done' }).click() }
+  }
   if (W === 390) {
     // 0.25.1: on a phone every value and button of a hand-written table is on screen; the menu is out of reach until opened
     await p.goto('http://localhost:4173/#/bills'); await p.waitForTimeout(900)

@@ -668,3 +668,17 @@ details.techsetup code { overflow-wrap: anywhere; }
 .cash-day-card > .cash-day-sum{margin:0 0 8px;flex:none}
 /* 0.29.1: Settings → General — the other households you can open */
 .hh-others{display:flex;flex-wrap:wrap;gap:8px}
+/* 0.30.0: drill-down — the transactions behind a figure */
+.pick{cursor:pointer} .chart.pick .point,.chart.pick .slice,.chart.pick .points path{cursor:pointer}
+button.cell-pick{border:0;background:none;padding:0;font:inherit;color:inherit;text-align:inherit;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px;text-decoration-color:var(--ink-3)} button.cell-pick:hover,button.cell-pick:focus-visible{color:var(--accent);text-decoration-style:solid}
+.kpi.pick:hover,.kpi.pick:focus-visible{border-color:var(--accent)} button.kpi{font:inherit;text-align:left;color:inherit}
+.dd-kpis{margin-bottom:14px} .dd-parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:12px}
+.dd-list{list-style:none;margin:0;padding:0} .dd-list li + li{margin-top:2px}
+.dd-row{display:grid;grid-template-columns:minmax(0,1.3fr) 34px minmax(40px,1fr) auto;gap:8px;align-items:center;width:100%;border:1px solid transparent;border-radius:6px;background:none;padding:5px 8px;font:inherit;color:inherit;text-align:left}
+button.dd-row{cursor:pointer} button.dd-row:hover{background:var(--surface-2)} .dd-row.on{border-color:var(--accent);background:var(--accent-soft)}
+.dd-row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dd-row .ct{color:var(--ink-3);font-size:12px;text-align:right} .dd-row .amt{font-variant-numeric:tabular-nums;text-align:right}
+.dd-bar{display:block;height:8px;border-radius:4px;background:var(--line-2);overflow:hidden} .dd-bar > span{display:block;height:100%;background:var(--accent);border-radius:4px}
+.dd-chip{margin:0 0 10px;font-size:13.5px} .dd-chip button{margin-left:8px;border:0;background:none;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline}
+.dd-move{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px} .dd-move .inp{width:auto;min-width:200px;flex:0 1 280px} .dd-all{display:inline-flex;gap:6px;align-items:center;font-size:13.5px}
+.dd-tbl{max-height:min(46vh,480px)} .dd-tbl select{max-width:230px}
+@media (max-width:900px){ .dd-tbl th:nth-last-child(2),.dd-tbl td:nth-last-child(2){display:none} .dd-tbl select{max-width:150px} }

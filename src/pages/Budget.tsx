@@ -4,6 +4,7 @@ import { useStore } from '../app/store'
 import type { BudgetPeriod, Category } from '../app/data/types'
 import { Card, KPI, Btn, Pill, Note, AList, useModal, useConfirm, Seg, MHead, MBody, MFoot, Field } from '../components/ui'
 import { Chart, C } from '../components/Chart'
+import { useDrill } from '../components/DrillDown'
 import { spanFor, nextSpan, prevSpan, findPeriod, periodLabel, type Span } from '../lib/periods'
 import { periodStat, insights, assignment, moveMoney, coverFrom, envelopeCarry, previousPeriod, BUDGET_MODE_LABEL, type LineStat, type BudgetMode, type LinePatch, type PeriodStat } from '../lib/budget'
 import { cadencePlan, sinkingFunds, sinkingTotals } from '../lib/sinking'
@@ -14,6 +15,7 @@ import { Link } from 'react-router-dom'
 
 export function BudgetPage() {
   const { data, settings, insert, update, remove, saveSettings, guarded, canEdit, repo, refresh, cats } = useData(); const { open, close } = useModal(); const confirm = useConfirm()
+  const drill = useDrill()
   const [span, setSpan] = useState<Span>(() => spanFor(data, settings)); const [tab, setTab] = useState<'lines' | 'groups'>('lines')
   useEffect(() => { setSpan(spanFor(data, settings)) }, [settings.periodType, settings.periodAnchor, settings.semimonthlyDays?.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const period = findPeriod(data, span); const isCur = span.start <= today() && span.end >= today()
@@ -77,7 +79,7 @@ export function BudgetPage() {
       {P.uncat > 0 && <Note><b>{fmtMoney(P.uncat)}</b> of spending in this period is uncategorized and not shown above — <Link to="/transactions">categorize it</Link>.</Note>}
     </Card>
     <Card span={7} title={`Planned vs spent — ${span.label}`} hint="grey = planned · green = within plan · red = over">
-      <Chart title={`Planned vs spent — ${span.label}`} data={(() => { const rows = P.lines.filter(l => l.available > 0 || l.actual > 0).sort((a, b) => Math.max(a.available, a.actual) - Math.max(b.available, b.actual)); return [{ type: 'bar', orientation: 'h', name: 'Planned', y: rows.map(l => l.cat.name), x: rows.map(l => l.available), marker: { color: c.idle, opacity: .55 }, hovertemplate: '%{customdata} · planned $%{x:,.2f}<extra></extra>' }, { type: 'bar', orientation: 'h', name: 'Spent', y: rows.map(l => l.cat.name), x: rows.map(l => l.actual), marker: { color: rows.map(l => l.actual > l.available ? c.crit : c.good) }, hovertemplate: '%{customdata} · spent $%{x:,.2f}<extra></extra>' }] })()} layout={{ barmode: 'group', bargap: .25, showlegend: true, margin: { l: 8, r: 24, t: 28, b: 36 }, xaxis: { tickprefix: '$' }, yaxis: { type: 'category', dtick: 1 } }} height={Math.max(240, P.lines.length * 26 + 80)} />
+      <Chart title={`Planned vs spent — ${span.label}`} onPick={p => { if (p.series !== 'Spent' || !period) return; const l = P.lines.find(x => x.cat.name === p.label); drill(`${p.label} · ${span.label}`, { from: period.start_date, to: period.end_date, flow: 'budget', category: p.label }, l && l.saved > 0.005 ? `Includes ${fmtMoney(l.saved)} moved into savings — it counts on this line, but it is saving, not spending.` : undefined) }} data={(() => { const rows = P.lines.filter(l => l.available > 0 || l.actual > 0).sort((a, b) => Math.max(a.available, a.actual) - Math.max(b.available, b.actual)); return [{ type: 'bar', orientation: 'h', name: 'Planned', y: rows.map(l => l.cat.name), x: rows.map(l => l.available), marker: { color: c.idle, opacity: .55 }, hovertemplate: '%{customdata} · planned $%{x:,.2f}<extra></extra>' }, { type: 'bar', orientation: 'h', name: 'Spent', y: rows.map(l => l.cat.name), x: rows.map(l => l.actual), marker: { color: rows.map(l => l.actual > l.available ? c.crit : c.good) }, hovertemplate: '%{customdata} · spent $%{x:,.2f}<extra></extra>' }] })()} layout={{ barmode: 'group', bargap: .25, showlegend: true, margin: { l: 8, r: 24, t: 28, b: 36 }, xaxis: { tickprefix: '$' }, yaxis: { type: 'category', dtick: 1 } }} height={Math.max(240, P.lines.length * 26 + 80)} />
     </Card>
     <Card span={5} title="Insights" hint="what the numbers say"><AList items={ins.map(i => ({ c: i.c, t: i.t, m: i.m, d: i.save ? fmtMoney(i.save) : undefined }))} />
       <div className="mix" style={{ marginTop: 14 }}><span style={{ width: pct(P.ess) + '%', background: 'var(--blue)' }} title="Essential" /><span style={{ width: pct(P.imp) + '%', background: 'var(--warn)' }} title="Important" /><span style={{ width: pct(P.disc) + '%', background: 'var(--soon)' }} title="Discretionary" /></div>

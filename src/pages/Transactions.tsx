@@ -8,6 +8,7 @@ import { Table, type Col } from '../components/Table'
 import { addDays, fmtD, today, monthStart, curMonth } from '../lib/dates'
 import { parseNum, fm2, fmtMoney, sum } from '../lib/money'
 import { post } from '../lib/ledger'
+import { LEDGER_SET } from '../lib/drill'
 import { suggest, applySuggestion, planAutoCategorise, learnRule, upsertRule, similarEarlier, REVIEW_TAG } from '../lib/rules'
 import { CommentsModal, commentsFor } from './Comments'
 import { logGoalLinks } from '../app/goalLinks'
@@ -38,7 +39,7 @@ export function TransactionsPage() {
   const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
   const from = range === 'period' ? sp.start : range === '30' ? addDays(t, -29) : range === 'month' ? monthStart(curMonth()) : range === '90' ? addDays(t, -89) : '0000'
   const to = range === 'period' ? sp.end : '9999'
-  const ids = useMemo(() => new Set((params.get('ids') || '').split(',').filter(Boolean)), [params])
+  const ids = useMemo(() => { const raw = params.get('ids') || ''; if (raw === '@set') { try { const v: unknown = JSON.parse(sessionStorage.getItem(LEDGER_SET) || '[]'); return new Set(Array.isArray(v) ? v.map(String) : []) } catch { return new Set<string>() } } return new Set(raw.split(',').filter(Boolean)) }, [params])
   const rows = useMemo(() => data.transactions.filter(x => (ids.size ? ids.has(x.id) : x.date >= from && x.date <= to) && (kind === 'all' || (kind === 'uncat' ? !x.category_id && x.kind !== 'transfer' : x.kind === kind)) && (!acct || x.account_id === acct || x.to_account_id === acct) && (!tag || (x.tags || []).includes(tag))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.created_at || '').localeCompare(String(a.created_at || ''))), [data.transactions, from, to, kind, acct, tag, ids])
   const focusId = focusIdFrom(params.toString() ? '?' + params.toString() : '')
   useEffect(() => { if (focusId && !rows.some(r => r.id === focusId) && data.transactions.some(t => t.id === focusId)) { setRange('all'); setKind('all'); setAcct(''); setTag('') } }, [focusId, rows, data.transactions])   // eslint-disable-line react-hooks/exhaustive-deps
