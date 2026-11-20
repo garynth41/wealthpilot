@@ -47,6 +47,8 @@ interface State {
   /** 0.29.0: this account runs the app (app_admins) — sees Feedback & testers */
   /** the person runs Cresari (app_admins): true / false, or null while the check is still out */
   appAdmin: boolean | null
+  /** 0.32.0: is Ask Cresari open to this account, and how much of today's limit is used (null = not known / not signed in) */
+  ai: { allowed: boolean; limit: number; used: number } | null
   requestDeletion: (confirm: string) => Promise<string>; cancelDeletion: () => Promise<void>
   accountDeletionPreview: () => Promise<AccountDeletionPlan>; deleteAccount: (password: string) => Promise<{ households_deleted: number }>
   settings: () => Settings
@@ -98,14 +100,17 @@ interface State {
 
 /** Captured before the Supabase client reads and clears the URL: a password-reset link lands with #access_token=…&type=recovery. */
 const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search)
-let deduping = false
-let categorizing = false
+// The two automatic passes — merging duplicates and filing new arrivals — both write a transaction's category, so they take turns
+// (0.32.0): one runs to the end before the other starts, in the order they were asked for, and neither is dropped. A pass that is
+// already waiting for its turn is not queued a second time.
+let turn: Promise<unknown> = Promise.resolve(); let dedupeWaiting = false, categorizeWaiting = false
+const inTurn = <T,>(fn: () => Promise<T>): Promise<T> => { const run = turn.then(fn, fn); turn = run.catch(() => {}); return run }
 /** paycheck saves still running, per pay schedule (logPaycheck) */
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<State>((set, get) => ({
-  mode: null, booting: true, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], householdsFor: null, householdsError: null, latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
+  mode: null, booting: true, ai: null, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], householdsFor: null, householdsError: null, latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
   // a household scheduled for deletion is read-only for everyone (0.25.0); so is an offline copy
   canEdit: () => { const s = get(); return (s.mode === 'demo' || (['owner', 'editor'].includes(s.role) && !s.readOnly)) && !s.household?.deletion_scheduled_for && !s.offlineAt },
@@ -250,37 +255,45 @@ export const useStore = create<State>((set, get) => ({
     return plan.moves.length
   },
   async autoCategorize(quiet) {
-    // never while duplicates are being merged: a merge gives the kept row its category, and the two writes must not race
-    if (categorizing || deduping || !get().canEdit() || !get().repo) return 0
+    if (categorizeWaiting || !get().canEdit() || !get().repo) return 0
+    if (get().settings().autoCategorize === false) return 0
+    categorizeWaiting = true
+    return inTurn(async () => {
+    categorizeWaiting = false
+    if (!get().canEdit() || !get().repo) return 0
     const s = get().settings(); if (s.autoCategorize === false) return 0
-    categorizing = true
-    try {
+    {
       const d = get().data; const repo = need(get); let n = 0
       for (const t of arrivals(d)) {
         const sg = suggest(d, s, t); if (sg.confidence !== 'high' || !sg.category_id || !d.categories.some(c => c.id === sg.category_id && !c.archived)) continue
         // the category only: a rule's other effects (a rename, tags, a goal link) stay with Auto-categorize, which also records goal contributions
         // each row is shown as soon as it is saved, and only its category changes — an edit made meanwhile is not overwritten
-        // look again just before writing: if a merge started, or the row got a category meanwhile (a merge gives the kept row one), leave it alone
-        if (deduping) break; const now = get().data.transactions.find(x => x.id === t.id); if (!now || now.category_id) continue
+        // look again just before writing: a row that got a category meanwhile (someone filed it by hand) is left alone
+        const now = get().data.transactions.find(x => x.id === t.id); if (!now || now.category_id) continue
         const cid = sg.category_id; await repo.update('transactions', t.id, { category_id: cid }); n++
         set(st => ({ data: { ...st.data, transactions: st.data.transactions.map(x => x.id === t.id ? { ...x, category_id: cid } : x) } }))
       }
       if (!n) return 0
       if (!quiet) get().toast(`${n} new transaction${n === 1 ? '' : 's'} categorized`)
       return n
-    } finally { categorizing = false }
+    }
+    })
   },
   async autoDedupe(quiet) {
-    if (deduping || !get().canEdit() || !get().repo) return 0
-    deduping = true
-    try {
+    if (dedupeWaiting || !get().canEdit() || !get().repo) return 0
+    dedupeWaiting = true
+    return inTurn(async () => {
+    dedupeWaiting = false
+    if (!get().canEdit() || !get().repo) return 0
+    {
       const plan = planDedupe(get().data.transactions as unknown as DTxn[], get().data.accounts, get().household?.settings?.dedupe); let n = 0
       for (const g of plan.auto) { await get().mergeDuplicates(g.keeper, g.dups, g.patch as Partial<Transaction>); n += g.dups.length }
       // every automatic merge leaves a line in the change history (0.27.0), so it can be found and undone later
       if (n) { const byId = new Map(get().data.duplicates.map(t => [t.id, t])); const what = plan.auto.flatMap(g => g.dups.map(d => { const t = byId.get(d); return t ? `${t.date} ${t.payee || ''} ${Number(t.amount).toFixed(2)}` : d })).slice(0, 12).join('; '); void get().repo?.logAudit('match', `Merged ${n} duplicate transaction${n === 1 ? '' : 's'}: ${what}${plan.auto.length > 12 ? ' …' : ''}`, { groups: plan.auto.map(g => ({ keeper: g.keeper, dups: g.dups, reason: g.reason })) }).catch(() => {}) }
       if (n && !quiet) get().toast(`Merged ${n} duplicate transaction${n === 1 ? '' : 's'} — one copy kept (the bank's when there is one). Review or undo in Transactions → Duplicates.`)
       return n
-    } finally { deduping = false }
+    }
+    })
   },
   // 0.25.1: a value the database would refuse (an empty date, a negative amount — see lib/validate.ts) is refused here, before the
   // optimistic copy shows it: an empty transaction date used to reach every page and take the whole app down. A save that fails
