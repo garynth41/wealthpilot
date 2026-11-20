@@ -24,7 +24,7 @@ import { round2 } from './money'
 export interface ContextOptions { /** include individual transactions (the Settings switch) */ detail?: boolean; /** people's names to take out wherever they appear: members, the signed-in person */ names?: string[]; /** the household's own name: its distinctive words are taken out too */ places?: string[]; asOf?: string }
 export const DETAIL_DAYS = 90, DETAIL_MAX = 300
 
-const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u
+const UNSPACED = /[\p{Script=Han}\p{Script=Hangul}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /** A function that removes people's names (whole words, any case), email addresses and account-like numbers from a label.
  *  `names` are people: every word of two letters or more is taken out, even one that is also an everyday word (a member called An).
@@ -33,7 +33,7 @@ export function nameScrubber(names: string[] = [], places: string[] = []) {
   // any script (José, Émile, Мария, 李明), in one spelling: a letter with its accent typed as one character or as two is the same letter
   const split = (list: string[]) => list.flatMap(n => String(n || '').normalize('NFC').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2 || !/\p{Script=Latin}/u.test(w))   // one character is a name too (李, 김) — only a lone Latin letter is not
   const all = [...new Set([...split(names), ...split(places).filter(w => !COMMON.has(w))])].sort((a, b) => b.length - a.length)
-  // scripts written without spaces between words (Chinese, Japanese, Thai…): a name there has no word edges to look for, and can be a
+  // scripts where a name runs straight into what follows — no spaces (Chinese, Japanese, Thai…) or an attached particle (Korean: 김의): a name there has no word edges to look for, and can be a
   // single character (李), so it is taken out wherever it appears
   const words = all.filter(w => !UNSPACED.test(w)), run = all.filter(w => UNSPACED.test(w))
   const reRun = run.length ? new RegExp(run.map(esc).join('|'), 'gu') : null
