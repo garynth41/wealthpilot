@@ -28,12 +28,22 @@ for (const W of [1400, 390]) {
     }
     const runaway = sizes.filter(c => c.h > 1300 && !/Planned vs spent/.test(c.name))
     ok(sizes.length > 20 && !runaway.length, `${W}: ${sizes.length} charts, none taller than 1300px ${runaway.map(c => c.path + ' ' + c.name + ' ' + c.h).join(', ')}`)
-    const hbar = /Income by source|Debt balances|Goal progress|Balances & limits|Tax by type|merchant|Top payees|Planned vs spent/
+    const hbar = /Income by source|Debt balances|Goal progress|Balances & limits|Tax by type|merchant|Top payees|Planned vs spent/, vh = W === 390 ? 844 : 950
+    // 0.29.3 (Gary, Nov 19: "too large… proportional to the device"): sized to the screen — no chart taller than half of it (on a phone 62%,
+    // where a chart with many categories needs its legend line by line), long lists 90%
+    const share = W === 390 ? 0.62 : 0.5, big = sizes.filter(c => c.h > (hbar.test(c.name) ? 0.9 : share) * vh)
+    ok(!big.length, `${W}: every chart fits the screen — none taller than ${Math.round(share * 100)}% of it (long lists 90%) ${big.map(c => `${c.path} ${c.name} ${c.h}px`).join(', ')}`)
     if (W === 1400) {
-      const flat = sizes.filter(c => !hbar.test(c.name) && c.w >= 600 && c.h < c.w * 0.3)
-      ok(!flat.length, `${W}: no chart is a thin strip — every wide chart is at least 0.3 × its width tall ${flat.map(c => `${c.path} ${c.name} ${c.w}×${c.h}`).join(', ')}`)
       const donut = sizes.find(c => c.name === 'Spending by group'), bars = sizes.find(c => c.path === '/reports' && c.name === 'Spending by category')
-      ok(donut && donut.h >= 300 && bars && bars.h >= 380, `${W}: Reports — spending bars ${bars?.h}px and the donut ${donut?.h}px tall`)
+      ok(donut && donut.h >= 220 && bars && bars.h >= 260, `${W}: Reports — spending bars ${bars?.h}px and the donut ${donut?.h}px tall, readable without opening them`)
+      // a chart follows its card's width: Plotly measures once, so before 0.29.3 a card that narrowed after the draw left the chart spilling out
+      // every stage must actually measure the Income chart: no chart, or one not drawn yet, is a failure, not "no spill"
+      const spill = () => p.evaluate(() => { const els = [...document.querySelectorAll('.chart')]; if (!els.some(e => e.getAttribute('aria-label') === 'Income received by month')) return ['no Income chart']; return els.map(e => { const s = e.querySelector('.main-svg')?.getBoundingClientRect(), c = e.closest('.card')?.getBoundingClientRect(), r = e.getBoundingClientRect(); if (!s || !c || s.width <= 0 || s.height <= 0) return 'not drawn'; return Math.max(Math.round(s.width - r.width), Math.round(s.right - c.right)) }).filter(x => typeof x === 'string' || x > 1) })
+      await p.goto('http://localhost:4173/#/income'); await p.waitForTimeout(1300); const before = await spill()
+      await p.locator('button[aria-label="Collapse menu"], button[aria-label="Expand menu"]').first().click(); await p.waitForTimeout(900); const toggled = await spill()
+      await p.setViewportSize({ width: 1100, height: vh }); await p.waitForTimeout(900); const narrow = await spill()
+      await p.locator('button[aria-label="Collapse menu"], button[aria-label="Expand menu"]').first().click(); await p.waitForTimeout(600); await p.setViewportSize({ width: W, height: vh }); await p.waitForTimeout(900)
+      ok(!before.length && !toggled.length && !narrow.length, `${W}: Income charts stay inside their cards — drawn, after the sidebar toggles, and in a narrower window (${[before, toggled, narrow].map(x => x.length ? 'spill ' + x.join('/') : 'ok').join(', ')})`)
     }
     await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(1300); const h1 = await p.evaluate(() => document.querySelector('.chart')?.getBoundingClientRect().height)
     await p.setViewportSize({ width: W + 40, height: W === 390 ? 844 : 950 }); await p.waitForTimeout(700); await p.setViewportSize({ width: W, height: W === 390 ? 844 : 950 }); await p.waitForTimeout(900)
