@@ -44,10 +44,10 @@ async function standIn(route) {
   if (p === '/auth/v1/token') { const u = [TESTER, OPERATOR].find(x => x.email === body.email); return u ? json(session(u)) : json({ code: 'invalid_credentials', error_code: 'invalid_credentials', msg: 'Invalid login credentials' }, 400) }
   if (p === '/auth/v1/user') return who ? json(userObj(who)) : json({ code: 'bad_jwt', msg: 'not signed in' }, 401)
   if (p === '/auth/v1/logout') return route.fulfill({ status: 204, headers: cors })
-  // Ask Cresari (0.32.0): the tester has access (20 a day, 18 used); the function answers the first question and refuses the next at the limit
-  if (p === '/functions/v1/ask-cresari') { asks.push(body); return asks.length === 1 ? json({ answer: 'You spent **$412** on dining out.\n\n1. Set a weekly limit\n2. Review it on Sunday', limit: 20, used: 19 }) : json({ error: 'That is your 20 questions for today — more are available tomorrow', limit: 20, used: 20 }, 429) }
+  // Ask Cresari (0.32.0): the tester has access (20 a day, 16 used); the function answers three questions and refuses the fourth at the limit
+  if (p === '/functions/v1/ask-cresari') { asks.push(body); return asks.length <= 3 ? json({ answer: 'You spent **$412** on dining out.\n\n1. Set a weekly limit\n2. Review it on Sunday', limit: 20, used: 16 + asks.length }) : json({ error: 'That is your 20 questions for today — more are available tomorrow', limit: 20, used: 20 }, 429) }
   if (p.startsWith('/auth/v1/') || p.startsWith('/functions/v1/')) return json({})
-  if (p === '/rest/v1/rpc/ai_status') return json(who?.id === TESTER.id ? { allowed: true, limit: 20, used: 18 } : { allowed: who?.id === OPERATOR.id, limit: 20, used: 0 })
+  if (p === '/rest/v1/rpc/ai_status') return json(who?.id === TESTER.id ? { allowed: true, limit: 20, used: 16 } : { allowed: who?.id === OPERATOR.id, limit: 20, used: 0 })
   if (p === '/rest/v1/rpc/ai_admin_overview') return who?.id === OPERATOR.id ? json({ access: 'testers', daily_limit: 20, global_daily: 500, model: 'claude-sonnet-5-5', used_24h: 19, used_30d: 140, tokens_30d: 512000, people: [{ user_id: TESTER.id, email: TESTER.email, daily_limit: null, added_at: '2026-11-20T00:00:00Z', used_24h: 19, used_30d: 60 }] }) : json({ code: '42501', message: 'operator only' }, 403)
   if (p === '/rest/v1/rpc/is_app_admin') { if (who?.id === OPERATOR.id) { await new Promise(r => setTimeout(r, OPERATOR_CHECK_MS)); return json(true) } return json(false) }
   if (p === '/rest/v1/rpc/feedback_inbox') return who?.id === OPERATOR.id ? json(body.p_before ? [] : [NOTE]) : json({ code: '42501', message: 'Only the app operator can open the feedback inbox' }, 403)
@@ -84,15 +84,29 @@ try {
   await one.locator('[data-testid=ask-btn]:visible, [data-testid=ask-icon]:visible').first().click(); const dlg = one.locator('.modal[role=dialog]'); await dlg.waitFor({ timeout: 5000 })
   ok(/not licensed financial/.test(await dlg.innerText()) && await dlg.locator('[data-ask=consent]').count() === 1 && await dlg.locator('textarea').count() === 0 && /Claude, made by Anthropic/.test(await dlg.locator('[data-ask=consent]').innerText()), 'before the first question the screen says it is guidance, names the AI service, and asks for agreement — no question box yet')
   await dlg.locator('[data-ask=consent] button').click(); await dlg.locator('textarea').waitFor({ timeout: 3000 })
-  ok(/2 of 20 questions left today/.test(await dlg.locator('[data-ask=left]').innerText()) && await dlg.locator('.chipbtn').count() >= 3, 'after agreeing: the question box, starter questions and what is left of today\'s limit')
+  ok(/4 of 20 questions left today/.test(await dlg.locator('[data-ask=left]').innerText()) && await dlg.locator('.chipbtn').count() >= 3, 'after agreeing: the question box, starter questions and what is left of today\'s limit')
   await dlg.locator('textarea').fill('How much do I spend on eating out?'); await dlg.locator('.ask-form button[type=submit]').click(); await dlg.locator('[data-ask=answer]').waitFor({ timeout: 8000 }).catch(() => {})
   const a1 = dlg.locator('[data-ask=answer]').first()
-  ok(await a1.locator('b').innerText().catch(() => '') === '$412' && await a1.locator('ol li').count() === 2 && !/\*\*/.test(await a1.innerText()) && /1 of 20/.test(await dlg.locator('[data-ask=left]').innerText()), 'the answer is shown with its bold figure and numbered steps, and the count goes down')
+  ok(await a1.locator('b').innerText().catch(() => '') === '$412' && await a1.locator('ol li').count() === 2 && !/\*\*/.test(await a1.innerText()) && /3 of 20/.test(await dlg.locator('[data-ask=left]').innerText()), 'the answer is shown with its bold figure and numbered steps, and the count goes down')
   const sentBody = asks[0] || {}, ctxSent = (() => { try { return JSON.parse(sentBody.context) } catch { return null } })()
   ok(sentBody.household_id === HH && sentBody.question === 'How much do I spend on eating out?' && sentBody.detail === false && ctxSent && Array.isArray(ctxSent.accounts) && ctxSent.transactions === undefined && !JSON.stringify(sentBody).includes('cresari.test') && !JSON.stringify(sentBody).includes('Test household'),
     'what went to the function: the question and the summary — no email address, no household name, no transactions unless switched on')
-  await dlg.locator('textarea').fill('And on groceries?'); await dlg.locator('.ask-form button[type=submit]').click(); await dlg.locator('.ask-err').waitFor({ timeout: 8000 }).catch(() => {})
-  ok(/20 questions for today/.test(await dlg.locator('.ask-err').innerText().catch(() => '')) && await dlg.locator('[data-ask=answer]').count() === 1 && /0 of 20/.test(await dlg.locator('[data-ask=left]').innerText()) && await dlg.locator('textarea').isDisabled() && (asks[1]?.history || []).length === 2,
+  // the transactions switch, switched off, starts the conversation over — the earlier answer is not sent along as history. On this screen:
+  await dlg.locator('[data-ask=detail]').check(); const hadAnswer = await dlg.locator('[data-ask=answer]').count()
+  await dlg.locator('[data-ask=detail]').uncheck(); await one.waitForTimeout(150)
+  const clearedHere = hadAnswer === 1 && await dlg.locator('[data-ask=answer]').count() === 0 && /started over/.test(await dlg.locator('.ask-sent').innerText())
+  await dlg.locator('textarea').fill('And on groceries?'); await dlg.locator('.ask-form button[type=submit]').click(); await dlg.locator('[data-ask=answer]').waitFor({ timeout: 8000 }).catch(() => {})
+  ok(clearedHere && asks.length === 2 && Array.isArray(asks[1].history) && asks[1].history.length === 0 && asks[1].detail === false, 'switching transactions off on the Ask screen starts the conversation over: the next question goes with no earlier turns')
+  // …and in Settings → This device
+  await dlg.getByRole('button', { name: 'Done' }).click(); await one.evaluate(() => { location.hash = '#/settings' })
+  const sw = one.locator('label:has-text("Ask Cresari — include my recent transactions") input'); await sw.waitFor({ timeout: 8000 }).catch(() => {})
+  await sw.check(); await sw.uncheck(); await one.waitForTimeout(150)
+  await one.locator('[data-testid=ask-btn]:visible, [data-testid=ask-icon]:visible').first().click(); await dlg.locator('textarea').waitFor({ timeout: 5000 }).catch(() => {})
+  const clearedThere = await dlg.locator('[data-ask=answer]').count() === 0
+  await dlg.locator('textarea').fill('What about fuel?'); await dlg.locator('.ask-form button[type=submit]').click(); await dlg.locator('[data-ask=answer]').waitFor({ timeout: 8000 }).catch(() => {})
+  ok(clearedThere && asks.length === 3 && Array.isArray(asks[2].history) && asks[2].history.length === 0, 'switching it off in Settings does the same: the conversation is gone when Ask is opened again, and the next question goes alone')
+  await dlg.locator('textarea').fill('And on rent?'); await dlg.locator('.ask-form button[type=submit]').click(); await dlg.locator('.ask-err').waitFor({ timeout: 8000 }).catch(() => {})
+  ok(/20 questions for today/.test(await dlg.locator('.ask-err').innerText().catch(() => '')) && await dlg.locator('[data-ask=answer]').count() === 1 && /0 of 20/.test(await dlg.locator('[data-ask=left]').innerText()) && await dlg.locator('textarea').isDisabled() && (asks[3]?.history || []).length === 2,
     'at the daily limit the reason is shown, the question is kept in the box, the earlier answer stays, and the conversation so far was sent along')
   await one.screenshot({ path: 'e2e/shots/ask_live.png' })
   await dlg.locator('button', { hasText: 'Done' }).click(); await one.waitForTimeout(200)
