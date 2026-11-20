@@ -51,7 +51,7 @@ function accountPhrases(accounts: Data['accounts']): Array<[RegExp, string]> {
   for (const a of accounts) {
     const kind = String(ACCOUNT_KIND_LABEL[a.kind] || a.kind || 'account').toLowerCase(); const bank = new Set(words(a.institution || ''))
     const full = words(a.name || ''), bare = full.filter(w => !bank.has(w))
-    for (const w of [full, bare]) if (w.length && w.some(x => !ACCOUNT_WORDS.has(x) && !bank.has(x) && !/^\d+$/.test(x))) out.set(w.join(' '), kind)
+    for (const w of [full, bare]) if (w.length && w.some(x => !ACCOUNT_WORDS.has(x) && !bank.has(x))) out.set(w.join(' '), kind)
   }
   return [...out.entries()].sort((a, b) => b[0].length - a[0].length).map(([p, kind]) => [new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])${p.split(' ').map(esc).join("[^\\p{L}\\p{M}\\p{N}'’]+")}(?![\\p{L}\\p{M}\\p{N}])`, 'giu'), kind] as [RegExp, string])
 }
