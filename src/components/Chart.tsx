@@ -19,7 +19,7 @@ export function base(): Layout { const c = C(); return { paper_bgcolor: 'rgba(0,
 // How tall a chart is: sized to its card AND to the screen (0.29.3 — Gary, Nov 19: 0.29.2's charts were "too large… make them proportional
 // to the device"). Lines and upright bars: about 0.27 × width + 50, never more than 36% of the window's height. Donuts: about
 // 0.62 × width + 20, never more than 38% of the window (and 360 px), with the legend beside them from 400 px wide. Horizontal bars size by their rows (26 px each), never more than
-// 85% of the window. A chart's own height (its `height`) stays the minimum, as before 0.29.2.
+// 85% of the window — unless that would make a row thinner than 20 px (a very long list runs longer instead). A chart's own height (its `height`) stays the minimum, as before 0.29.2.
 // Every draw also gives Plotly the card's current width: Plotly measures a chart once, so a card that narrowed later (the sidebar
 // opening or closing, the window or a scrollbar changing) left the chart its old width, spilling past the card (Gary, Nov 19).
 // Category labels are measured at 0.62 em a character (wide enough for the monospaced looks); labels that are wrapped stay level.
@@ -36,7 +36,7 @@ function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean, fi
   // layout.datarevision each time to force the recalculation (0.20.0).
   const layout = JSON.parse(JSON.stringify(layout0)) as Layout
   const W = Math.max(260, el.clientWidth || 600); const L: Layout = { ...base(), ...layout, xaxis: { ...base().xaxis, ...(layout.xaxis || {}) }, yaxis: { ...base().yaxis, ...(layout.yaxis || {}) } }
-  if (el.clientWidth > 0) L.width = el.clientWidth
+  if (!big && el.clientWidth > 0) L.width = el.clientWidth   // inline only: the expanded view resizes itself (an explicit width would stop it)
   if (!big && !fit) L.height = Math.max((L.height as number) || 0, readableHeight(W, data))
   if (big) { L.font = { ...L.font, size: 15 }; (L.xaxis as Record<string, unknown>).tickfont = { size: 14.5 }; (L.yaxis as Record<string, unknown>).tickfont = { size: 14.5 }; L.legend = { ...L.legend, font: { size: 14.5 } } }
   let d = data.map(t => ({ ...t }))
@@ -59,7 +59,7 @@ function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean, fi
   const money = (ax: Record<string, unknown>, vals: number[]) => { if (ax.tickprefix === '$' && !ax.tickformat) { const m = Math.max(0, ...vals.map(Math.abs)); ax.tickformat = m >= 10000 ? '$~s' : '$,.0f'; delete ax.tickprefix } }
   money(L.yaxis as Record<string, unknown>, d.flatMap(t => (t.orientation === 'h' ? [] : (t.y as number[]) || []).filter(v => typeof v === 'number'))); money(L.xaxis as Record<string, unknown>, d.flatMap(t => (t.orientation === 'h' ? (t.x as number[]) || [] : []).filter(v => typeof v === 'number')))
   const hb = d.filter(t => t.type === 'bar' && t.orientation === 'h' && Array.isArray(t.y))
-  if (hb.length) { const ys = [...new Set(hb.flatMap(t => t.y as string[]))]; if (ys.every(v => typeof v === 'string')) { const n = big ? 40 : W < 520 ? 18 : 28; let lines = 1; d = d.map(t => t.type === 'bar' && t.orientation === 'h' ? { ...t, y: (t.y as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }), customdata: t.customdata || (t.y as string[]) } : t); const row = (big ? 34 : 26) + (lines - 1) * 15; L.height = Math.max((L.height as number) || 0, 70 + ys.length * row + (L.showlegend ? 30 : 0), big ? 0 : 220); if (!big) L.height = Math.min(L.height as number, Math.max(320, Math.round(screenH() * 0.85))) } }
+  if (hb.length) { const ys = [...new Set(hb.flatMap(t => t.y as string[]))]; if (ys.every(v => typeof v === 'string')) { const n = big ? 40 : W < 520 ? 18 : 28; let lines = 1; d = d.map(t => t.type === 'bar' && t.orientation === 'h' ? { ...t, y: (t.y as string[]).map(v => { const w = wrap(v, n); lines = Math.max(lines, w.split('<br>').length); return w }), customdata: t.customdata || (t.y as string[]) } : t); const row = (big ? 34 : 26) + (lines - 1) * 15; L.height = Math.max((L.height as number) || 0, 70 + ys.length * row + (L.showlegend ? 30 : 0), big ? 0 : 220); if (!big) L.height = Math.min(L.height as number, Math.max(320, Math.round(screenH() * 0.85), 70 + ys.length * (20 + (lines - 1) * 12) + (L.showlegend ? 30 : 0))) } }
   const vx = d.filter(t => ((t.type === 'bar' && t.orientation !== 'h') || t.type === 'scatter') && Array.isArray(t.x))
   if (vx.length) { const xs = [...new Set(vx.flatMap(t => t.x as unknown[]))]; const cat = xs.length && xs.every(v => typeof v === 'string' && !/^\d{4}-\d{2}/.test(v as string)) && (L.xaxis as Record<string, unknown>).type !== 'date'
     if (cat) { const fs = big ? 14.5 : isMobile() ? 12 : 13, per = (W - 90) / Math.max(1, xs.length), chars = Math.max(6, Math.floor(per / (fs * 0.62))), longest = Math.max(...xs.map(x => String(x).length))

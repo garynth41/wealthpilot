@@ -37,7 +37,8 @@ for (const W of [1400, 390]) {
       const donut = sizes.find(c => c.name === 'Spending by group'), bars = sizes.find(c => c.path === '/reports' && c.name === 'Spending by category')
       ok(donut && donut.h >= 220 && bars && bars.h >= 260, `${W}: Reports — spending bars ${bars?.h}px and the donut ${donut?.h}px tall, readable without opening them`)
       // a chart follows its card's width: Plotly measures once, so before 0.29.3 a card that narrowed after the draw left the chart spilling out
-      const spill = () => p.evaluate(() => [...document.querySelectorAll('.chart')].map(e => { const s = e.querySelector('.main-svg')?.getBoundingClientRect(), c = e.closest('.card')?.getBoundingClientRect(), r = e.getBoundingClientRect(); return s && c ? Math.max(Math.round(s.width - r.width), Math.round(s.right - c.right)) : 0 }).filter(x => x > 1))
+      // every stage must actually measure the Income chart: no chart, or one not drawn yet, is a failure, not "no spill"
+      const spill = () => p.evaluate(() => { const els = [...document.querySelectorAll('.chart')]; if (!els.some(e => e.getAttribute('aria-label') === 'Income received by month')) return ['no Income chart']; return els.map(e => { const s = e.querySelector('.main-svg')?.getBoundingClientRect(), c = e.closest('.card')?.getBoundingClientRect(), r = e.getBoundingClientRect(); if (!s || !c || s.width <= 0 || s.height <= 0) return 'not drawn'; return Math.max(Math.round(s.width - r.width), Math.round(s.right - c.right)) }).filter(x => typeof x === 'string' || x > 1) })
       await p.goto('http://localhost:4173/#/income'); await p.waitForTimeout(1300); const before = await spill()
       await p.locator('button[aria-label="Collapse menu"], button[aria-label="Expand menu"]').first().click(); await p.waitForTimeout(900); const toggled = await spill()
       await p.setViewportSize({ width: 1100, height: vh }); await p.waitForTimeout(900); const narrow = await spill()
