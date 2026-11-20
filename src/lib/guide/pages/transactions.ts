@@ -5,7 +5,7 @@ export const transactions: GuidePage = {
   summary: 'Every dollar in and out, one row per transaction. Amounts are always positive; the type — expense, income or transfer — gives the direction. Edit any cell in place, filter and save views, split, attach receipts, talk a charge over with your household, and undo mistakes.',
   start: [
     'Bring transactions in from the bank feed, a statement file or email on Cash & Account Operations, or add them here with + Add transaction (or press N).',
-    'Click Uncategorized under Type and give each one a category, or click Auto-categorize at the top to fill in what your payee rules and history can.',
+    'Click Categorize them on the Uncategorized tile to go through everything without a category, merchant by merchant, with a suggestion on each — or Auto-categorize to file everything Cresari is sure of in one go.',
     'Use Range, Type, Account and Tag to narrow the list, and ★ Save this view to keep a filter you use often.',
     'If a duplicates bar appears above the ledger, click Review and decide each pair.',
   ],
@@ -15,7 +15,8 @@ export const transactions: GuidePage = {
     { term: 'Transfers & payments', text: 'Money moved between your own accounts in the rows shown: to savings, and card and loan payments.' },
     { term: 'Net', text: 'Income minus spending minus transfers and payments, for the rows shown. Green at zero or above, red below.' },
     { term: 'Uncategorized', text: 'How many expenses and income transactions in the whole ledger (not just the rows shown) have no category. They count against no budget line.' },
-    { term: 'Auto-categorize', text: 'Fills in a category on uncategorized transactions from, in order: your payee rules, payees remembered from email, and the category you have used for the same merchant at least twice before. A rule can also add its tags or goal link to transactions that already have a category, and to transfers. A message says how many changed, or that nothing matched.' },
+    { term: 'Categorize them', text: 'Opens Review uncategorized: every purchase and deposit without a category, grouped by merchant with the most money first. Each group shows a suggested category marked Sure (one of your rules, how you filed that merchant before, or a merchant in the built-in list) or Likely (a good guess that wants your yes); groups with no suggestion say Your pick. Accept files every transaction in the group; pick another category first if the suggestion is wrong. Accept all sure ones files every Sure group at once. Each choice is remembered as a payee rule unless rule learning is off, so that merchant files itself from then on. Tap a merchant to see its transactions. The built-in list works on your device — nothing is sent anywhere.' },
+    { term: 'Auto-categorize', text: 'Fills in a category on uncategorized transactions from, in order: your payee rules, payees remembered from email, the category you have used for the same merchant at least twice before (when that is how you nearly always filed it), and the built-in list of well-known merchants (only the ones it is sure of). Anything less certain is left for Categorize them. A rule can also add its tags or goal link to transactions that already have a category, and to transfers. A message says how many changed, or that nothing matched.' },
   ],
   cards: [
     {

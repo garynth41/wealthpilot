@@ -86,6 +86,45 @@ for (const W of [1400, 390]) {
       ok(hit && /days · last 90 days$/.test(await dlg.locator('h2').innerText()) && +(await dlg.locator('[data-dd=count]').innerText()) > 0, `${W}: clicking a bar on a chart opens the transactions behind it (${hit ? await dlg.locator('h2').innerText() : 'no panel'})`)
       if (hit) await dlg.locator('button', { hasText: 'Done' }).click() }
   }
+  // 0.31.0: Review uncategorized — rows that arrive without a category are grouped by merchant with an answer on each; Accept files them and is remembered
+  { const before = await p.evaluate(() => localStorage.getItem('wealthpilot.demo'))
+    const added = await p.evaluate(() => { const K = 'wealthpilot.demo', j = JSON.parse(localStorage.getItem(K) || 'null'); if (!j) return 0
+      const base = j.data.transactions.find(t => t.kind === 'expense' && t.category_id), old = '2026-01-01T00:00:00.000Z', n = new Date(), day = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+      // edited rows (updated later than created), so nothing is filed on arrival and the screen has the whole set to show
+      const mk = (id, payee, amount) => ({ ...base, id, ref: null, payee, amount, category_id: null, memo: null, tags: [], date: day, source: 'import', external_id: 'e2e:' + id, created_at: old, updated_at: '2026-01-02T00:00:00.000Z' })
+      const rows = [mk('e2e-r1', 'WHOLEFDS MKT #10230 COLUMBUS OH', 86.41), mk('e2e-r2', 'WHOLEFDS MKT #10230 COLUMBUS OH', 52.08), mk('e2e-r3', 'NETFLIX.COM', 15.49), mk('e2e-r4', 'SQ *BLUE DOOR CAFE', 27.6), mk('e2e-r5', 'SAMS CLUB #6321', 143.27), mk('e2e-r6', 'ZELLE TO J MARTINEZ', 60)]
+      j.data.transactions.push(...rows); localStorage.setItem(K, JSON.stringify(j)); return rows.length })
+    await p.reload(); await p.waitForTimeout(1200); if (await p.locator('text=Open the offline demo').count()) { await p.click('text=Open the offline demo'); await p.waitForTimeout(1200) }
+    await p.goto('http://localhost:4173/#/transactions?review=1'); const dlg = p.locator('.modal[role=dialog]'); await dlg.waitFor({ timeout: 6000 })
+    const num = async k => +(await dlg.locator(`[data-ru=${k}]`).innerText()).replace(/\D/g, '')
+    const left0 = await num('left'), sure0 = await num('sure')
+    ok(added === 6 && (await dlg.locator('h2').innerText()) === 'Review uncategorized' && left0 === 6 && sure0 === 3 && await dlg.locator('.ru-item').count() === 5, `${W}: ?review=1 opens Review uncategorized — ${left0} to file in ${await dlg.locator('.ru-item').count()} merchants, ${sure0} the app is sure of`)
+    ok(await dlg.evaluate(e => e.scrollWidth <= e.clientWidth + 1), `${W}: the review screen fits the screen`)
+    const item = n => dlg.locator('.ru-item', { hasText: n }).first(), chosen = async n => await item(n).locator('select').evaluate(el => el.options[el.selectedIndex].text)
+    ok(/Groceries/.test(await chosen('WHOLEFDS')) && /sure/i.test(await item('WHOLEFDS').innerText()) && /Subscriptions/.test(await chosen('NETFLIX')) && /likely/i.test(await item('SAMS CLUB').innerText()) && /likely/i.test(await item('BLUE DOOR').innerText()) && /your pick/i.test(await item('ZELLE').innerText()) && await item('ZELLE').locator('button', { hasText: 'Accept' }).isDisabled(),
+      `${W}: known merchants are Sure (Whole Foods → Groceries, Netflix → Subscriptions), a warehouse club and a café are Likely, a payment to a person is left to you`)
+    await p.screenshot({ path: `e2e/shots/review_${W}.png` })
+    await item('WHOLEFDS').locator('.ru-name').click(); ok(await item('WHOLEFDS').locator('.ru-tx tbody tr').count() === 2, `${W}: tapping a merchant lists its transactions`)
+    // a likely one: accept it as suggested
+    await item('SAMS CLUB').locator('button', { hasText: 'Accept' }).click(); await p.waitForTimeout(800)
+    ok(await num('left') === left0 - 1 && await item('SAMS CLUB').count() === 0, `${W}: Accept files the group — ${left0} → ${left0 - 1} left`)
+    // every sure one at once
+    await dlg.locator('button', { hasText: /^Accept all 3 sure ones$/ }).click(); await p.waitForTimeout(1200)
+    ok(await num('left') === 2 && await num('sure') === 0 && await dlg.locator('button', { hasText: /^Accept all/ }).count() === 0, `${W}: "Accept all sure ones" files the three confident ones; two wait for a pick`)
+    // your own pick for the one with no answer
+    const z = item('ZELLE'), pickId = await z.locator('select').evaluate(el => [...el.options].find(o => /Gifts/.test(o.text))?.value); await z.locator('select').selectOption(pickId); await z.locator('button', { hasText: 'Accept' }).click(); await p.waitForTimeout(800)
+    ok(await num('left') === 1, `${W}: picking a category yourself and accepting files it too`)
+    await dlg.locator('button', { hasText: 'Done' }).click(); await p.waitForTimeout(300)
+    // remembered: the same merchant, typed into a new transaction, files itself — and so does one only the built-in list knows
+    await p.goto('http://localhost:4173/#/transactions?add=1'); await p.waitForTimeout(900); const add = p.locator('.modal[role=dialog]'); await add.waitFor({ timeout: 5000 })
+    const pf = add.getByLabel(/^Payee/).first(), catSel = add.getByLabel(/^Category/).first()
+    await pf.fill('TRADER JOES #552'); await pf.blur(); await p.waitForTimeout(400); const c1 = await catSel.evaluate(el => el.options[el.selectedIndex].text)
+    await pf.fill('COSTCO WHSE #0344'); await pf.blur(); await p.waitForTimeout(400)
+    ok(/Groceries/.test(c1), `${W}: Add transaction — a merchant from the built-in list fills in its category (Trader Joe's → ${c1})`)
+    await p.keyboard.press('Escape'); await p.waitForTimeout(300); if (await add.count()) await add.locator('button', { hasText: /Cancel|Close/ }).first().click().catch(() => {})
+    // put the demo back as it was, so the rest of the suite sees the household it expects
+    await p.evaluate(v => localStorage.setItem('wealthpilot.demo', v), before); await p.reload(); await p.waitForTimeout(1200); if (await p.locator('text=Open the offline demo').count()) { await p.click('text=Open the offline demo'); await p.waitForTimeout(1200) }
+  }
   if (W === 390) {
     // 0.25.1: on a phone every value and button of a hand-written table is on screen; the menu is out of reach until opened
     await p.goto('http://localhost:4173/#/bills'); await p.waitForTimeout(900)

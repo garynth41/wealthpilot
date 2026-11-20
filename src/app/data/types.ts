@@ -186,6 +186,7 @@ export interface Settings {
   retirement?: RetirementInputs     // planner inputs (see lib/retirement.ts)
   tax?: Partial<import('../../lib/tax').TaxProfile>   // tax planner profile and manual items (see lib/tax.ts)
   learnRules?: boolean              // create a rule when a category is set by hand (default true)
+  autoCategorize?: boolean          // 0.31.0: file new transactions the app is sure of as they arrive (default true)
   dedupe?: { auto?: 'likely' | 'certain' | 'off'; transfers?: boolean; checks?: boolean; near?: boolean }   // 0.27.0: what the duplicate engine may do on its own (lib/dedupe.ts DedupeOptions)
   savedViews?: SavedView[]          // Transactions filter presets (0.19.0)
   notify?: NotifyPrefs              // alert channels and thresholds (0.19.0, see lib/notify.ts)

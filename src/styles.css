@@ -682,3 +682,12 @@ button.dd-row{cursor:pointer} button.dd-row:hover{background:var(--surface-2)} .
 .dd-move{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px} .dd-move .inp{width:auto;min-width:200px;flex:0 1 280px} .dd-all{display:inline-flex;gap:6px;align-items:center;font-size:13.5px}
 .dd-tbl{max-height:min(46vh,480px)} .dd-tbl select{max-width:230px}
 @media (max-width:900px){ .dd-tbl th:nth-last-child(2),.dd-tbl td:nth-last-child(2){display:none} .dd-tbl select{max-width:150px} }
+/* Review uncategorized (0.31.0) */
+.ru-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:4px 0 8px}
+.ru-list{list-style:none;margin:10px 0 0;padding:0} .ru-item{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)} .ru-item + .ru-item{margin-top:6px}
+.ru-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+.ru-name{flex:1 1 220px;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;border:0;background:none;padding:2px 0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.ru-name b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .ru-name:hover b{text-decoration:underline} .ru-sub{font-size:12.5px;color:var(--ink-3)}
+.ru-pick{flex:1 1 300px;display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0} .ru-pick .inp{flex:1 1 160px;min-width:0;max-width:280px;width:auto}
+.ru-why{font-size:12.5px;color:var(--ink-3);margin-top:2px} .ru-tx{margin-top:8px}
+@media (max-width:520px){.ru-pick{justify-content:flex-start} .ru-pick .inp{max-width:none}}

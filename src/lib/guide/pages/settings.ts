@@ -157,6 +157,7 @@ export const settings: GuidePage = {
         { term: 'Apply to N transactions', text: 'Fills in only what is missing: uncategorized transactions, plus tags or goals a rule adds. Nothing already categorized changes.' },
         { term: 'Re-run on all matches', text: 'Applies every rule to every matching transaction, replacing the categories, names, tags and goals already there. It asks first, and one undo puts everything back.' },
         { term: 'Learn a rule whenever I set a category by hand', text: 'When on, setting a transaction\'s category makes or updates a learned rule for that merchant.' },
+        { term: 'Categorize new transactions on their own when Cresari is sure', text: 'When on, a new transaction from the bank feed, a statement file or email is filed without asking when one of your rules matches, when you have filed that merchant the same way before, or when it is a merchant in the built-in list. Anything less certain waits on Transactions → Uncategorized → Categorize them. A transaction you have edited is never changed.' },
         { term: 'Remembered email payees', text: 'The count beside the switch: payees remembered from email review, which are used after your rules.' },
       ],
       tips: [
