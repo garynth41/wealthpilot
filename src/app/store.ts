@@ -260,6 +260,8 @@ export const useStore = create<State>((set, get) => ({
         const sg = suggest(d, s, t); if (sg.confidence !== 'high' || !sg.category_id || !d.categories.some(c => c.id === sg.category_id && !c.archived)) continue
         // the category only: a rule's other effects (a rename, tags, a goal link) stay with Auto-categorize, which also records goal contributions
         // each row is shown as soon as it is saved, and only its category changes — an edit made meanwhile is not overwritten
+        // look again just before writing: if a merge started, or the row got a category meanwhile (a merge gives the kept row one), leave it alone
+        if (deduping) break; const now = get().data.transactions.find(x => x.id === t.id); if (!now || now.category_id) continue
         const cid = sg.category_id; await repo.update('transactions', t.id, { category_id: cid }); n++
         set(st => ({ data: { ...st.data, transactions: st.data.transactions.map(x => x.id === t.id ? { ...x, category_id: cid } : x) } }))
       }

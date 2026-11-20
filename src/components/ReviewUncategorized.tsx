@@ -11,6 +11,8 @@ import { fm2, fmtMoney } from '../lib/money'
 import { fmtD } from '../lib/dates'
 
 type Show = 'all' | 'sure' | 'likely' | 'none'
+/** One acceptance at a time across the whole app, also when the screen is closed and reopened while a save is still on its way. */
+let accepting = false
 const SHOWN = 60
 
 export function ReviewUncategorized() {
@@ -24,11 +26,12 @@ export function ReviewUncategorized() {
   const list = show === 'sure' ? sure : show === 'likely' ? likely : show === 'none' ? none : groups
   const learn = settings.learnRules !== false
   const file = (gs: ReviewGroup[], done: (n: number, learned: number) => string) => {
-    const ready = gs.map(g => ({ ...g, category_id: chosen(g) })).filter(g => g.category_id); if (!ready.length || busy) return
+    const ready = gs.map(g => ({ ...g, category_id: chosen(g) })).filter(g => g.category_id); if (!ready.length || busy || accepting) return
     // one acceptance at a time (two would each save rules from the same starting list and one would be lost), and the rules first:
     // if that save fails nothing has been filed, so the group is still here to try again
-    setBusy(true)
-    void guarded(async () => { try { const plan = acceptPlan(ready, useStore.getState().settings().rules || [], learn); if (plan.learned) await saveSettings({ rules: plan.rules }); for (const b of plan.byCat) await useStore.getState().bulkUpdate('transactions', b.ids, { category_id: b.category_id }); setPick({}) } finally { setBusy(false) } }, done(ready.reduce((k, g) => k + g.txns.length, 0), learn ? ready.filter(g => g.key !== 'unknown').length : 0))
+    setBusy(true); accepting = true; const free = () => { accepting = false; setBusy(false) }
+    // freed here as well as inside: when the app is too busy to start the write at all, the callback never runs
+    void Promise.resolve(guarded(async () => { try { const plan = acceptPlan(ready, useStore.getState().settings().rules || [], learn); if (plan.learned) await saveSettings({ rules: plan.rules }); for (const b of plan.byCat) await useStore.getState().bulkUpdate('transactions', b.ids, { category_id: b.category_id }); setPick({}) } finally { free() } }, done(ready.reduce((k, g) => k + g.txns.length, 0), learn ? ready.filter(g => g.key !== 'unknown').length : 0))).finally(free)
   }
   const n = (k: number, w = 'transaction') => `${k} ${w}${k === 1 ? '' : 's'}`
   const acceptOne = (g: ReviewGroup) => file([g], k => `${n(k)} filed under ${cat(chosen(g))?.name || 'the category'}${learn && g.key !== 'unknown' ? ' · remembered for next time' : ''}`)
