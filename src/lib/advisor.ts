@@ -31,7 +31,7 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
  *  `places` are the household's own name and its banks: everyday words in those ("The", "Family", "Home") are left alone. */
 export function nameScrubber(names: string[] = [], places: string[] = []) {
   // any script (José, Émile, Мария, 李明), in one spelling: a letter with its accent typed as one character or as two is the same letter
-  const split = (list: string[]) => list.flatMap(n => String(n || '').normalize('NFC').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2 || UNSPACED.test(w))
+  const split = (list: string[]) => list.flatMap(n => String(n || '').normalize('NFC').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2 || !/\p{Script=Latin}/u.test(w))   // one character is a name too (李, 김) — only a lone Latin letter is not
   const all = [...new Set([...split(names), ...split(places).filter(w => !COMMON.has(w))])].sort((a, b) => b.length - a.length)
   // scripts written without spaces between words (Chinese, Japanese, Thai…): a name there has no word edges to look for, and can be a
   // single character (李), so it is taken out wherever it appears
