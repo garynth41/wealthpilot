@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import { Btn, MBody, MFoot, MHead, Note, useModal } from './ui'
-import { drillLines, summarize, ledgerLink, lineIds, LINK_MAX, LEDGER_SET, type DrillFilter, type DrillLine } from '../lib/drill'
+import { drillLines, summarize, ledgerLink, type DrillFilter, type DrillLine } from '../lib/drill'
 import { learnRule, upsertRule } from '../lib/rules'
 import { fm2 as fmtMoney } from '../lib/money'   // to the cent: the panel's total must read exactly as the figure's own detail does
 import { fmtD, mShort } from '../lib/dates'
@@ -42,7 +42,7 @@ export function DrillDown({ title, filter, note }: DrillProps) {
   const moveChosen = () => { if (!moveTo || !chosen.length) return; const ids = chosen.map(l => l.txn.id), n = ids.length
     void guarded(async () => { await useStore.getState().bulkUpdate('transactions', ids, { category_id: moveTo }); const seen = new Set<string>(); for (const l of chosen) { const k = l.txn.kind + '|' + (l.txn.payee || ''); if (!l.txn.payee || seen.has(k)) continue; seen.add(k); await learn(l.txn.payee, l.txn.kind, moveTo) } setPicked(new Set()); setMoveTo('') }, `Moved ${n} transaction${n === 1 ? '' : 's'} to ${cat(moveTo)?.name || 'the category'}`) }
   // every transaction behind the figure goes to the ledger: a long set is handed over by name, never cut short
-  const openLedger = () => { const ids = lineIds(lines); if (ids.length > LINK_MAX) { try { sessionStorage.setItem(LEDGER_SET, JSON.stringify(ids)) } catch { /* private mode: the link then opens the ledger unfiltered */ } } location.hash = ledgerLink(lines); close() }
+  const openLedger = () => { let store: Storage | null = null; try { store = window.sessionStorage } catch { /* storage blocked: the link carries the ids */ } location.hash = ledgerLink(lines, store); close() }
   const bar = (v: number, max: number) => <span className="dd-bar" aria-hidden="true"><span style={{ width: `${max > 0 ? Math.max(2, Math.round(Math.abs(v) / max * 100)) : 0}%` }} /></span>
   const topM = whole.merchants.slice(0, 8), maxM = Math.max(0, ...topM.map(m => Math.abs(m.total))), maxMo = Math.max(0, ...s.months.map(m => Math.abs(m.total)))
   const second = filter.category === undefined && s.categories.length > 1 ? 'cats' : s.months.length > 1 ? 'months' : null

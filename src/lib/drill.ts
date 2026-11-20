@@ -107,5 +107,10 @@ export const lineIds = (lines: DrillLine[]) => [...new Set(lines.map(l => l.txn.
 /** A ledger link carries ids in the address up to this many; a longer set is handed over by name (see LEDGER_SET) so none is dropped. */
 export const LINK_MAX = 300
 export const LEDGER_SET = 'cresari.ledgerSet'
-/** The link that opens these transactions in the ledger. Above LINK_MAX the caller stores the ids under LEDGER_SET and the link names the set. */
-export const ledgerLink = (lines: DrillLine[]) => { const ids = lineIds(lines); return '#/transactions?ids=' + (ids.length > LINK_MAX ? '@set' : ids.join(',')) }
+/** The link that opens these transactions in the ledger. A long set is stored under LEDGER_SET and the link names it; if it cannot be
+ *  stored (private browsing, storage full) the link carries every id itself — longer, but never a different or partial set. */
+export function ledgerLink(lines: DrillLine[], store?: Pick<Storage, 'setItem'> | null): string {
+  const ids = lineIds(lines); const direct = '#/transactions?ids=' + ids.join(',')
+  if (ids.length <= LINK_MAX || !store) return direct
+  try { store.setItem(LEDGER_SET, JSON.stringify(ids)); return '#/transactions?ids=@set' } catch { return direct }
+}

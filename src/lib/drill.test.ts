@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest'
 import { demoSeed } from '../app/data/demoSeed'
 import { rangeStat, spentIn } from './budget'
 import { merchantAnalysis, merchantKey } from './intelligence'
-import { drillLines, summarize, ledgerLink, lineIds, incomeSource, LINK_MAX } from './drill'
+import { drillLines, summarize, ledgerLink, lineIds, incomeSource, LINK_MAX, LEDGER_SET } from './drill'
 import { buildReport } from './reports'
 import { SETTINGS_DEFAULTS } from '../app/data/types'
 import { round2 } from './money'
@@ -122,7 +122,10 @@ describe('income', () => {
 describe('the ledger link', () => {
   it('names every transaction, or hands a long set over whole', () => {
     const all = drillLines(data, { from: '2000-01-01', to: '2100-01-01' }); const many = Array.from({ length: LINK_MAX + 1 }, (_, i) => ({ ...all[0], txn: { ...all[0].txn, id: 'x' + i } }))
-    expect(lineIds(many).length).toBe(LINK_MAX + 1); expect(ledgerLink(many)).toBe('#/transactions?ids=@set')
+    const kept: Record<string, string> = {}; const ok = { setItem: (k: string, v: string) => { kept[k] = v } }, broken = { setItem: () => { throw new Error('quota') } }
+    expect(ledgerLink(many, ok)).toBe('#/transactions?ids=@set'); expect(JSON.parse(kept[LEDGER_SET])).toEqual(lineIds(many))
+    // storage refused or missing: the link carries every id itself rather than opening something else
+    for (const st of [broken, null]) expect(ledgerLink(many, st).split('ids=')[1].split(',')).toEqual(lineIds(many))
     expect(ledgerLink(many.slice(0, LINK_MAX)).split('ids=')[1].split(',').length).toBe(LINK_MAX)
   })
 })
