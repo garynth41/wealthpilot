@@ -62,6 +62,9 @@ describe('the server\'s side', () => {
     expect(scrub('ssn 123-45-6789, acct 000123456789, call (614) 555-0100 or 614-555-0100')).toBe('ssn [number], acct [number], call [number] or [number]')
     expect(scrub('{"netWorth":1250000,"income":5400.55,"date":"2026-11-20","apr":24.99}')).toBe('{"netWorth":1250000,"income":5400.55,"date":"2026-11-20","apr":24.99}')
   })
+  it('scrubbing a full-size summary takes milliseconds, whatever is in it', () => {
+    for (const ch of ['x', '1', 'a.', '@', 'a@']) { const big = ch.repeat(Math.floor(MAX_CONTEXT / ch.length)); const t0 = performance.now(); scrub(big); expect([ch, performance.now() - t0 < 400]).toEqual([ch, true]) }
+  })
   it('refuses an empty or oversized question and an oversized summary', () => {
     expect(prepare({ question: ' ' })).toHaveProperty('error'); expect(prepare({ question: 'x'.repeat(MAX_QUESTION + 1) })).toHaveProperty('error')
     expect(prepare({ question: 'How am I doing?', context: 'x'.repeat(MAX_CONTEXT + 1) })).toHaveProperty('error')

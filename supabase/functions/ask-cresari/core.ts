@@ -10,7 +10,8 @@ export interface AskBody { household_id?: string; question?: string; context?: s
 /** Take out what must never leave: email addresses, card / account / social-security / phone numbers. Amounts are left alone. */
 export function scrub(s: unknown): string {
   return String(s ?? '')
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]')
+    // bounded lengths: an unbounded match would be tried from every character of a long run and take seconds on a large summary
+    .replace(/[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}/g, '[email]')
     .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[number]')
     .replace(/\b(?:\d{4}[ -]){3}\d{1,4}\b/g, '[number]')
     .replace(/(?:\+?1[ .-]?)?\(?\b\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b/g, '[number]')
@@ -40,14 +41,16 @@ About the data
 
 /** Check and tidy what the app sent. Returns the reason it cannot be used, or the cleaned parts. */
 export function prepare(b: AskBody): { error: string } | { question: string; context: string; history: Turn[]; detail: boolean } {
+  // sizes first, so nothing oversized is ever worked on
+  if (String(b.question ?? '').length > MAX_QUESTION) return { error: `Keep the question under ${MAX_QUESTION} characters` }
+  if (String(b.context ?? '').length > MAX_CONTEXT) return { error: 'The household summary is too large to send — switch off "Include my recent transactions" and try again' }
   const question = scrub(b.question).trim()
   if (question.length < 2) return { error: 'Type a question first' }
-  if (question.length > MAX_QUESTION) return { error: `Keep the question under ${MAX_QUESTION} characters` }
   const context = scrub(b.context)
   if (context.length > MAX_CONTEXT) return { error: 'The household summary is too large to send — switch off "Include my recent transactions" and try again' }
   const turns = Array.isArray(b.history) ? b.history : []
   const history = turns.filter(t => t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string' && t.content.trim())
-    .slice(-MAX_TURNS).map(t => ({ role: t.role, content: scrub(t.content).slice(0, MAX_TURN) }))
+    .slice(-MAX_TURNS).map(t => ({ role: t.role, content: scrub(t.content.slice(0, MAX_TURN)) }))
   // the service wants the turns to start with the person and alternate; drop a leading answer and merge any doubles
   while (history.length && history[0].role !== 'user') history.shift()
   const tidy: Turn[] = []
