@@ -136,7 +136,9 @@ interface AiOverview { access: 'testers' | 'all' | 'off'; daily_limit: number; g
 function AdvisorCard({ toast }: { toast: (t: string, err?: boolean) => void }) {
   const [o, setO] = useState<AiOverview | null>(null); const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false)
   const [email, setEmail] = useState(''); const [limit, setLimit] = useState(''); const [cfg, setCfg] = useState({ daily: '', global: '', model: '' })
-  const load = useCallback(async () => { const r = await sb().rpc('ai_admin_overview'); const x = r?.data as Partial<AiOverview> | null; if (r?.error || !x || typeof x !== 'object' || !Array.isArray(x.people) || typeof x.daily_limit !== 'number') { setErr(r?.error?.message || 'the server did not answer — the advisor may not be set up on it yet'); return } const d = { used_24h: 0, used_30d: 0, tokens_30d: 0, global_daily: 0, model: '', access: 'testers', ...x } as AiOverview; setErr(null); setO(d); setCfg({ daily: String(d.daily_limit), global: String(d.global_daily), model: d.model }) }, [])
+  // only the newest answer is shown: a Refresh that started before a change cannot put the old setting back on screen
+  const asked = useRef(0)
+  const load = useCallback(async () => { const mine = ++asked.current; const r = await sb().rpc('ai_admin_overview'); if (mine !== asked.current) return; const x = r?.data as Partial<AiOverview> | null; if (r?.error || !x || typeof x !== 'object' || !Array.isArray(x.people) || typeof x.daily_limit !== 'number') { setErr(r?.error?.message || 'the server did not answer — the advisor may not be set up on it yet'); return } const d = { used_24h: 0, used_30d: 0, tokens_30d: 0, global_daily: 0, model: '', access: 'testers', ...x } as AiOverview; setErr(null); setO(d); setCfg({ daily: String(d.daily_limit), global: String(d.global_daily), model: d.model }) }, [])
   useEffect(() => { void load() }, [load])
   // one change at a time, until the card has reloaded: a second press cannot overtake the first (Everyone, then Off, must end Off)
   const going = useRef(false)

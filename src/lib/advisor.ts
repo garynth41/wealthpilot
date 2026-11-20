@@ -24,20 +24,26 @@ import { round2 } from './money'
 export interface ContextOptions { /** include individual transactions (the Settings switch) */ detail?: boolean; /** people's names to take out wherever they appear: members, the signed-in person */ names?: string[]; /** the household's own name: its distinctive words are taken out too */ places?: string[]; asOf?: string }
 export const DETAIL_DAYS = 90, DETAIL_MAX = 300
 
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 /** A function that removes people's names (whole words, any case), email addresses and account-like numbers from a label.
  *  `names` are people: every word of two letters or more is taken out, even one that is also an everyday word (a member called An).
  *  `places` are the household's own name and its banks: everyday words in those ("The", "Family", "Home") are left alone. */
 export function nameScrubber(names: string[] = [], places: string[] = []) {
   // any script (José, Émile, Мария, 李明), in one spelling: a letter with its accent typed as one character or as two is the same letter
-  const split = (list: string[]) => list.flatMap(n => String(n || '').normalize('NFC').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2)
-  const words = [...new Set([...split(names), ...split(places).filter(w => !COMMON.has(w))])].sort((a, b) => b.length - a.length)
+  const split = (list: string[]) => list.flatMap(n => String(n || '').normalize('NFC').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2 || UNSPACED.test(w))
+  const all = [...new Set([...split(names), ...split(places).filter(w => !COMMON.has(w))])].sort((a, b) => b.length - a.length)
+  // scripts written without spaces between words (Chinese, Japanese, Thai…): a name there has no word edges to look for, and can be a
+  // single character (李), so it is taken out wherever it appears
+  const words = all.filter(w => !UNSPACED.test(w)), run = all.filter(w => UNSPACED.test(w))
+  const reRun = run.length ? new RegExp(run.map(esc).join('|'), 'gu') : null
   // a name counts only as a whole word: not preceded or followed by another letter or digit, in any script
   const re = words.length ? new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])(?:${words.map(esc).join('|')})(?:['’]s)?(?![\\p{L}\\p{M}\\p{N}])`, 'giu') : null
   return (s: unknown) => {
     // numbers that could be an account's: four digits or more, also when written in groups ("Visa 4417", "Card 1234-5678"). A year in a
     // label goes with them — nothing can tell "Vacation 2027" from "Account 2027", and the label loses little without it.
     let t = scrub(s).normalize('NFC').replace(/\d[\d -]{2,}\d/g, m => (m.replace(/\D/g, '').length >= 4 ? '' : m))
+    if (reRun) t = t.replace(reRun, '')
     if (re) { let prev = ''; while (prev !== t) { prev = t; t = t.replace(re, '$1') } }
     return t.replace(/\s{2,}/g, ' ').replace(/^[\s'’:#–-]+|[\s:#–-]+$/g, '').trim().slice(0, 60) || 'unnamed'
   }

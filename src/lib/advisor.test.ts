@@ -109,6 +109,8 @@ describe('review findings', () => {
     expect(nameScrubber([], ['An Of Family'])('An emergency fund of ours')).toBe('An emergency fund of ours'); expect(nameScrubber(['An'])('An groceries')).toBe('groceries')
     // the same letter typed two ways: é as one character, or as e plus a combining accent
     expect(nameScrubber(['José'])('Jose\u0301 fund')).toBe('fund'); expect(nameScrubber(['Jose\u0301'])('José fund')).toBe('fund')
+    // a one-character name, and a name inside text written without spaces
+    expect(nameScrubber(['李'])('李 education')).toBe('education'); expect(nameScrubber(['李明'])('李明的储蓄')).toBe('的储蓄'); expect(nameScrubber(['J'])('J fund')).toBe('J fund')
     // numbers that could be an account's go — a year in a label goes with them, since nothing can tell the two apart
     const n = nameScrubber(); expect(n('Electric account 12345678')).toBe('Electric account'); expect(n('Visa 4417')).toBe('Visa'); expect(n('Card 1234-5678')).toBe('Card'); expect(n('Vacation 2027')).toBe('Vacation'); expect(n('Electric account 2027')).toBe('Electric account'); expect(n('401k match')).toBe('401k match'); expect(n('Top 10 list')).toBe('Top 10 list')
   })
