@@ -2,6 +2,7 @@
 // Rules live in household settings (settings.rules). The email engine's remembered payees (settings.finmail.rules) are still honoured as a fallback.
 import type { Data, Settings, Transaction } from '../app/data/types'
 import { merchantKey } from './intelligence'
+import { libraryCategory, type Confidence } from './merchants'
 
 import type { PayeeRule } from '../app/data/types'
 export type { PayeeRule }
@@ -24,19 +25,28 @@ export function findRule(rules: PayeeRule[], payee?: string | null, kind?: strin
   const sorted = rules.filter(r => r.enabled).slice().sort((a, b) => (b.pattern.length - a.pattern.length) || (a.created_at || '').localeCompare(b.created_at || ''))
   return sorted.find(r => ruleMatches(r, payee, kind)) || null
 }
-export interface Suggestion { category_id?: string | null; account_id?: string | null; payee?: string | null; exclude_from_budget?: boolean; tags?: string[]; goal_id?: string | null; rule?: PayeeRule; how: 'rule' | 'remembered' | 'history' | null }
+export interface Suggestion { category_id?: string | null; account_id?: string | null; payee?: string | null; exclude_from_budget?: boolean; tags?: string[]; goal_id?: string | null; rule?: PayeeRule; how: 'rule' | 'remembered' | 'history' | 'library' | null
+  /** how sure (0.31.0): 'high' is filed without asking; 'medium' is offered for a yes. Absent when there is no suggestion. */
+  confidence?: Confidence
+  /** the name the built-in library recognized, when how = 'library' */
+  matched?: string }
 /** The tag a rule adds when it flags a transaction for review (0.21.0); the ledger's tag filter and the Dashboard show it. */
 export const REVIEW_TAG = 'review'
-/** What should this transaction get? Rules first, then the email engine's remembered payee, then the most common category used for this merchant before. */
+/** What should this transaction get? Rules first, then the email engine's remembered payee, then the most common category used for this merchant before, then the built-in merchant library. */
 export function suggest(d: Data, s: Settings, t: Pick<Transaction, 'payee' | 'kind'>): Suggestion {
   const r = findRule(s.rules || [], t.payee, t.kind)
-  if (r) { const tags = [...new Set([...(r.tags || []).map(x => x.trim().toLowerCase()).filter(Boolean), ...(r.review ? [REVIEW_TAG] : [])])]; return { category_id: r.category_id ?? undefined, account_id: r.account_id ?? undefined, payee: r.rename || undefined, exclude_from_budget: r.exclude_from_budget, tags: tags.length ? tags : undefined, goal_id: r.goal_id || undefined, rule: r, how: 'rule' } }
+  if (r) { const tags = [...new Set([...(r.tags || []).map(x => x.trim().toLowerCase()).filter(Boolean), ...(r.review ? [REVIEW_TAG] : [])])]; return { category_id: r.category_id ?? undefined, account_id: r.account_id ?? undefined, payee: r.rename || undefined, exclude_from_budget: r.exclude_from_budget, tags: tags.length ? tags : undefined, goal_id: r.goal_id || undefined, rule: r, how: 'rule', confidence: 'high' } }
   const fm = s.finmail?.rules?.[emailKey(t.payee)]
-  if (fm?.category) return { category_id: fm.category, account_id: fm.account || undefined, how: 'remembered' }
+  if (fm?.category) return { category_id: fm.category, account_id: fm.account || undefined, how: 'remembered', confidence: 'high' }
   const k = merchantKey(t.payee); if (k !== 'unknown') {
     const counts = new Map<string, number>(); for (const x of d.transactions) if (x.category_id && x.kind === t.kind && merchantKey(x.payee) === k) counts.set(x.category_id, (counts.get(x.category_id) || 0) + 1)
-    const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]; if (best && best[1] >= 2) return { category_id: best[0], how: 'history' }
+    const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]; const all = [...counts.values()].reduce((n, v) => n + v, 0)
+    // filed the same way at least twice: confident when that is (nearly) always how it was filed, only likely when it was split between lines
+    if (best && best[1] >= 2) return { category_id: best[0], how: 'history', confidence: best[1] / all >= 0.75 ? 'high' : 'medium' }
   }
+  // the built-in merchant library (0.31.0): the last resort, after everything the household has taught the app
+  const lib = t.kind === 'expense' || t.kind === 'income' ? libraryCategory(d.categories, t.payee, t.kind) : null
+  if (lib) return { category_id: lib.category.id, how: 'library', confidence: lib.confidence, matched: lib.matched }
   return { how: null }
 }
 /** Same normalisation the email engine uses for its remembered-payee keys. */
@@ -53,11 +63,13 @@ export function applySuggestion(t: Partial<Transaction>, sg: Suggestion, force =
   return Object.keys(patch).length ? patch : null
 }
 /** Plan a bulk run over the ledger: which transactions would change and how. Pages show this before writing. */
-export function planAutoCategorise(d: Data, s: Settings, opts: { onlyUncategorised?: boolean } = { onlyUncategorised: true }) {
+export function planAutoCategorise(d: Data, s: Settings, opts: { onlyUncategorised?: boolean; /** also file likely (not only confident) library answers */ likely?: boolean } = { onlyUncategorised: true }) {
   const out: Array<{ t: Transaction; patch: Partial<Transaction>; how: NonNullable<Suggestion['how']> }> = []
   for (const t of d.transactions) {
     if (t.status === 'void') continue
     const sg = suggest(d, s, t); if (!sg.how) continue
+    // a library answer is filed on its own only when it is a confident one; a likely one waits for a yes on Review uncategorized
+    if (sg.how === 'library' && sg.confidence !== 'high' && !opts.likely) continue
     // transfers (savings moves, card payments) only take a rule's tags and goal, never a guessed category
     if (t.kind === 'transfer') { if (sg.how !== 'rule' || !(sg.tags?.length || sg.goal_id)) continue; const patch = applySuggestion(t, { tags: sg.tags, goal_id: sg.goal_id, rule: sg.rule, how: 'rule' }); if (patch) out.push({ t, patch, how: 'rule' }); continue }
     if (opts.onlyUncategorised && t.category_id && !(sg.how === 'rule' && (sg.tags?.length || sg.goal_id))) continue

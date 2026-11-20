@@ -12,6 +12,8 @@ import { canViewPath } from '../lib/access'
 import { planDedupe, unpairPatch, type DTxn } from '../lib/dedupe'
 import { paycheckOnFile } from '../lib/paySchedule'
 import { post } from '../lib/ledger'
+import { suggest } from '../lib/rules'
+import { arrivals } from '../lib/categorize'
 import { patchProblem, InputError, isInputError } from '../lib/validate'
 import type { Account, Transaction } from './data/types'
 import { leaveOut, unpairForLeavingOut, everyAccount } from '../lib/leftOut'
@@ -82,6 +84,8 @@ interface State {
   guarded: <T>(fn: () => Promise<T>, ok?: string) => Promise<T | undefined>
   /** merge every clear-cut duplicate (see lib/dedupe.ts); returns how many rows were merged */
   autoDedupe: (quiet?: boolean) => Promise<number>
+  /** Categorize on arrival (0.31.0): file new, untouched transactions the app is sure of. Returns how many were filed. */
+  autoCategorize: (quiet?: boolean) => Promise<number>
   checkLatest: () => Promise<void>
   mergeDuplicates: (keeper: string, dups: string[], patch?: Partial<Transaction>) => Promise<void>
   restoreDuplicate: (id: string) => Promise<void>
@@ -95,6 +99,7 @@ interface State {
 /** Captured before the Supabase client reads and clears the URL: a password-reset link lands with #access_token=…&type=recovery. */
 const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.test(location.hash + location.search)
 let deduping = false
+let categorizing = false
 /** paycheck saves still running, per pay schedule (logPaycheck) */
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
@@ -167,7 +172,7 @@ export const useStore = create<State>((set, get) => ({
   async refresh() {
     const repo = get().repo; if (!repo) return
     // 0.29.1: a load that finishes after another household was opened belongs to that other household — drop it, success or failure
-    try { const r = await repo.loadAll(); if (get().repo !== repo) return; set({ household: r.household, data: toView(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {})
+    try { const r = await repo.loadAll(); if (get().repo !== repo) return; set({ household: r.household, data: toView(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {}).then(() => get().autoCategorize()).catch(() => {})
       const uid = get().user?.id; if (repo.mode === 'db' && uid && !signingOut && get().repo === repo) void saveOffline(makeSnapshot(uid, r, APP_VERSION)) }
     catch (e) { if (get().repo !== repo) return; if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
       set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
@@ -243,6 +248,23 @@ export const useStore = create<State>((set, get) => ({
     void repo.logAudit('correction', `Merged ${others.length} cop${others.length === 1 ? 'y' : 'ies'} of ${keeper.name} into one account`, { keeper: keeper.id, removed: others.map(o => ({ id: o.id, ref: o.ref || null, balance: o.balance, status: o.status })), moved: plan.moved, keeperPatch: plan.keeperPatch, feed: !!nextMap }, keeper.id).catch(() => {})
     await get().refresh()
     return plan.moves.length
+  },
+  async autoCategorize(quiet) {
+    if (categorizing || !get().canEdit() || !get().repo) return 0
+    const s = get().settings(); if (s.autoCategorize === false) return 0
+    categorizing = true
+    try {
+      const d = get().data; const repo = need(get); const done: Transaction[] = []
+      for (const t of arrivals(d)) {
+        const sg = suggest(d, s, t); if (sg.confidence !== 'high' || !sg.category_id || !d.categories.some(c => c.id === sg.category_id && !c.archived)) continue
+        // the category only: a rule's other effects (a rename, tags, a goal link) stay with Auto-categorize, which also records goal contributions
+        done.push(await repo.update('transactions', t.id, { category_id: sg.category_id }))
+      }
+      if (!done.length) return 0
+      const by = new Map(done.map(t => [t.id, t])); set(st => ({ data: { ...st.data, transactions: st.data.transactions.map(t => by.get(t.id) || t) } }))
+      if (!quiet) get().toast(`${done.length} new transaction${done.length === 1 ? '' : 's'} categorized`)
+      return done.length
+    } finally { categorizing = false }
   },
   async autoDedupe(quiet) {
     if (deduping || !get().canEdit() || !get().repo) return 0

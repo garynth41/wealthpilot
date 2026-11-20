@@ -68,7 +68,7 @@ export function Dashboard() {
   const attnTone = hasData ? (['crit', 'warn', 'info'].find(c => attention.some(a => a.c === c)) || 'good') : null
   const last30 = rangeStat(data, addDays(t, -29), t); const grpRows = Object.entries(last30.byGroup).sort((a, b) => b[1] - a[1]).slice(0, 7); const drill = useDrill()
   const desk = typeof document !== 'undefined' && document.documentElement.dataset.style === 'terminal'   // Terminal draws the cash card as bars
-  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Uncategorized: '/transactions?kind=uncat', Duplicates: '/transactions?dups=1', Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
+  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Uncategorized: '/transactions?kind=uncat&review=1', Duplicates: '/transactions?dups=1', Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
   const cards: Record<string, ReactNode> = {
     setup: <SetupCard />,
     paycheck: <PaycheckCard />,

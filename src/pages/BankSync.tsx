@@ -65,7 +65,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     }
     await repo!.syncSetMap(final); return final
   }
-  const syncClick = () => run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncNow(); await refresh(); await load(); useStore.getState().toast(r.message) })
+  const syncClick = () => run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncNow(); await refresh(); const filed = await useStore.getState().autoCategorize(true); await load(); useStore.getState().toast(r.message + (filed ? ` · ${filed} categorized` : '')) })
   const ytdFrom = today().slice(0, 4) + '-01-01'
   const backfillClick = async () => { if (!(await confirm(`Load every transaction SimpleFIN still has back to ${fmtDY(ytdFrom)}? SimpleFIN keeps about 90 days, so older months usually need a statement file (CSV / QFX) from your bank — the coverage table below shows which. Duplicates are merged automatically. This uses a few of SimpleFIN's roughly 24 requests a day.`, 'Load history'))) return; run(async () => { if (dirty) await saveMatching(); const r = await repo!.syncBackfill(ytdFrom); await refresh(); await load(); useStore.getState().toast(r.message) }) }
   const slot = syncSlot(st.requests || []); const limitMsg = syncLimitMessage(slot)

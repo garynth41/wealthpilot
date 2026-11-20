@@ -123,6 +123,7 @@ function RulesTab() {
         onDelete={async r => { if (await confirm(`Delete the rule "${r.pattern}"?`)) save(rules.filter(x => x.id !== r.id)) }} />
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
         <label><input type="checkbox" checked={settings.learnRules !== false} onChange={e => guarded(() => saveSettings({ learnRules: e.target.checked }))} disabled={!canEdit} /> Learn a rule whenever I set a category by hand</label>
+        <label><input type="checkbox" checked={settings.autoCategorize !== false} onChange={e => guarded(() => saveSettings({ autoCategorize: e.target.checked }))} disabled={!canEdit} /> Categorize new transactions on their own when Cresari is sure</label>
         <span className="note" style={{ margin: 0 }}>{Object.keys(settings.finmail?.rules || {}).length} remembered email payees are also used (Email → review).</span>
       </div>
       <Note>Order of precedence when a transaction has no category: your rules → payees remembered from email review → the category you used most for that merchant before (2+ times). Nothing already categorized is changed unless you re-run the rules from this page. A rule can also add tags, flag matches for review (they show on the Dashboard and under #review in the ledger) and count matches toward a goal (a contribution is logged for each).</Note>

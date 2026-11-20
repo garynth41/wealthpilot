@@ -74,7 +74,7 @@ export const budget: GuidePage = {
         { term: 'By group', text: 'One row per category group: Planned (including rolled-over money), Spent, Left and Used. Red when the group is over plan.' },
         { term: 'Add a line', text: 'Buttons for up to 14 categories with no line in this period. Each adds a line at the category\'s default budget.' },
         { term: 'Savings note', text: 'Shown when lines include money moved into savings or investments: how much, and on which lines. That is saving, not spending, so Spending, Net and the Savings rate at the top leave it out.' },
-        { term: 'Uncategorized note', text: 'Spending in the period with no category is not on any line. The link opens Transactions so you can categorize it.' },
+        { term: 'Uncategorized note', text: 'Spending in the period with no category is not on any line. The link opens Review uncategorized on Transactions so you can categorize it.' },
       ],
       tips: ['Spent always comes from your transactions, so changing a plan never changes history.', 'A closed period\'s plan is locked; click Reopen at the top to change it.'],
     },
