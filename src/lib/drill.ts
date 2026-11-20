@@ -4,45 +4,68 @@
 // transactions left out of the budget and duplicates are not there. Pure functions; the panel is components/DrillDown.tsx.
 import type { Data, Transaction } from '../app/data/types'
 import { accountLookup, budgetable, flowOf, inRange, spendLines } from './budget'
+import { categoryLines } from './splits'
 import { merchantKey } from './intelligence'
 import { round2 } from './money'
 
 export interface DrillFilter {
   /** inclusive ISO dates */
   from: string; to: string
-  /** 'spend' (default) = purchases less refunds; 'income' = money in from outside */
-  flow?: 'spend' | 'income'
+  /** which figure the lines stand behind:
+   *  'spend' (default)  purchases less refunds — rangeStat, every spending chart;
+   *  'income'           money in from outside;
+   *  'budget'           what a budget line's Spent counts (lib/budget lineActuals): spending less refunds PLUS transfers filed under the
+   *                     category — loan payments, money moved to savings — but never card payments;
+   *  'purchases'        what Spending Intelligence counts per merchant (lib/intelligence merchantAnalysis): every purchase, refunds not taken off. */
+  flow?: 'spend' | 'income' | 'budget' | 'purchases'
   /** a category by name; 'Uncategorized' = no category */
   category?: string
+  /** every category EXCEPT these names — the "Other" part of a stacked chart */
+  notCategories?: string[]
+  /** with flow 'spend': also list loan payments (the "Other + loan payments" part of the Trends chart) */
+  loans?: boolean
   /** a category group ('Housing', 'Food'…); 'Other' = no group */
   group?: string
   /** 'Essential' | 'Important' | 'Discretionary' */
   priority?: string
   /** a merchant by lib/intelligence merchantKey */
   merchant?: string
-  /** an income source: a pay schedule's name, or a payee's merchantKey */
+  /** an income source by the key Reports uses: a pay schedule's name, or a payee's merchantKey */
   source?: string
   /** 0 = Sunday … 6 = Saturday */
   weekday?: number
 }
-/** One line of a drill-down: a transaction, or one slice of a split transaction. `amount` is signed for spending (a refund is negative). */
-export interface DrillLine { txn: Transaction; category_id: string | null; amount: number; slice: boolean }
+/** One line of a drill-down: a transaction, or one slice of a split transaction. `amount` is signed for spending (a refund is negative).
+ *  `slice` = part of a split; `fixed` = a line that is listed but not re-filed here (a loan payment, a transfer), with the words to show. */
+export interface DrillLine { txn: Transaction; category_id: string | null; amount: number; slice: boolean; fixed?: string }
 
 const dayOf = (iso: string) => new Date(iso + 'T12:00:00').getDay()
+const FIXED: Record<string, string> = { loan: 'loan payment', save: 'moved to savings', move: 'transfer' }
 
 export function drillLines(d: Data, f: DrillFilter): DrillLine[] {
   const acct = accountLookup(d), cat = (id?: string | null) => d.categories.find(c => c.id === id)
-  const tx = d.transactions.filter(t => inRange(t, f.from, f.to) && !t.duplicate_of && budgetable(t))
+  const inR = d.transactions.filter(t => inRange(t, f.from, f.to) && !t.duplicate_of)
+  const tx = inR.filter(budgetable)
+  const line = (l: { txn: Transaction; category_id?: string | null; amount: number; split?: unknown }, sign = 1, fixed?: string): DrillLine => ({ txn: l.txn, category_id: l.category_id ?? null, amount: sign * l.amount, slice: !!l.split, ...(fixed ? { fixed } : {}) })
   let lines: DrillLine[]
   if (f.flow === 'income') {
-    lines = tx.filter(t => flowOf(t, acct) === 'income').map(t => ({ txn: t, category_id: t.category_id ?? null, amount: t.amount, slice: false }))
+    // split deposits count slice by slice, as a budget's income lines do
+    lines = categoryLines(d, tx.filter(t => flowOf(t, acct) === 'income')).map(l => line(l))
     if (f.source !== undefined) lines = lines.filter(l => incomeSource(d, l.txn).key === f.source)
+  } else if (f.flow === 'budget') {
+    lines = categoryLines(d, tx).flatMap(l => { const fl = flowOf(l.txn, acct); return fl === 'income' || fl === 'card' ? [] : fl === 'spend' ? [line(l)] : fl === 'refund' ? [line(l, -1)] : [line(l, 1, FIXED[fl] || 'transfer')] })
+  } else if (f.flow === 'purchases') {
+    lines = categoryLines(d, d.transactions.filter(t => t.kind === 'expense' && inRange(t, f.from, f.to))).map(l => line(l))
   } else {
-    lines = spendLines(d, tx, acct).map(l => ({ txn: l.txn, category_id: l.category_id ?? null, amount: l.amount, slice: !!l.split }))
+    lines = spendLines(d, tx, acct).map(l => line(l))
   }
-  if (f.category !== undefined) lines = lines.filter(l => (cat(l.category_id)?.name || 'Uncategorized') === f.category)
+  const nameOf = (l: DrillLine) => cat(l.category_id)?.name || 'Uncategorized'
+  if (f.category !== undefined) lines = lines.filter(l => nameOf(l) === f.category)
+  if (f.notCategories) lines = lines.filter(l => !f.notCategories!.includes(nameOf(l)))
   if (f.group !== undefined) lines = lines.filter(l => (cat(l.category_id)?.group || 'Other') === f.group)
   if (f.priority !== undefined) lines = lines.filter(l => cat(l.category_id)?.priority === f.priority)
+  // loan payments are counted whole and whatever their category, exactly as rangeStat's `loans` is
+  if (f.loans && !f.flow) lines = lines.concat(inR.filter(t => flowOf(t, acct) === 'loan').map(t => line({ txn: t, category_id: t.category_id, amount: t.amount }, 1, FIXED.loan)))
   if (f.merchant !== undefined) lines = lines.filter(l => merchantKey(l.txn.payee) === f.merchant)
   if (f.weekday !== undefined) lines = lines.filter(l => dayOf(l.txn.date) === f.weekday)
   return lines.sort((a, b) => b.txn.date.localeCompare(a.txn.date) || Math.abs(b.amount) - Math.abs(a.amount))
@@ -79,5 +102,10 @@ export function summarize(d: Data, lines: DrillLine[]): DrillSummary {
     months: [...mon.entries()].map(([month, r]) => ({ month, ...r })).sort((a, b) => a.month.localeCompare(b.month)),
   }
 }
-/** The link that opens these transactions in the ledger. */
-export const ledgerLink = (lines: DrillLine[]) => '#/transactions?ids=' + [...new Set(lines.map(l => l.txn.id))].slice(0, 400).join(',')
+/** The ids behind a set of lines, each transaction once (a split transaction has several lines). */
+export const lineIds = (lines: DrillLine[]) => [...new Set(lines.map(l => l.txn.id))]
+/** A ledger link carries ids in the address up to this many; a longer set is handed over by name (see LEDGER_SET) so none is dropped. */
+export const LINK_MAX = 300
+export const LEDGER_SET = 'cresari.ledgerSet'
+/** The link that opens these transactions in the ledger. Above LINK_MAX the caller stores the ids under LEDGER_SET and the link names the set. */
+export const ledgerLink = (lines: DrillLine[]) => { const ids = lineIds(lines); return '#/transactions?ids=' + (ids.length > LINK_MAX ? '@set' : ids.join(',')) }

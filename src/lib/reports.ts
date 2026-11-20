@@ -32,7 +32,7 @@ export const PRESETS: Array<{ id: string; label: string; sections: SectionId[] }
   { id: 'tax', label: 'Tax pack', sections: ['summary', 'income', 'tax', 'accounts', 'investments'] },
   { id: 'statement', label: 'Statement', sections: ['statement', 'accounts', 'transactions'] }]
 export interface Kpi { label: string; value: number; fmt: 'money' | 'pct' | 'num'; prev?: number | null }
-export interface ReportSection { id: SectionId; title: string; kpis: Kpi[]; table?: { headers: string[]; rows: Array<Array<string | number>> }; notes: string[] }
+export interface ReportSection { id: SectionId; title: string; kpis: Kpi[]; table?: { headers: string[]; rows: Array<Array<string | number>>; /** one per row, where a row's name is not its identity (an income source, a payee): the key a drill-down filters by */ keys?: string[] }; notes: string[] }
 export interface Report { title: string; kind: ReportKind; from: string; to: string; label: string; prevFrom: string; prevTo: string; generated: string; sections: ReportSection[] }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -109,10 +109,11 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
     const name = new Map<string, string>(); curI.concat(prevI).forEach(t => { const k = key(t); if (!name.has(k)) { const ps = t.pay_schedule_id && d.paySchedules.find(p => p.id === t.pay_schedule_id); name.set(k, ps ? ps.name : (t.payee || '').trim() || 'Other income') } })
     const tot = (xs: Transaction[]) => { const m: Record<string, { n: number; v: number }> = {}; xs.forEach(t => { const k = key(t); m[k] = { n: (m[k]?.n || 0) + 1, v: round2((m[k]?.v || 0) + t.amount) } }); return m }
     const a = tot(curI), b = tot(prevI)
-    const rows = [...new Set([...Object.keys(a), ...Object.keys(b)])].map(k => [name.get(k) || k, a[k]?.n || 0, a[k]?.v || 0, b[k]?.v || 0, round2((a[k]?.v || 0) - (b[k]?.v || 0)), pctChange(a[k]?.v || 0, b[k]?.v || 0) ?? ''] as Array<string | number>).sort((x, y) => +y[2] - +x[2])
+    const keyed = [...new Set([...Object.keys(a), ...Object.keys(b)])].map(k => ({ k, row: [name.get(k) || k, a[k]?.n || 0, a[k]?.v || 0, b[k]?.v || 0, round2((a[k]?.v || 0) - (b[k]?.v || 0)), pctChange(a[k]?.v || 0, b[k]?.v || 0) ?? ''] as Array<string | number> })).sort((x, y) => +y.row[2] - +x.row[2])
+    const rows = keyed.map(x => x.row)
     const expected = round2(expectedIncome(d.paySchedules, r.from, r.to))
     out.push({ id: 'income', title: 'Income', kpis: [{ label: 'Income received', value: round2(cur.income), fmt: 'money', prev: round2(prev.income) }, { label: 'Deposits', value: curI.length, fmt: 'num', prev: prevI.length }, { label: 'Average deposit', value: curI.length ? round2(cur.income / curI.length) : 0, fmt: 'money' }, ...(expected > 0 ? [{ label: 'Expected from pay schedules', value: expected, fmt: 'money' as const }] : [])],
-      table: { headers: ['Source', 'Deposits', 'This period', 'Previous', 'Change', 'Change %'], rows }, notes: expected > 0 && Math.abs(expected - cur.income) > Math.max(50, expected * 0.05) ? [`Received ${fmtMoney(cur.income)} against ${fmtMoney(expected)} expected from pay schedules — ${cur.income < expected ? 'a paycheck may not be recorded yet' : 'extra income arrived this period'}.`] : [] })
+      table: { headers: ['Source', 'Deposits', 'This period', 'Previous', 'Change', 'Change %'], rows, keys: keyed.map(x => x.k) }, notes: expected > 0 && Math.abs(expected - cur.income) > Math.max(50, expected * 0.05) ? [`Received ${fmtMoney(cur.income)} against ${fmtMoney(expected)} expected from pay schedules — ${cur.income < expected ? 'a paycheck may not be recorded yet' : 'extra income arrived this period'}.`] : [] })
   }
   if (sections.includes('spending')) {
     const cats = Object.keys({ ...cur.byCat, ...prev.byCat }).map(name => { const c = d.categories.find(x => x.name === name); const a = round2(cur.byCat[name] || 0), b = round2(prev.byCat[name] || 0); return [c?.group || '', name, a, b, round2(a - b), pctChange(a, b) ?? ''] as Array<string | number> })
@@ -125,7 +126,7 @@ export function buildReport(d: Data, s: Settings, kind: ReportKind, anchor: stri
   if (period('merchants')) {
     const ms = merchantAnalysis(d, r.from, r.to); const top = ms.slice(0, 15); const share = cur.spend > 0 && ms[0] ? round2(ms[0].total / cur.spend) : null
     out.push({ id: 'merchants', title: 'Top payees', kpis: [{ label: 'Payees paid', value: ms.length, fmt: 'num' }, { label: 'Top payee share', value: share ?? 0, fmt: 'pct' }, { label: 'Average per visit', value: ms.length ? round2(sum(ms.map(m => m.total)) / Math.max(1, sum(ms.map(m => m.count)))) : 0, fmt: 'money' }, { label: 'Top 15 total', value: round2(sum(top.map(m => m.total))), fmt: 'money' }],
-      table: { headers: ['Payee', 'Visits', 'This period', 'Previous', 'Change %', 'Average', 'Categories'], rows: top.map(m => [m.name, m.count, m.total, m.prior, m.change ?? '', m.avg, m.categories.join(', ')]) },
+      table: { headers: ['Payee', 'Visits', 'This period', 'Previous', 'Change %', 'Average', 'Categories'], rows: top.map(m => [m.name, m.count, m.total, m.prior, m.change ?? '', m.avg, m.categories.join(', ')]), keys: top.map(m => m.key) },
       notes: ms.length > 15 ? [`${ms.length - 15} more payees share the remaining ${fmtMoney(cur.spend - sum(top.map(m => m.total)))}.`] : [] })
   }
   if (period('budget')) {

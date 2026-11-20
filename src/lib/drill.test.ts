@@ -2,9 +2,11 @@
 // refunds, card spending and transfers) — for every category, group, priority and month, and for income by source.
 import { describe, it, expect } from 'vitest'
 import { demoSeed } from '../app/data/demoSeed'
-import { rangeStat } from './budget'
-import { merchantAnalysis } from './intelligence'
-import { drillLines, summarize, ledgerLink, incomeSource } from './drill'
+import { rangeStat, spentIn } from './budget'
+import { merchantAnalysis, merchantKey } from './intelligence'
+import { drillLines, summarize, ledgerLink, lineIds, incomeSource, LINK_MAX } from './drill'
+import { buildReport } from './reports'
+import { SETTINGS_DEFAULTS } from '../app/data/types'
 import { round2 } from './money'
 
 const { data } = demoSeed()
@@ -28,9 +30,16 @@ describe('a drill-down adds up to the figure it came from', () => {
     const keys = [...new Set(all.map(l => incomeSource(data, l.txn).key))]
     expect(round2(keys.reduce((n, k) => n + tot(drillLines(data, { ...r, flow: 'income', source: k })), 0))).toBe(st.income)
   })
-  it('a merchant drill-down matches Spending Intelligence for merchants with no refunds', () => {
-    const r = range(months[months.length - 2]); const ms = merchantAnalysis(data, r.from, r.to).slice(0, 8); expect(ms.length).toBeGreaterThan(3)
-    for (const mch of ms) { const ls = drillLines(data, { ...r, merchant: mch.key }); if (ls.every(l => l.amount > 0)) expect([mch.name, tot(ls)]).toEqual([mch.name, mch.total]) }
+  it.each(months)('%s: every merchant matches Spending Intelligence, refunds or not', m => {
+    const r = range(m); const ms = merchantAnalysis(data, r.from, r.to)
+    for (const mch of ms) expect([mch.name, tot(drillLines(data, { ...r, flow: 'purchases', merchant: mch.key }))]).toEqual([mch.name, mch.total])
+  })
+  it('a merchant with a refund: the purchases view shows the bar, the spending view shows it net', () => {
+    const r = range(months[months.length - 2]), mch = merchantAnalysis(data, r.from, r.to)[0], buy = data.transactions.find(t => t.kind === 'expense' && merchantKey(t.payee) === mch.key && t.date >= r.from && t.date <= r.to)!
+    const card = data.accounts.find(a => a.kind === 'credit_card')!
+    const d2 = { ...data, transactions: [...data.transactions, { ...buy, id: 'refund-1', kind: 'income' as const, amount: 20, account_id: card.id }] }
+    expect(tot(drillLines(d2, { ...r, flow: 'purchases', merchant: mch.key }))).toBe(merchantAnalysis(d2, r.from, r.to).find(x => x.key === mch.key)!.total)
+    expect(tot(drillLines(d2, { ...r, merchant: mch.key }))).toBe(round2(tot(drillLines(data, { ...r, merchant: mch.key })) - 20))
   })
   it('weekdays split the month with nothing left over', () => {
     const r = range(months[months.length - 2])
@@ -60,5 +69,60 @@ describe('the summary of a drill-down', () => {
   })
   it('nothing behind a figure is an empty summary, not an error', () => {
     expect(summarize(data, drillLines(data, { ...r, category: 'No such category' }))).toMatchObject({ total: 0, count: 0, average: 0, largest: null, merchants: [] })
+  })
+})
+
+// Review of 0.30.0 (PR #28): each figure has its own counting rule, and its drill-down follows that rule.
+describe('a budget line and its drill-down', () => {
+  const r = range(months[months.length - 2]); const cats = data.categories.filter(c => c.kind === 'expense')
+  it('every expense category: the lines add up to the line\'s Spent', () => {
+    for (const c of cats) expect([c.name, tot(drillLines(data, { ...r, flow: 'budget', category: c.name }))]).toEqual([c.name, round2(spentIn(data, c.id, r.from, r.to))])
+  })
+  it('a loan payment and a move to savings filed under a category count on the line and are listed, not re-filed; a card payment is not', () => {
+    const c = cats[0], from = data.accounts.find(a => a.kind === 'checking')!, loan = data.accounts.find(a => ['loan', 'mortgage', 'auto_loan', 'student_loan'].includes(a.kind)), card = data.accounts.find(a => a.kind === 'credit_card')!, sav = data.accounts.find(a => a.kind === 'savings')!
+    const base = data.transactions.find(t => t.kind === 'expense' && t.date >= r.from && t.date <= r.to)!
+    const tr = (id: string, to: string, amount: number) => ({ ...base, id, kind: 'transfer' as const, account_id: from.id, to_account_id: to, category_id: c.id, amount, payee: 'Transfer ' + id })
+    const extra = [tr('t-save', sav.id, 150), tr('t-card', card.id, 90), ...(loan ? [tr('t-loan', loan.id, 312)] : [])]
+    const d2 = { ...data, transactions: [...data.transactions, ...extra] }
+    const ls = drillLines(d2, { ...r, flow: 'budget', category: c.name })
+    expect(tot(ls)).toBe(round2(spentIn(d2, c.id, r.from, r.to)))
+    expect(ls.find(l => l.txn.id === 't-save')?.fixed).toBe('moved to savings'); expect(ls.some(l => l.txn.id === 't-card')).toBe(false)
+    if (loan) expect(ls.find(l => l.txn.id === 't-loan')?.fixed).toBe('loan payment')
+    // the spending view of the same category leaves the transfers out
+    expect(drillLines(d2, { ...r, category: c.name }).some(l => l.txn.kind === 'transfer')).toBe(false)
+  })
+})
+describe('the "Other + loan payments" part of the Trends chart', () => {
+  it.each(months)('%s: the lines add up to the segment', m => {
+    const r = range(m), st = rangeStat(data, r.from, r.to), top = Object.keys(st.byCat).sort((a, b) => st.byCat[b] - st.byCat[a]).slice(0, 3)
+    const segment = round2(Object.entries(st.byCat).filter(([k]) => !top.includes(k)).reduce((n, [, v]) => n + v, 0) + st.loans)
+    expect(tot(drillLines(data, { ...r, notCategories: top, loans: true }))).toBe(segment)
+    for (const k of top) expect(tot(drillLines(data, { ...r, category: k }))).toBe(round2(st.byCat[k]))
+  })
+})
+describe('income', () => {
+  const r = range(months[months.length - 2])
+  it('a split deposit is listed slice by slice and cannot be re-filed whole', () => {
+    const dep = drillLines(data, { ...r, flow: 'income' }).find(l => !l.slice)!.txn; const cs = data.categories.filter(c => c.kind === 'income')
+    const mk = (id: string, amount: number, category_id: string) => ({ ...data.splits[0], id, transaction_id: dep.id, amount, category_id })
+    const d2 = { ...data, splits: [...data.splits, mk('s1', round2(dep.amount - 10), cs[0].id), mk('s2', 10, (cs[1] || cs[0]).id)] }
+    const ls = drillLines(d2, { ...r, flow: 'income' }).filter(l => l.txn.id === dep.id)
+    expect(ls.length).toBe(2); expect(ls.every(l => l.slice)).toBe(true); expect(tot(ls)).toBe(dep.amount)
+    expect(tot(drillLines(d2, { ...r, flow: 'income' }))).toBe(rangeStat(d2, r.from, r.to).income)
+  })
+  it('every row of the Income report opens its own deposits — also when a pay schedule and a payee share a name', () => {
+    const sched = data.paySchedules[0], dep = data.transactions.find(t => t.kind === 'income' && !t.pay_schedule_id && t.date >= r.from && t.date <= r.to) || data.transactions.find(t => t.kind === 'income' && t.date >= r.from && t.date <= r.to)!
+    const d2 = { ...data, transactions: [...data.transactions, { ...dep, id: 'same-name', pay_schedule_id: null, payee: sched.name, amount: 77 }] }
+    const sec = buildReport(d2, SETTINGS_DEFAULTS, 'custom', r.to, ['income'], r.to, r).sections.find(s => s.id === 'income')!.table!
+    expect(sec.rows.filter(row => row[0] === sched.name).length).toBeGreaterThan(0)
+    expect(sec.keys!.length).toBe(sec.rows.length)
+    sec.rows.forEach((row, i) => expect([row[0], tot(drillLines(d2, { from: r.from, to: r.to, flow: 'income', source: sec.keys![i] }))]).toEqual([row[0], row[2]]))
+  })
+})
+describe('the ledger link', () => {
+  it('names every transaction, or hands a long set over whole', () => {
+    const all = drillLines(data, { from: '2000-01-01', to: '2100-01-01' }); const many = Array.from({ length: LINK_MAX + 1 }, (_, i) => ({ ...all[0], txn: { ...all[0].txn, id: 'x' + i } }))
+    expect(lineIds(many).length).toBe(LINK_MAX + 1); expect(ledgerLink(many)).toBe('#/transactions?ids=@set')
+    expect(ledgerLink(many.slice(0, LINK_MAX)).split('ids=')[1].split(',').length).toBe(LINK_MAX)
   })
 })

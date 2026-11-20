@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
 import { Btn, MBody, MFoot, MHead, Note, useModal } from './ui'
-import { drillLines, summarize, ledgerLink, type DrillFilter, type DrillLine } from '../lib/drill'
+import { drillLines, summarize, ledgerLink, lineIds, LINK_MAX, LEDGER_SET, type DrillFilter, type DrillLine } from '../lib/drill'
 import { learnRule, upsertRule } from '../lib/rules'
 import { fm2 as fmtMoney } from '../lib/money'   // to the cent: the panel's total must read exactly as the figure's own detail does
 import { fmtD, mShort } from '../lib/dates'
@@ -28,7 +28,9 @@ export function DrillDown({ title, filter, note }: DrillProps) {
   const s = useMemo(() => summarize(data, lines), [data, lines]); const whole = useMemo(() => summarize(data, all), [data, all])
   const opts = catOpts(income ? ['income'] : ['expense'])
   const keyOf = (l: DrillLine, i: number) => l.txn.id + (l.slice ? ':' + i : '')
-  const movable = lines.filter(l => !l.slice)   // a slice of a split transaction is re-filed in the ledger's split editor
+  // a slice of a split transaction is re-filed in the ledger's split editor; a loan payment or transfer is listed, not re-filed here
+  const locked = (l: DrillLine) => l.slice || !!l.fixed
+  const movable = lines.filter(l => !locked(l))
   const chosen = movable.filter(l => picked.has(l.txn.id))
   const toggle = (id: string) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const allOn = movable.length > 0 && movable.every(l => picked.has(l.txn.id))
@@ -38,7 +40,9 @@ export function DrillDown({ title, filter, note }: DrillProps) {
   }
   const setOne = (l: DrillLine, id: string) => guarded(async () => { await useStore.getState().update('transactions', l.txn.id, { category_id: id || null }); if (id) await learn(l.txn.payee, l.txn.kind, id) }, id ? `Filed under ${cat(id)?.name || 'the category'}` : 'Category cleared')
   const moveChosen = () => { if (!moveTo || !chosen.length) return; const ids = chosen.map(l => l.txn.id), n = ids.length
-    void guarded(async () => { await useStore.getState().bulkUpdate('transactions', ids, { category_id: moveTo }); for (const p of new Set(chosen.map(l => l.txn.payee).filter(Boolean))) await learn(p, chosen[0].txn.kind, moveTo); setPicked(new Set()); setMoveTo('') }, `Moved ${n} transaction${n === 1 ? '' : 's'} to ${cat(moveTo)?.name || 'the category'}`) }
+    void guarded(async () => { await useStore.getState().bulkUpdate('transactions', ids, { category_id: moveTo }); const seen = new Set<string>(); for (const l of chosen) { const k = l.txn.kind + '|' + (l.txn.payee || ''); if (!l.txn.payee || seen.has(k)) continue; seen.add(k); await learn(l.txn.payee, l.txn.kind, moveTo) } setPicked(new Set()); setMoveTo('') }, `Moved ${n} transaction${n === 1 ? '' : 's'} to ${cat(moveTo)?.name || 'the category'}`) }
+  // every transaction behind the figure goes to the ledger: a long set is handed over by name, never cut short
+  const openLedger = () => { const ids = lineIds(lines); if (ids.length > LINK_MAX) { try { sessionStorage.setItem(LEDGER_SET, JSON.stringify(ids)) } catch { /* private mode: the link then opens the ledger unfiltered */ } } location.hash = ledgerLink(lines); close() }
   const bar = (v: number, max: number) => <span className="dd-bar" aria-hidden="true"><span style={{ width: `${max > 0 ? Math.max(2, Math.round(Math.abs(v) / max * 100)) : 0}%` }} /></span>
   const topM = whole.merchants.slice(0, 8), maxM = Math.max(0, ...topM.map(m => Math.abs(m.total))), maxMo = Math.max(0, ...s.months.map(m => Math.abs(m.total)))
   const second = filter.category === undefined && s.categories.length > 1 ? 'cats' : s.months.length > 1 ? 'months' : null
@@ -68,16 +72,16 @@ export function DrillDown({ title, filter, note }: DrillProps) {
           <select className="inp" aria-label="Move the selected transactions to this category" value={moveTo} onChange={e => setMoveTo(e.target.value)}><option value="">Move selected to…</option>{opts.map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}</select>
           <Btn primary sm disabled={!moveTo || !chosen.length} onClick={moveChosen}>Move {chosen.length || ''}</Btn></div>}
         <div className="tblwrap dd-tbl"><table className="tbl"><thead><tr>{canEdit && <th style={{ width: 30 }}><span className="sr-only">Select</span></th>}<th>Date</th><th>Payee</th><th>Category</th><th>Account</th><th className="num">Amount</th></tr></thead>
-          <tbody>{lines.slice(0, SHOW).map((l, i) => <tr key={keyOf(l, i)} className={picked.has(l.txn.id) && !l.slice ? 'is-selected' : ''}>
-            {canEdit && <td>{!l.slice && <input type="checkbox" aria-label={`Select ${l.txn.payee || 'transaction'} ${fmtD(l.txn.date)}`} checked={picked.has(l.txn.id)} onChange={() => toggle(l.txn.id)} />}</td>}
+          <tbody>{lines.slice(0, SHOW).map((l, i) => <tr key={keyOf(l, i)} className={picked.has(l.txn.id) && !locked(l) ? 'is-selected' : ''}>
+            {canEdit && <td>{!locked(l) && <input type="checkbox" aria-label={`Select ${l.txn.payee || 'transaction'} ${fmtD(l.txn.date)}`} checked={picked.has(l.txn.id)} onChange={() => toggle(l.txn.id)} />}</td>}
             <td style={{ whiteSpace: 'nowrap' }}>{fmtD(l.txn.date)}</td>
             <td>{l.txn.payee || <span className="note" style={{ margin: 0 }}>No payee</span>}{l.txn.memo ? <div className="note" style={{ margin: 0 }}>{l.txn.memo.slice(0, 70)}</div> : null}</td>
-            <td>{l.slice || !canEdit ? <span>{cat(l.category_id)?.name || 'Uncategorized'}{l.slice ? <span className="note" style={{ margin: 0 }}> · part of a split</span> : null}</span>
+            <td>{locked(l) || !canEdit ? <span>{cat(l.category_id)?.name || 'Uncategorized'}{l.slice ? <span className="note" style={{ margin: 0 }}> · part of a split</span> : null}{l.fixed ? <span className="note" style={{ margin: 0 }}> · {l.fixed}</span> : null}</span>
               : <select aria-label={`Category for ${l.txn.payee || 'transaction'}`} value={l.category_id || ''} onChange={e => setOne(l, e.target.value)}><option value="">— uncategorized —</option>{opts.map(c => <option key={c.id} value={c.id}>{catLabels[c.id]}</option>)}{l.category_id && !opts.some(c => c.id === l.category_id) ? <option value={l.category_id}>{cat(l.category_id)?.name || 'Other'}</option> : null}</select>}</td>
             <td>{acctName(l.txn.account_id)}</td><td className="num">{fmtMoney(l.amount)}</td></tr>)}</tbody>
           <tfoot><tr><td colSpan={canEdit ? 5 : 4}>{lines.length > SHOW ? `Showing the newest ${SHOW} of ${lines.length} — open them in the ledger for the rest` : `${lines.length} transaction${lines.length === 1 ? '' : 's'}`}</td><td className="num">{fmtMoney(s.total)}</td></tr></tfoot></table></div>
       </>}
     </MBody>
-    <MFoot>{all.length > 0 && <Btn onClick={() => { location.hash = ledgerLink(lines); close() }}>Open in the ledger</Btn>}<Btn primary onClick={close}>Done</Btn></MFoot>
+    <MFoot>{all.length > 0 && <Btn onClick={openLedger}>Open in the ledger</Btn>}<Btn primary onClick={close}>Done</Btn></MFoot>
   </>
 }
