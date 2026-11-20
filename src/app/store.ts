@@ -250,20 +250,22 @@ export const useStore = create<State>((set, get) => ({
     return plan.moves.length
   },
   async autoCategorize(quiet) {
-    if (categorizing || !get().canEdit() || !get().repo) return 0
+    // never while duplicates are being merged: a merge gives the kept row its category, and the two writes must not race
+    if (categorizing || deduping || !get().canEdit() || !get().repo) return 0
     const s = get().settings(); if (s.autoCategorize === false) return 0
     categorizing = true
     try {
-      const d = get().data; const repo = need(get); const done: Transaction[] = []
+      const d = get().data; const repo = need(get); let n = 0
       for (const t of arrivals(d)) {
         const sg = suggest(d, s, t); if (sg.confidence !== 'high' || !sg.category_id || !d.categories.some(c => c.id === sg.category_id && !c.archived)) continue
         // the category only: a rule's other effects (a rename, tags, a goal link) stay with Auto-categorize, which also records goal contributions
-        done.push(await repo.update('transactions', t.id, { category_id: sg.category_id }))
+        // each row is shown as soon as it is saved, and only its category changes — an edit made meanwhile is not overwritten
+        const cid = sg.category_id; await repo.update('transactions', t.id, { category_id: cid }); n++
+        set(st => ({ data: { ...st.data, transactions: st.data.transactions.map(x => x.id === t.id ? { ...x, category_id: cid } : x) } }))
       }
-      if (!done.length) return 0
-      const by = new Map(done.map(t => [t.id, t])); set(st => ({ data: { ...st.data, transactions: st.data.transactions.map(t => by.get(t.id) || t) } }))
-      if (!quiet) get().toast(`${done.length} new transaction${done.length === 1 ? '' : 's'} categorized`)
-      return done.length
+      if (!n) return 0
+      if (!quiet) get().toast(`${n} new transaction${n === 1 ? '' : 's'} categorized`)
+      return n
     } finally { categorizing = false }
   },
   async autoDedupe(quiet) {

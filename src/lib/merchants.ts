@@ -5,6 +5,7 @@
 // by name — households rename and add categories, so the library never stores a category id.
 // Pure functions; the suggestion engine (lib/rules suggest) calls libraryCategory as its last resort, after the household's own rules and history.
 import type { Category } from '../app/data/types'
+import { merchantKey } from './intelligence'
 
 export type Concept =
   | 'groceries' | 'dining' | 'coffee' | 'fuel' | 'transit' | 'auto_service' | 'auto_insurance' | 'rent' | 'electric' | 'gas_utility' | 'water'
@@ -17,7 +18,7 @@ export interface LibraryMatch { concept: Concept; confidence: Confidence; matche
 /** Lower-case, letters and digits only, single spaces — keeps the words after a `*` or `#` that merchantKey drops ("PAYPAL *NETFLIX"). */
 export const plain = (s?: string | null) => { const t = String(s || '').toLowerCase().replace(/&/g, ' and ').replace(/['’]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' '); while (t.length > 1 && WRAPPERS.has(t[0])) t.shift(); return ' ' + t.join(' ') + ' ' }
 /** Words a bank or a payment processor puts in front of the real merchant ("SQ *BLUE DOOR CAFE", "PAYPAL *NETFLIX", "POS DEBIT KROGER"). */
-const WRAPPERS = new Set('sq|paypal|pp|sp|pos|debit|credit|purchase|checkcard|card|recurring|visa|mastercard|ach|web|online|pmt|payment|withdrawal|pending|google|goog|dd|in'.split('|'))
+const WRAPPERS = new Set('sq|paypal|pp|sp|pos|debit|credit|purchase|checkcard|card|recurring|visa|mastercard|ach|web|online|pmt|payment|withdrawal|pending|dd|in'.split('|'))
 
 // ---- named merchants: confident ----
 const BRANDS: Partial<Record<Concept, string>> = {
@@ -106,7 +107,7 @@ const INCOME: ReadonlySet<Concept> = new Set(['paycheck', 'benefits', 'interest_
 export const isIncomeConcept = (c: Concept) => INCOME.has(c)
 
 /** Names in BRANDS that are also everyday words: matched, but never a confident answer on their own. */
-const LOOSE = new Set('tst|cta|rta|sce|aps|srp|oge|hca|bart|amc|max|express|gap|coach|vans|regal|lime|calm|wag|dart|sprint|temple|delta|nail|nails|spa|salon|barber|disney|church|parish|foundation|apartment|apartments|apts|realty|vet|zoo|museum|concert|theater|theatre|opera|ballet|casino|bowling|arcade|lottery|trash|refuse|sewer|propane|refund|settlement|rebate|university|college|tuition|southwest|paramount|max com|visible|ting|iga|market|grooming|boarding|kennel|laundry|tailor|waxing|tanning|lash|plumbing|roofing|hvac|electrician|handyman|landscap|donation|charity|charitable|ministry|ministries|mosque|masjid|synagogue|pension|salary|wages|dividend|mortgage|hoa|passport|aquarium|planetarium|botanical|conservatory|arcade|karate|gymnastics|bookstore|textbook|preschool|montessori|daycare|childcare|orthopedic|pediatrics|radiology|dermatology|anesthesia|ambulance|chiropractic'.split('|'))
+const LOOSE = new Set('public utilities|city utilities|municipal util|sanitation|water and sewer|city water|water utility|water dept|water department|water works|waterworks|tst|cta|rta|sce|aps|srp|oge|hca|bart|amc|max|express|gap|coach|vans|regal|lime|calm|wag|dart|sprint|temple|delta|nail|nails|spa|salon|barber|disney|church|parish|foundation|apartment|apartments|apts|realty|vet|zoo|museum|concert|theater|theatre|opera|ballet|casino|bowling|arcade|lottery|trash|refuse|sewer|propane|refund|settlement|rebate|university|college|tuition|southwest|paramount|max com|visible|ting|iga|market|grooming|boarding|kennel|laundry|tailor|waxing|tanning|lash|plumbing|roofing|hvac|electrician|handyman|landscap|donation|charity|charitable|ministry|ministries|mosque|masjid|synagogue|pension|salary|wages|dividend|mortgage|hoa|passport|aquarium|planetarium|botanical|conservatory|arcade|karate|gymnastics|bookstore|textbook|preschool|montessori|daycare|childcare|orthopedic|pediatrics|radiology|dermatology|anesthesia|ambulance|chiropractic'.split('|'))
 type Tier = Array<{ concept: Concept; re: RegExp }>
 const compile = (t: Partial<Record<Concept, string>>): Tier => (Object.entries(t) as Array<[Concept, string]>).map(([concept, list]) => {
   // longest alternative first, so the regex prefers "uber eats" over "uber" at the same position
@@ -184,20 +185,34 @@ const RESOLVE: Record<Concept, { probes: Probe[]; fallback?: Concept[] }> = {
   other_income: { probes: [P(/other income|misc/)] },
 }
 /** The household's category for a concept, or null when it keeps no such line. Archived categories and the wrong side (income vs spending) are never chosen. */
-export function resolveCategory(cats: Category[], concept: Concept, seen: Concept[] = []): Category | null {
+export function resolveCategory(cats: Category[], concept: Concept): Category | null { return resolveWithDepth(cats, concept)?.category ?? null }
+/** As resolveCategory, with how many fallbacks it took: 0 = the concept's own line, 1 = the nearest line, 2+ = a distant one. */
+export function resolveWithDepth(cats: Category[], concept: Concept, seen: Concept[] = []): { category: Category; depth: number } | null {
   const want = INCOME.has(concept) ? 'income' : 'expense'
   const live = cats.filter(c => !c.archived && c.kind === want).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
   const r = RESOLVE[concept]
-  for (const p of r.probes) { const hit = live.find(c => p.name.test(c.name.toLowerCase()) && (!p.group || p.group.test((c.group || '').toLowerCase()))); if (hit) return hit }
-  for (const f of r.fallback || []) { if (seen.includes(f)) continue; const hit = resolveCategory(cats, f, [...seen, concept]); if (hit) return hit }
+  for (const p of r.probes) { const hit = live.find(c => p.name.test(c.name.toLowerCase()) && (!p.group || p.group.test((c.group || '').toLowerCase()))); if (hit) return { category: hit, depth: 0 } }
+  for (const f of r.fallback || []) { if (seen.includes(f)) continue; const hit = resolveWithDepth(cats, f, [...seen, concept]); if (hit) return { category: hit.category, depth: hit.depth + 1 } }
   return null
 }
 /** The library's answer for a payee as one of the household's categories. A fallback category (coffee → Dining out when there is no
  *  coffee line) is still confident; an answer that had to fall back twice, or a mixed merchant or a telling word, is only likely. */
 export function libraryCategory(cats: Category[], payee: string | null | undefined, kind: 'expense' | 'income'): { category: Category; confidence: Confidence; concept: Concept; matched: string } | null {
   const m = libraryMatch(payee, kind); if (!m) return null
-  const category = resolveCategory(cats, m.concept); if (!category) return null
-  return { category, confidence: m.confidence, concept: m.concept, matched: m.matched }
+  const r = resolveWithDepth(cats, m.concept); if (!r) return null
+  return { category: r.category, confidence: r.depth >= 2 ? 'medium' : m.confidence, concept: m.concept, matched: m.matched }
 }
 /** How many names the library knows — for the About text and the tests. */
 export const librarySize = () => [BRANDS, MIXED].reduce((n, t) => n + Object.values(t).reduce((k, s) => k + (s || '').split('|').length, 0), 0)
+
+// ---- who a payee really is, when a payment processor stands in front of the merchant ----
+const PROCESSOR = /^\s*(sq|sqc|paypal|pp|sp|tst|dd|py|google|goog|venmo|zelle|cash app|cashapp|apple pay)\s*\*\s*/i
+const BARE = new Set('paypal|venmo|zelle|cash app|cashapp|square|sq|apple pay|google pay|venmo payment|zelle payment|paypal transfer|paypal inst xfer'.split('|'))
+/** The merchant behind a payee. `key` groups transactions of the same merchant; `pattern` is what a learned rule should match, or null
+ *  when the payee names only the processor ("PAYPAL", "VENMO PAYMENT", "SQ *") — a rule for the processor would catch every merchant paid through it.
+ *  "PAYPAL *NETFLIX" → netflix; "SQ *BLUE DOOR CAFE" → blue door cafe; "KROGER #1234" → kroger. */
+export function merchantIdentity(payee?: string | null): { key: string; pattern: string | null } {
+  const raw = String(payee || ''); const m = raw.match(PROCESSOR)
+  if (m) { const rest = merchantKey(raw.slice(m[0].length)); const proc = m[1].toLowerCase(); return rest === 'unknown' || rest.length < 3 ? { key: `via ${proc} ${rest === 'unknown' ? '' : rest}`.trim(), pattern: null } : { key: rest, pattern: rest } }
+  const k = merchantKey(raw); return { key: k, pattern: k === 'unknown' || BARE.has(k) ? null : k }
+}

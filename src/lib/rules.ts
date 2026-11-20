@@ -2,7 +2,7 @@
 // Rules live in household settings (settings.rules). The email engine's remembered payees (settings.finmail.rules) are still honoured as a fallback.
 import type { Data, Settings, Transaction } from '../app/data/types'
 import { merchantKey } from './intelligence'
-import { libraryCategory, type Confidence } from './merchants'
+import { libraryCategory, merchantIdentity, type Confidence } from './merchants'
 
 import type { PayeeRule } from '../app/data/types'
 export type { PayeeRule }
@@ -38,8 +38,9 @@ export function suggest(d: Data, s: Settings, t: Pick<Transaction, 'payee' | 'ki
   if (r) { const tags = [...new Set([...(r.tags || []).map(x => x.trim().toLowerCase()).filter(Boolean), ...(r.review ? [REVIEW_TAG] : [])])]; return { category_id: r.category_id ?? undefined, account_id: r.account_id ?? undefined, payee: r.rename || undefined, exclude_from_budget: r.exclude_from_budget, tags: tags.length ? tags : undefined, goal_id: r.goal_id || undefined, rule: r, how: 'rule', confidence: 'high' } }
   const fm = s.finmail?.rules?.[emailKey(t.payee)]
   if (fm?.category) return { category_id: fm.category, account_id: fm.account || undefined, how: 'remembered', confidence: 'high' }
-  const k = merchantKey(t.payee); if (k !== 'unknown') {
-    const counts = new Map<string, number>(); for (const x of d.transactions) if (x.category_id && x.kind === t.kind && merchantKey(x.payee) === k) counts.set(x.category_id, (counts.get(x.category_id) || 0) + 1)
+  // the merchant behind a processor prefix: "PAYPAL *NETFLIX" is filed by what was filed for Netflix, never by what went through PayPal
+  const k = merchantIdentity(t.payee).key; if (k !== 'unknown') {
+    const counts = new Map<string, number>(); for (const x of d.transactions) if (x.category_id && x.kind === t.kind && merchantIdentity(x.payee).key === k) counts.set(x.category_id, (counts.get(x.category_id) || 0) + 1)
     const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]; const all = [...counts.values()].reduce((n, v) => n + v, 0)
     // filed the same way at least twice: confident when that is (nearly) always how it was filed, only likely when it was split between lines
     if (best && best[1] >= 2) return { category_id: best[0], how: 'history', confidence: best[1] / all >= 0.75 ? 'high' : 'medium' }
@@ -68,8 +69,8 @@ export function planAutoCategorise(d: Data, s: Settings, opts: { onlyUncategoris
   for (const t of d.transactions) {
     if (t.status === 'void') continue
     const sg = suggest(d, s, t); if (!sg.how) continue
-    // a library answer is filed on its own only when it is a confident one; a likely one waits for a yes on Review uncategorized
-    if (sg.how === 'library' && sg.confidence !== 'high' && !opts.likely) continue
+    // a library or history answer is filed on its own only when it is a confident one; a likely one waits for a yes on Review uncategorized
+    if ((sg.how === 'library' || sg.how === 'history') && sg.confidence !== 'high' && !opts.likely) continue
     // transfers (savings moves, card payments) only take a rule's tags and goal, never a guessed category
     if (t.kind === 'transfer') { if (sg.how !== 'rule' || !(sg.tags?.length || sg.goal_id)) continue; const patch = applySuggestion(t, { tags: sg.tags, goal_id: sg.goal_id, rule: sg.rule, how: 'rule' }); if (patch) out.push({ t, patch, how: 'rule' }); continue }
     if (opts.onlyUncategorised && t.category_id && !(sg.how === 'rule' && (sg.tags?.length || sg.goal_id))) continue
@@ -79,7 +80,8 @@ export function planAutoCategorise(d: Data, s: Settings, opts: { onlyUncategoris
 }
 /** Build a rule from a correction the user just made ("Kroger → Groceries"), using a pattern that is specific enough: the merchant key. */
 export function learnRule(payee: string, patch: { category_id?: string | null; account_id?: string | null }, kind?: 'expense' | 'income' | null): PayeeRule | null {
-  const k = merchantKey(payee); if (k === 'unknown' || (!patch.category_id && !patch.account_id)) return null
+  // never a rule for a payment processor alone ("paypal"): it would catch every merchant paid through it
+  const k = merchantIdentity(payee).pattern; if (!k || (!patch.category_id && !patch.account_id)) return null
   return { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: k, match: 'contains', category_id: patch.category_id ?? null, account_id: patch.account_id ?? null, kind: kind ?? null, enabled: true, hits: 0, created_at: new Date().toISOString(), source: 'learned' }
 }
 /** Upsert: a learned rule for the same pattern + kind replaces the old one instead of piling up. */

@@ -1,7 +1,7 @@
 // 0.31.0 — the built-in merchant library: what it makes of real bank descriptions, and how its answers land on a household's own categories.
 import { describe, it, expect } from 'vitest'
 import { demoSeed, STARTER_CATEGORIES } from '../app/data/demoSeed'
-import { libraryMatch, libraryCategory, resolveCategory, librarySize, plain, type Concept } from './merchants'
+import { libraryMatch, libraryCategory, resolveCategory, librarySize, plain, merchantIdentity, type Concept } from './merchants'
 import { suggest, planAutoCategorise } from './rules'
 import { SETTINGS_DEFAULTS, type Category } from '../app/data/types'
 
@@ -83,5 +83,35 @@ describe('the suggestion engine uses the library last', () => {
     const plan = planAutoCategorise(d2, s); const ids = plan.map(p => p.t.id)
     expect(ids).toContain('n1'); expect(ids).not.toContain('n2'); expect(ids).not.toContain('n3')
     expect(planAutoCategorise(d2, s, { onlyUncategorised: true, likely: true }).map(p => p.t.id)).toContain('n2')
+  })
+})
+
+// Review of 0.31.0 (PR #29)
+describe('review findings', () => {
+  it('Google\'s own products are recognized, and a merchant billed through Google still is', () => {
+    expect(libraryMatch('GOOGLE *FI')).toMatchObject({ concept: 'phone' }); expect(libraryMatch('GOOGLE ONE')).toMatchObject({ concept: 'subscriptions' })
+    expect(libraryMatch('GOOGLE *YouTubePremium')).toMatchObject({ concept: 'subscriptions', confidence: 'high' })
+  })
+  it('a generic utility description is only a likely answer', () => {
+    expect(libraryMatch('CITY PUBLIC UTILITIES')).toMatchObject({ concept: 'water', confidence: 'medium' }); expect(libraryMatch('COLUMBIA GAS OF OHIO')!.confidence).toBe('high')
+  })
+  it('an answer that had to fall back twice is only likely', () => {
+    const mk = (n: string) => ({ ...cats[0], id: 'c-' + n, name: n, group: 'X', kind: 'expense' as const, archived: false })
+    expect(libraryCategory([mk('Entertainment')], 'PLANET FITNESS', 'expense')).toMatchObject({ confidence: 'medium' })
+    expect(libraryCategory([mk('Subscriptions')], 'PLANET FITNESS', 'expense')).toMatchObject({ confidence: 'high' })
+    expect(libraryCategory(cats, 'PLANET FITNESS', 'expense')).toMatchObject({ confidence: 'high' })
+  })
+  it('the merchant behind a processor', () => {
+    expect(merchantIdentity('PAYPAL *NETFLIX')).toEqual({ key: 'netflix', pattern: 'netflix' }); expect(merchantIdentity('SQ *BLUE DOOR CAFE').pattern).toBe('blue door cafe')
+    expect(merchantIdentity('KROGER #1234 COLUMBUS OH')).toEqual({ key: 'kroger', pattern: 'kroger' })
+    for (const p of ['PAYPAL', 'VENMO PAYMENT', 'SQ *', 'PAYPAL *AB']) expect([p, merchantIdentity(p).pattern]).toEqual([p, null])
+    expect(merchantIdentity('PAYPAL *AB').key).not.toBe(merchantIdentity('PAYPAL *CD').key)
+  })
+  it('auto-categorize leaves a split history for review', () => {
+    const t0 = data.transactions.find(t => t.kind === 'expense')!; const c = (n: string) => cats.find(x => x.name === n)!.id
+    const past = [['a', 'Pets'], ['b', 'Pets'], ['c', 'Shopping'], ['d', 'Shopping']].map(([i, n]) => ({ ...t0, id: 'sp' + i, payee: 'Zorblat Outfitters', category_id: c(n) }))
+    const d2 = { ...data, transactions: [...data.transactions, ...past, { ...t0, id: 'spx', payee: 'Zorblat Outfitters', category_id: null }] }; const s2 = { ...SETTINGS_DEFAULTS, rules: [] }
+    expect(suggest(d2, s2, { payee: 'Zorblat Outfitters', kind: 'expense' })).toMatchObject({ how: 'history', confidence: 'medium' })
+    expect(planAutoCategorise(d2, s2).map(p => p.t.id)).not.toContain('spx'); expect(planAutoCategorise(d2, s2, { onlyUncategorised: true, likely: true }).map(p => p.t.id)).toContain('spx')
   })
 })

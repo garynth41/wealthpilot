@@ -61,3 +61,32 @@ describe('new arrivals', () => {
     expect(uncategorizedAll(d3).map(t => t.id)).toContain('t1')
   })
 })
+
+// Review of 0.31.0 (PR #29)
+describe('a payment processor in front of the merchant', () => {
+  const pp = [row('p1', 'PAYPAL *NETFLIX', 15.49), row('p2', 'PAYPAL *PETSMART', 48.2), row('p3', 'PAYPAL *NETFLIX', 15.49), row('p4', 'PAYPAL', 30), row('p5', 'VENMO PAYMENT', 25)]
+  const d3 = { ...data, transactions: [...data.transactions, ...pp] }; const gs = reviewGroups(d3, s)
+  it('each merchant is its own group, with its own answer', () => {
+    const nf = gs.find(g => g.txns.some(t => t.id === 'p1'))!, ps = gs.find(g => g.txns.some(t => t.id === 'p2'))!
+    expect(nf.txns.map(t => t.id).sort()).toEqual(['p1', 'p3']); expect(ps.txns.map(t => t.id)).toEqual(['p2'])
+    expect([cat(nf.category_id), cat(ps.category_id)]).toEqual(['Subscriptions & streaming', 'Pets'])
+  })
+  it('the rule learned is for the merchant, never for the processor', () => {
+    const nf = gs.find(g => g.txns.some(t => t.id === 'p1'))!; const plan = acceptPlan([{ ...nf, category_id: nf.category_id! }], [], true)
+    expect(plan.rules.map(r => r.pattern)).toEqual(['netflix'])
+    expect(findRule(plan.rules, 'PAYPAL *NETFLIX', 'expense')).not.toBeNull(); expect(findRule(plan.rules, 'PAYPAL *PETSMART', 'expense')).toBeNull()
+    const bare = gs.filter(g => g.txns.some(t => ['p4', 'p5'].includes(t.id))).map(g => ({ ...g, category_id: data.categories[5].id }))
+    expect(bare.length).toBe(2); expect(acceptPlan(bare, [], true)).toMatchObject({ learned: 0, rules: [], count: 2 })
+  })
+  it('history is the merchant\'s own: what went through PayPal for one does not decide another', () => {
+    const filed = [1, 2, 3].map(i => ({ ...row('q' + i, 'PAYPAL *PETSMART', 20), category_id: data.categories.find(c => c.name === 'Pets')!.id }))
+    const g2 = reviewGroups({ ...d3, transactions: [...d3.transactions, ...filed] }, s).find(g => g.txns.some(t => t.id === 'p1'))!
+    expect(cat(g2.category_id)).toBe('Subscriptions & streaming')
+  })
+})
+describe('arrivals: the insert-time allowance is too short for a person', () => {
+  it('a row changed two seconds after it was added is not an arrival', () => {
+    const quick = row('z1', 'NETFLIX.COM', 15.49, { updated_at: '2026-11-10T12:00:02.000Z' }), same = row('z2', 'NETFLIX.COM', 15.49, { updated_at: '2026-11-10T12:00:00.004Z' })
+    const ids = arrivals({ ...data, transactions: [...data.transactions, quick, same] }).map(t => t.id); expect(ids).not.toContain('z1'); expect(ids).toContain('z2')
+  })
+})

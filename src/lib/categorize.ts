@@ -1,7 +1,7 @@
 // Review uncategorized (0.31.0): everything without a category, gathered by merchant, each group with the app's best answer and how
 // sure it is. Pure functions; the screen is components/ReviewUncategorized.tsx.
 import type { Data, Settings, Transaction } from '../app/data/types'
-import { merchantKey } from './intelligence'
+import { merchantIdentity } from './merchants'
 import { suggest, learnRule, upsertRule, type PayeeRule, type Suggestion } from './rules'
 import { isSplit } from './splits'
 import { round2 } from './money'
@@ -12,10 +12,13 @@ export const uncategorizedAll = (d: Data) => d.transactions.filter(t => needsCat
 
 /** New arrivals: uncategorized rows nobody has touched since they were added (a bank sync, an import, an email). A row someone has
  *  edited — including one whose category was cleared on purpose — is never filed behind their back; it waits on Review uncategorized. */
-export const arrivals = (d: Data) => uncategorizedAll(d).filter(t => !!t.payee && (!t.updated_at || !t.created_at || Math.abs(Date.parse(t.updated_at) - Date.parse(t.created_at)) < 5000))
+/** The database stamps both times from one clock reading; the offline demo takes two readings a moment apart. Nothing a person does fits inside this. */
+const INSERT_SKEW_MS = 250
+export const arrivals = (d: Data) => uncategorizedAll(d).filter(t => !!t.payee && (!t.updated_at || !t.created_at || Math.abs(Date.parse(t.updated_at) - Date.parse(t.created_at)) < INSERT_SKEW_MS))
 
 export interface ReviewGroup {
-  /** merchant key + side; transactions with no payee are each their own group */
+  /** merchant + side; transactions with no payee are each their own group. `key` is the pattern a rule would learn, or 'unknown' when
+   *  there is none (no payee, or only a payment processor's name) */
   id: string; key: string; kind: 'expense' | 'income'
   /** the payee as the newest transaction shows it */
   name: string
@@ -26,13 +29,13 @@ export interface ReviewGroup {
 /** Uncategorized transactions by merchant, the most money first. */
 export function reviewGroups(d: Data, s: Settings): ReviewGroup[] {
   const by = new Map<string, Transaction[]>()
-  for (const t of uncategorizedAll(d)) { const k = merchantKey(t.payee); const id = (k === 'unknown' ? 'one:' + t.id : k) + '|' + t.kind; const a = by.get(id); if (a) a.push(t); else by.set(id, [t]) }
+  for (const t of uncategorizedAll(d)) { const k = merchantIdentity(t.payee).key; const id = (k === 'unknown' ? 'one:' + t.id : k) + '|' + t.kind; const a = by.get(id); if (a) a.push(t); else by.set(id, [t]) }
   const out: ReviewGroup[] = []
   for (const [id, list] of by) {
     const txns = list.slice().sort((a, b) => b.date.localeCompare(a.date)); const first = txns[0]; const kind = first.kind as 'expense' | 'income'
     const sg = first.payee ? suggest(d, s, { payee: first.payee, kind }) : { how: null } as Suggestion
     const ok = !!sg.category_id && d.categories.some(c => c.id === sg.category_id && !c.archived)
-    out.push({ id, key: merchantKey(first.payee), kind, name: (first.payee || '').trim() || 'No payee', txns, total: round2(txns.reduce((n, t) => n + t.amount, 0)), last: first.date,
+    out.push({ id, key: merchantIdentity(first.payee).pattern || 'unknown', kind, name: (first.payee || '').trim() || 'No payee', txns, total: round2(txns.reduce((n, t) => n + t.amount, 0)), last: first.date,
       category_id: ok ? sg.category_id! : null, confidence: ok ? sg.confidence || 'medium' : null, how: ok ? sg.how : null, matched: ok ? sg.matched : undefined })
   }
   return out.sort((a, b) => b.total - a.total || b.txns.length - a.txns.length || a.name.localeCompare(b.name))

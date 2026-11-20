@@ -16,7 +16,7 @@ const SHOWN = 60
 export function ReviewUncategorized() {
   const { data, settings, catOpts, catLabels, cat, acctName, canEdit, guarded, saveSettings } = useData(); const { close } = useModal()
   const groups = useMemo(() => reviewGroups(data, settings), [data, settings]); const cov = useMemo(() => coverage(data), [data])
-  const [pick, setPick] = useState<Record<string, string>>({}); const [openId, setOpenId] = useState<string | null>(null); const [show, setShow] = useState<Show>('all')
+  const [pick, setPick] = useState<Record<string, string>>({}); const [openId, setOpenId] = useState<string | null>(null); const [show, setShow] = useState<Show>('all'); const [busy, setBusy] = useState(false)
   // the screen belongs to the ledger: following a link to another page closes it rather than leaving it over that page
   useEffect(() => { const on = () => { if (!location.hash.startsWith('#/transactions')) close() }; window.addEventListener('hashchange', on); return () => window.removeEventListener('hashchange', on) }, [close])
   const chosen = (g: ReviewGroup) => (g.id in pick ? pick[g.id] : g.category_id || '')
@@ -24,9 +24,11 @@ export function ReviewUncategorized() {
   const list = show === 'sure' ? sure : show === 'likely' ? likely : show === 'none' ? none : groups
   const learn = settings.learnRules !== false
   const file = (gs: ReviewGroup[], done: (n: number, learned: number) => string) => {
-    const ready = gs.map(g => ({ ...g, category_id: chosen(g) })).filter(g => g.category_id); if (!ready.length) return
-    const plan = acceptPlan(ready, useStore.getState().settings().rules || [], learn)
-    void guarded(async () => { for (const b of plan.byCat) await useStore.getState().bulkUpdate('transactions', b.ids, { category_id: b.category_id }); if (plan.learned) await saveSettings({ rules: plan.rules }); setPick({}) }, done(plan.count, plan.learned))
+    const ready = gs.map(g => ({ ...g, category_id: chosen(g) })).filter(g => g.category_id); if (!ready.length || busy) return
+    // one acceptance at a time (two would each save rules from the same starting list and one would be lost), and the rules first:
+    // if that save fails nothing has been filed, so the group is still here to try again
+    setBusy(true)
+    void guarded(async () => { try { const plan = acceptPlan(ready, useStore.getState().settings().rules || [], learn); if (plan.learned) await saveSettings({ rules: plan.rules }); for (const b of plan.byCat) await useStore.getState().bulkUpdate('transactions', b.ids, { category_id: b.category_id }); setPick({}) } finally { setBusy(false) } }, done(ready.reduce((k, g) => k + g.txns.length, 0), learn ? ready.filter(g => g.key !== 'unknown').length : 0))
   }
   const n = (k: number, w = 'transaction') => `${k} ${w}${k === 1 ? '' : 's'}`
   const acceptOne = (g: ReviewGroup) => file([g], k => `${n(k)} filed under ${cat(chosen(g))?.name || 'the category'}${learn && g.key !== 'unknown' ? ' · remembered for next time' : ''}`)
@@ -43,7 +45,7 @@ export function ReviewUncategorized() {
       </div>
       {groups.length === 0 ? <div className="empty">Nothing to review — every purchase and deposit has a category.</div> : <>
         <div className="ru-bar">
-          {canEdit && sure.length > 0 && <Btn primary onClick={acceptSure}>Accept all {sureCount} sure ones</Btn>}
+          {canEdit && sure.length > 0 && <Btn primary disabled={busy} onClick={acceptSure}>Accept all {sureCount} sure ones</Btn>}
           <span role="group" aria-label="Show"><Seg value={show} options={[['all', `All ${groups.length}`], ['sure', `Sure ${sure.length}`], ['likely', `Likely ${likely.length}`], ['none', `Your pick ${none.length}`]]} onChange={setShow} /></span>
         </div>
         <Note>Grouped by merchant, most money first. <b>Sure</b> = one of your rules, how you filed it before, or a merchant Cresari knows. <b>Likely</b> = a good guess that wants your yes. {learn ? 'Each choice is remembered, so new transactions from the same merchant are filed on their own.' : 'Rule learning is off in Settings, so choices here are not remembered.'}</Note>
@@ -55,7 +57,7 @@ export function ReviewUncategorized() {
               <div className="ru-pick">
                 {!own && g.category_id ? <Pill cls={g.confidence === 'high' ? 'good' : 'info'}>{g.confidence === 'high' ? 'Sure' : 'Likely'}</Pill> : !c ? <Pill cls="warn">Your pick</Pill> : <Pill cls="idle">Your pick</Pill>}
                 {canEdit ? <select className="inp" aria-label={`Category for ${g.name}`} value={c} onChange={e => setPick(p => ({ ...p, [g.id]: e.target.value }))}><option value="">— choose a category —</option>{o.map(x => <option key={x.id} value={x.id}>{catLabels[x.id]}</option>)}</select> : <span>{cat(c)?.name || '—'}</span>}
-                {canEdit && <Btn sm primary={!!c} disabled={!c} onClick={() => acceptOne(g)} aria-label={`Accept ${cat(c)?.name || 'category'} for ${g.name}`}>Accept</Btn>}
+                {canEdit && <Btn sm primary={!!c} disabled={!c || busy} onClick={() => acceptOne(g)} aria-label={`Accept ${cat(c)?.name || 'category'} for ${g.name}`}>Accept</Btn>}
               </div>
             </div>
             {!own && g.category_id ? <div className="ru-why">{reasonFor(g)}</div> : null}
