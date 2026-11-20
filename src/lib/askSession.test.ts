@@ -20,6 +20,11 @@ describe('the Ask Cresari conversation', () => {
     expect(s.turns()).toEqual([]); expect(s.busy()).toBe(false); expect(s.answer(t, 'Late')).toBe(false); expect(s.turns()).toEqual([])
   })
   it('each sign-out is a new sign-in: a reply from before it can be told apart, even for the same account', () => { const was = s.signIn(); s.restart(); expect(s.signIn()).toBe(was); s.reset(); expect(s.signIn()).toBe(was + 1) })
+  it('a question that failed while no panel was open is handed back once, with the reason', () => {
+    const t = s.begin('Which debt first?')!; expect(s.fail(t, 'No connection')).toBe(true)
+    expect(s.takeLost()).toEqual({ question: 'Which debt first?', error: 'No connection' }); expect(s.takeLost()).toBeNull()
+    const u = s.begin('Again')!; s.fail(u, 'x'); s.restart(); expect(s.takeLost()).toBeNull()
+  })
   it('another household is another conversation; the same one is kept when the panel is opened again', () => {
     const t = s.begin('Q')!; s.answer(t, 'A'); s.claim('u1:h1'); expect(s.turns()).toHaveLength(2); s.claim('u1:h2'); expect(s.turns()).toEqual([])
   })

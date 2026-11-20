@@ -42,6 +42,19 @@ export function nameScrubber(names: string[] = [], places: string[] = []) {
     return t.replace(/\s{2,}/g, ' ').replace(/^[\s'’:#–-]+|[\s:#–-]+$/g, '').trim().slice(0, 60) || 'unnamed'
   }
 }
+/** Words an account's name is usually made of. A name that is nothing but these ("Joint checking") names no particular account. */
+const ACCOUNT_WORDS = new Set('checking|savings|saving|credit|card|cards|debit|loan|loans|mortgage|account|accounts|joint|main|primary|personal|business|cash|money|market|emergency|fund|funds|retirement|brokerage|investment|investments|ira|roth|401k|hsa|car|auto|home|house|student|line|of|the|and|my|our|new|old'.split('|'))
+/** For each account with a name of its own: a pattern for that name as a whole phrase (and for the name without its bank's), and the kind to put in its place. */
+function accountPhrases(accounts: Data['accounts']): Array<[RegExp, string]> {
+  const out = new Map<string, string>()
+  const words = (v: string) => v.normalize('NFC').toLowerCase().split(/[^\p{L}\p{M}\p{N}'’]+/u).filter(Boolean)
+  for (const a of accounts) {
+    const kind = String(ACCOUNT_KIND_LABEL[a.kind] || a.kind || 'account').toLowerCase(); const bank = new Set(words(a.institution || ''))
+    const full = words(a.name || ''), bare = full.filter(w => !bank.has(w))
+    for (const w of [full, bare]) if (w.length && w.some(x => !ACCOUNT_WORDS.has(x) && !bank.has(x) && !/^\d+$/.test(x))) out.set(w.join(' '), kind)
+  }
+  return [...out.entries()].sort((a, b) => b[0].length - a[0].length).map(([p, kind]) => [new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])${p.split(' ').map(esc).join("[^\\p{L}\\p{M}\\p{N}'’]+")}(?![\\p{L}\\p{M}\\p{N}])`, 'giu'), kind] as [RegExp, string])
+}
 /** Words that are often part of a household's name but are not anybody's name. */
 const COMMON = new Set('the|and|family|household|home|house|budget|money|our|my|main|joint|personal|finance|finances|account|accounts|test|demo|sample|an|as|at|be|by|do|go|if|in|is|it|me|no|of|on|or|so|to|up|us|we|for|new|old|car|pay|tax|gas|pet|fun'.split('|'))
 
@@ -52,7 +65,11 @@ const r0 = (n: number) => Math.round(n)
 export function buildContext(d: Data, s: Settings, o: ContextOptions = {}) {
   const asOf = o.asOf || today()
   // people's names, and the names of the household's banks and lenders (a bill is often named after the card it pays)
-  const clean = nameScrubber(o.names || [], [...(o.places || []), ...d.accounts.map(x => x.institution || '')])
+  const names = nameScrubber(o.names || [], [...(o.places || []), ...d.accounts.map(x => x.institution || '')])
+  // …and the household's own names for its accounts: where a bill, goal or category is named after one ("Freedom card payment"), the
+  // account's name is swapped for its kind ("credit card payment"). The name as a whole phrase — its everyday words stay in other labels.
+  const phrases = accountPhrases(d.accounts)
+  const clean = (v: unknown) => names(phrases.reduce((t, [re, to]) => t.replace(re, `$1${to}`), String(v ?? '').normalize('NFC')))
   const months = monthsBack(asOf, 6); const cur = months[months.length - 1]
   const stats = months.map(m => ({ m, st: rangeStat(d, monthStart(m), m === cur ? asOf : monthEnd(m)) }))
   const full = stats.filter(x => x.m !== cur && x.st.count > 0).slice(-3)

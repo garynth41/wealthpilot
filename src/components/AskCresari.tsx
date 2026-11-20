@@ -68,7 +68,8 @@ export function AskCresari() {
   askSession.claim(`${user?.id || 'demo'}:${household?.id || ''}`)
   const [, bump] = useState(0); const [wiped, setWiped] = useState(false); const [q, setQ] = useState(''); const [err, setErr] = useState<string | null>(null)
   // a question still out when the panel was closed is still out when it is opened again; its reply shows up here when it lands
-  useEffect(() => askSession.subscribe(() => bump(n => n + 1)), [])
+  // …and a question that failed while the panel was closed comes back into the box, with the reason
+  useEffect(() => { const hear = () => { const l = askSession.takeLost(); if (l) { setQ(l.question); setErr(l.error || null) } bump(n => n + 1) }; hear(); return askSession.subscribe(hear) }, [])
   const turns = askSession.turns(), busy = askSession.busy()
   const [agreed, setAgreed] = useState(askConsented(user?.id)); const [detail, setDetail] = useState(askDetailOn()); const [showSent, setShowSent] = useState(false); const endRef = useRef<HTMLDivElement>(null); const boxRef = useRef<HTMLTextAreaElement>(null)
   const names = useMemo(() => [user?.email || '', String((user?.user_metadata as { full_name?: string; name?: string } | undefined)?.full_name || (user?.user_metadata as { name?: string } | undefined)?.name || ''), ...data.members.flatMap(m => [m.display_name || '', m.email || ''])], [user, data.members])
@@ -86,7 +87,7 @@ export function AskCresari() {
     ask({ household_id: household.id, question, context: sent, history, detail })
       // the answer is taken only if this is still the conversation it was asked in
       .then(r => { if (same()) useStore.setState({ ai: { allowed: true, limit: r.limit, used: r.used } }); askSession.answer(ticket, r.answer) })
-      .catch((e: Error & Partial<AiStatus>) => { const now = useStore.getState().ai; if (same() && now && typeof e.limit === 'number') useStore.setState({ ai: { ...now, limit: e.limit, used: e.used ?? now.used } }); if (askSession.fail(ticket)) { setQ(question); setErr(e.message) } })
+      .catch((e: Error & Partial<AiStatus>) => { const now = useStore.getState().ai; if (same() && now && typeof e.limit === 'number') useStore.setState({ ai: { ...now, limit: e.limit, used: e.used ?? now.used } }); askSession.fail(ticket, e.message) })
       .finally(() => { setTimeout(() => boxRef.current?.focus(), 50) })
   }
   // switching transactions off also starts the conversation over (setAskDetail does it, so the switch in Settings does the same)

@@ -137,3 +137,14 @@ describe('reading a request body', () => {
     expect(await readCapped(stream([enc.encode('€'.repeat(40))]), 100)).toBeNull(); expect(await readCapped(stream([enc.encode('€'.repeat(40))]), 120)).toBe('€'.repeat(40))
   })
 })
+
+describe('account names in labels', () => {
+  it('a bill or goal named after an account loses that name — the kind takes its place — and everyday words stay elsewhere', () => {
+    const acct = data.accounts.find(a => a.kind === 'checking') || data.accounts[0]
+    const d2 = { ...data, accounts: data.accounts.map(a => a.id === acct.id ? { ...a, name: 'Chase Sapphire Preferred', institution: 'Chase' } : a.id === data.accounts[1].id ? { ...a, name: 'Joint checking', institution: '' } : a),
+      recurring: [...data.recurring, { ...data.recurring[0], id: 'r-acct', name: 'Sapphire Preferred payment', active: true }, { ...data.recurring[0], id: 'r-plain', name: 'Joint checking fee', active: true }] }
+    const text = contextText(d2, settings, {}); expect(/sapphire|preferred/i.test(text)).toBe(false)
+    const bills = (JSON.parse(text).billsAndSubscriptions as Array<{ name: string }>).map(b => b.name)
+    expect(bills.some(n => / payment$/.test(n) && !/sapphire/i.test(n))).toBe(true); expect(bills).toContain('Joint checking fee')   // a name made only of everyday account words names nothing
+  })
+})

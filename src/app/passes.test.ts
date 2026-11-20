@@ -23,10 +23,14 @@ describe('duplicate merging and filing on arrival', () => {
     const merging = useStore.getState().autoDedupe(true).then(n => { events.push('merge pass done'); return n })
     const mergingToo = useStore.getState().autoDedupe(true)   // asked twice while waiting: one pass, and both are told what it merged
     const again = useStore.getState().autoCategorize(true)   // asked for a second time while the first is still running: queued, not lost
+    // …and something for that second pass to do arrives meanwhile
+    const late = await repo.insert('transactions', { ...base, id: 'arrival-2', payee: 'HULU', amount: 9.99, category_id: null })
+    useStore.setState(st => (st.data.transactions.some(t => t.id === late.id) ? st : { data: { ...st.data, transactions: [...st.data.transactions, late] } }))
     expect(await filing).toBe(1)
     // asked once more while the merge is running: told what that pass merged too, not 0
     await new Promise(r => setTimeout(r, 5)); const during = useStore.getState().autoDedupe(true)
-    expect(await merging).toBe(1); expect(await mergingToo).toBe(1); expect(await during).toBe(1); expect(await again).toBe(0)
+    expect(await merging).toBe(1); expect(await mergingToo).toBe(1); expect(await during).toBe(1); expect(await again).toBe(1)
+    expect(useStore.getState().data.transactions.find(t => t.id === 'arrival-2')!.category_id).toBe(seed.data.categories.find(c => c.name === 'Subscriptions & streaming')!.id)
     const left = useStore.getState().data.transactions.filter(t => t.id.startsWith('twin-')), gone = useStore.getState().data.duplicates.filter(t => t.id.startsWith('twin-'))
     expect(left).toHaveLength(1); expect(gone).toHaveLength(1)
     // asked twice while one is still waiting for its turn: both get that one pass's answer, and it runs once
