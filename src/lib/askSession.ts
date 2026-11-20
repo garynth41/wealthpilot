@@ -8,16 +8,20 @@ let turns: Turn[] = []; let owner: string | null = null
 let epoch = 0
 // the conversation that has a question out, if any — one question at a time
 let pending: number | null = null
+// which sign-in this is: goes up every time the conversation is cleared by signing out
+let signIn = 0
 const subs = new Set<() => void>()
 const poke = () => subs.forEach(f => { try { f() } catch { /* a listener that is gone */ } })
 
 export const askSession = {
   turns: () => turns,
   busy: () => pending === epoch,
+  /** Which sign-in this is. A reply asked for under an earlier one says nothing about the present one. */
+  signIn: () => signIn,
   /** The panel says whose conversation it is showing; a different account or household starts a new one. */
   claim(key: string) { if (owner !== key) { turns = []; owner = key; epoch++; pending = null } },
   /** Signing out. */
-  reset() { turns = []; owner = null; epoch++; pending = null; poke() },
+  reset() { turns = []; owner = null; epoch++; signIn++; pending = null; poke() },
   /** Start over, same person. Returns whether there was anything to clear. */
   restart() { const had = turns.length > 0 || pending === epoch; turns = []; epoch++; pending = null; poke(); return had },
   /** Put a question out. Returns its ticket, or null while another is still out. */

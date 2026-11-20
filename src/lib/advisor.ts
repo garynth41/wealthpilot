@@ -35,8 +35,9 @@ export function nameScrubber(names: string[] = [], places: string[] = []) {
   // a name counts only as a whole word: not preceded or followed by another letter or digit, in any script
   const re = words.length ? new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])(?:${words.map(esc).join('|')})(?:['’]s)?(?![\\p{L}\\p{M}\\p{N}])`, 'giu') : null
   return (s: unknown) => {
-    // numbers that could be an account's: five digits or more, or four that are not a year ("Vacation 2027" stays, "Visa 4417" does not)
-    let t = scrub(s).normalize('NFC').replace(/\d[\d -]{3,}\d/g, m => (m.replace(/\D/g, '').length >= 5 ? '' : m)).replace(/(^|\D)(?!(?:19|20)\d\d(?!\d))\d{4}(?!\d)/g, '$1')
+    // numbers that could be an account's: four digits or more, also when written in groups ("Visa 4417", "Card 1234-5678"). A year in a
+    // label goes with them — nothing can tell "Vacation 2027" from "Account 2027", and the label loses little without it.
+    let t = scrub(s).normalize('NFC').replace(/\d[\d -]{2,}\d/g, m => (m.replace(/\D/g, '').length >= 4 ? '' : m))
     if (re) { let prev = ''; while (prev !== t) { prev = t; t = t.replace(re, '$1') } }
     return t.replace(/\s{2,}/g, ' ').replace(/^[\s'’:#–-]+|[\s:#–-]+$/g, '').trim().slice(0, 60) || 'unnamed'
   }

@@ -82,7 +82,7 @@ export function AskCresari() {
     const history = turns.slice(); const ticket = askSession.begin(question); if (ticket === null) return
     setQ(''); setErr(null); setWiped(false)
     // the count that comes back belongs to the account that asked: it is not written over somebody who signed in since
-    const asker = user?.id; const same = () => useStore.getState().user?.id === asker
+    const asker = user?.id, during = askSession.signIn(); const same = () => useStore.getState().user?.id === asker && askSession.signIn() === during
     ask({ household_id: household.id, question, context: sent, history, detail })
       // the answer is taken only if this is still the conversation it was asked in
       .then(r => { if (same()) useStore.setState({ ai: { allowed: true, limit: r.limit, used: r.used } }); askSession.answer(ticket, r.answer) })

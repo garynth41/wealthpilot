@@ -19,6 +19,7 @@ describe('the Ask Cresari conversation', () => {
     const t = s.begin('Private question')!; s.reset(); s.claim('u1:h1')
     expect(s.turns()).toEqual([]); expect(s.busy()).toBe(false); expect(s.answer(t, 'Late')).toBe(false); expect(s.turns()).toEqual([])
   })
+  it('each sign-out is a new sign-in: a reply from before it can be told apart, even for the same account', () => { const was = s.signIn(); s.restart(); expect(s.signIn()).toBe(was); s.reset(); expect(s.signIn()).toBe(was + 1) })
   it('another household is another conversation; the same one is kept when the panel is opened again', () => {
     const t = s.begin('Q')!; s.answer(t, 'A'); s.claim('u1:h1'); expect(s.turns()).toHaveLength(2); s.claim('u1:h2'); expect(s.turns()).toEqual([])
   })

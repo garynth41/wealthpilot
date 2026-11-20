@@ -109,8 +109,8 @@ describe('review findings', () => {
     expect(nameScrubber([], ['An Of Family'])('An emergency fund of ours')).toBe('An emergency fund of ours'); expect(nameScrubber(['An'])('An groceries')).toBe('groceries')
     // the same letter typed two ways: é as one character, or as e plus a combining accent
     expect(nameScrubber(['José'])('Jose\u0301 fund')).toBe('fund'); expect(nameScrubber(['Jose\u0301'])('José fund')).toBe('fund')
-    // numbers that could be an account's go; a year stays
-    const n = nameScrubber(); expect(n('Electric account 12345678')).toBe('Electric account'); expect(n('Visa 4417')).toBe('Visa'); expect(n('Card 1234-5678')).toBe('Card'); expect(n('Vacation 2027')).toBe('Vacation 2027'); expect(n('401k match')).toBe('401k match'); expect(n('Top 10 list')).toBe('Top 10 list')
+    // numbers that could be an account's go — a year in a label goes with them, since nothing can tell the two apart
+    const n = nameScrubber(); expect(n('Electric account 12345678')).toBe('Electric account'); expect(n('Visa 4417')).toBe('Visa'); expect(n('Card 1234-5678')).toBe('Card'); expect(n('Vacation 2027')).toBe('Vacation'); expect(n('Electric account 2027')).toBe('Electric account'); expect(n('401k match')).toBe('401k match'); expect(n('Top 10 list')).toBe('Top 10 list')
   })
   it('a payee is sent only as the business name the list is sure of — never the rest of the description', () => {
     const base = data.transactions.find(t => t.kind === 'expense')!
