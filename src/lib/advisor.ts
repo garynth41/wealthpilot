@@ -21,18 +21,25 @@ import { scrub } from '../../supabase/functions/ask-cresari/core'
 import { today, monthStart, monthEnd } from './dates'
 import { round2 } from './money'
 
-export interface ContextOptions { /** include individual transactions (the Settings switch) */ detail?: boolean; /** names to take out wherever they appear: members, the household, the signed-in person */ names?: string[]; asOf?: string }
+export interface ContextOptions { /** include individual transactions (the Settings switch) */ detail?: boolean; /** people's names to take out wherever they appear: members, the signed-in person */ names?: string[]; /** the household's own name: its distinctive words are taken out too */ places?: string[]; asOf?: string }
 export const DETAIL_DAYS = 90, DETAIL_MAX = 300
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-/** A function that removes people's names (whole words, any case), email addresses and long numbers from a label. */
-export function nameScrubber(names: string[] = []) {
-  // any script (José, Émile, Мария, 李明), two letters and up (Al, Jo, Li). Everyday words that also turn up in household names are left alone.
-  const words = [...new Set(names.flatMap(n => String(n || '').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2 && !COMMON.has(w)))]
-    .sort((a, b) => b.length - a.length)
+/** A function that removes people's names (whole words, any case), email addresses and account-like numbers from a label.
+ *  `names` are people: every word of two letters or more is taken out, even one that is also an everyday word (a member called An).
+ *  `places` are the household's own name and its banks: everyday words in those ("The", "Family", "Home") are left alone. */
+export function nameScrubber(names: string[] = [], places: string[] = []) {
+  // any script (José, Émile, Мария, 李明), in one spelling: a letter with its accent typed as one character or as two is the same letter
+  const split = (list: string[]) => list.flatMap(n => String(n || '').normalize('NFC').split('@')[0].split(/[^\p{L}\p{M}'’]+/u)).map(w => w.replace(/['’]s$/i, '').replace(/^['’]+|['’]+$/g, '').toLowerCase()).filter(w => [...w].length >= 2)
+  const words = [...new Set([...split(names), ...split(places).filter(w => !COMMON.has(w))])].sort((a, b) => b.length - a.length)
   // a name counts only as a whole word: not preceded or followed by another letter or digit, in any script
   const re = words.length ? new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])(?:${words.map(esc).join('|')})(?:['’]s)?(?![\\p{L}\\p{M}\\p{N}])`, 'giu') : null
-  return (s: unknown) => { let t = scrub(s); if (re) { let prev = ''; while (prev !== t) { prev = t; t = t.replace(re, '$1') } t = t.replace(/\s{2,}/g, ' ').replace(/^[\s'’:–-]+|[\s:–-]+$/g, '') } return t.trim().slice(0, 60) || 'unnamed' }
+  return (s: unknown) => {
+    // numbers that could be an account's: five digits or more, or four that are not a year ("Vacation 2027" stays, "Visa 4417" does not)
+    let t = scrub(s).normalize('NFC').replace(/\d[\d -]{3,}\d/g, m => (m.replace(/\D/g, '').length >= 5 ? '' : m)).replace(/(^|\D)(?!(?:19|20)\d\d(?!\d))\d{4}(?!\d)/g, '$1')
+    if (re) { let prev = ''; while (prev !== t) { prev = t; t = t.replace(re, '$1') } }
+    return t.replace(/\s{2,}/g, ' ').replace(/^[\s'’:#–-]+|[\s:#–-]+$/g, '').trim().slice(0, 60) || 'unnamed'
+  }
 }
 /** Words that are often part of a household's name but are not anybody's name. */
 const COMMON = new Set('the|and|family|household|home|house|budget|money|our|my|main|joint|personal|finance|finances|account|accounts|test|demo|sample|an|as|at|be|by|do|go|if|in|is|it|me|no|of|on|or|so|to|up|us|we|for|new|old|car|pay|tax|gas|pet|fun'.split('|'))
@@ -44,7 +51,7 @@ const r0 = (n: number) => Math.round(n)
 export function buildContext(d: Data, s: Settings, o: ContextOptions = {}) {
   const asOf = o.asOf || today()
   // people's names, and the names of the household's banks and lenders (a bill is often named after the card it pays)
-  const clean = nameScrubber([...(o.names || []), ...d.accounts.map(x => x.institution || '')])
+  const clean = nameScrubber(o.names || [], [...(o.places || []), ...d.accounts.map(x => x.institution || '')])
   const months = monthsBack(asOf, 6); const cur = months[months.length - 1]
   const stats = months.map(m => ({ m, st: rangeStat(d, monthStart(m), m === cur ? asOf : monthEnd(m)) }))
   const full = stats.filter(x => x.m !== cur && x.st.count > 0).slice(-3)

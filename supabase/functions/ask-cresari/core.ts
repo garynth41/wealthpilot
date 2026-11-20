@@ -42,6 +42,19 @@ About the data
 - The data has no names, email addresses or account numbers by design; accounts are labelled by type. Do not ask for those details.
 - Amounts are in the household's currency. Dates are YYYY-MM-DD. "today" in the data is the person's current date.`
 
+/** Read a request body, giving up (null) as soon as it passes `max` bytes — so a body with no stated length cannot be read whole first. */
+export async function readCapped(body: ReadableStream<Uint8Array> | null, max: number): Promise<string | null> {
+  if (!body) return ''
+  const reader = body.getReader(); const parts: Uint8Array[] = []; let n = 0
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break
+    n += value.byteLength; if (n > max) { try { await reader.cancel() } catch { /* already closed */ } return null }
+    parts.push(value)
+  }
+  const all = new Uint8Array(n); let at = 0; for (const p of parts) { all.set(p, at); at += p.byteLength }
+  return new TextDecoder().decode(all)
+}
+
 /** Check and tidy what the app sent. Returns the reason it cannot be used, or the cleaned parts. */
 export function prepare(b: AskBody): { error: string } | { question: string; context: string; history: Turn[]; detail: boolean } {
   // sizes first, so nothing oversized is ever worked on

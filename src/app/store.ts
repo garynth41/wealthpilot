@@ -14,6 +14,7 @@ import { paycheckOnFile } from '../lib/paySchedule'
 import { post } from '../lib/ledger'
 import { suggest } from '../lib/rules'
 import { arrivals } from '../lib/categorize'
+import { askSession } from '../lib/askSession'
 import { patchProblem, InputError, isInputError } from '../lib/validate'
 import type { Account, Transaction } from './data/types'
 import { leaveOut, unpairForLeavingOut, everyAccount } from '../lib/leftOut'
@@ -106,6 +107,8 @@ const LANDED_ON_RECOVERY = typeof location !== 'undefined' && /type=recovery/.te
 // told (not quiet), the pass says what it did.
 let turn: Promise<unknown> = Promise.resolve()
 let dedupeWaiting: Promise<number> | null = null, categorizeWaiting: Promise<number> | null = null, dedupeLoud = false, categorizeLoud = false
+// the merge pass that is running now, if one is: whoever asks during it is told what it merged as well as what the next pass finds
+let dedupeRunning: Promise<number> | null = null
 const inTurn = <T,>(fn: () => Promise<T>): Promise<T> => { const run = turn.then(fn, fn); turn = run.catch(() => {}); return run }
 /** paycheck saves still running, per pay schedule (logPaycheck) */
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
@@ -150,7 +153,7 @@ export const useStore = create<State>((set, get) => ({
   // stop live updates first, so a refresh already on its way cannot write the offline copy back after it is cleared (0.25.1)
   // signing out here ends this device's session only (0.25.1 — the library's default also signed out every other device and the phone);
   // Settings → Security → Sign out everywhere does that on purpose
-  async signOut() { signingOut = true; householdLoad++; try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], householdsFor: null, householdsError: null, mfaPending: false, offlineAt: null, appAdmin: null }); await clearOffline() } finally { signingOut = false } },
+  async signOut() { signingOut = true; householdLoad++; askSession.reset(); try { setErrorSink(null); unsub?.(); unsub = null; await clearOffline(); await clearReminders(); try { await sb().auth.signOut({ scope: 'local' }) } catch { /* offline: the local session is cleared below anyway */ } set({ mode: null, repo: null, household: null, data: emptyData(), households: [], householdsFor: null, householdsError: null, mfaPending: false, offlineAt: null, appAdmin: null }); await clearOffline() } finally { signingOut = false } },
   async finishRecovery(pw) {
     await get().updatePassword(pw); set({ recovering: false })
     try { history.replaceState(null, '', location.pathname) } catch { /* */ }
@@ -286,8 +289,10 @@ export const useStore = create<State>((set, get) => ({
     if (!get().canEdit() || !get().repo) return 0
     if (!quiet) dedupeLoud = true
     if (dedupeWaiting) return dedupeWaiting
-    return dedupeWaiting = inTurn(async () => {
-    dedupeWaiting = null; const quiet = !dedupeLoud; dedupeLoud = false
+    const ahead = dedupeRunning
+    const pass: Promise<number> = inTurn(async () => {
+    dedupeWaiting = null; dedupeRunning = pass; const quiet = !dedupeLoud; dedupeLoud = false
+    try {
     if (!get().canEdit() || !get().repo) return 0
     {
       const plan = planDedupe(get().data.transactions as unknown as DTxn[], get().data.accounts, get().household?.settings?.dedupe); let n = 0
@@ -297,7 +302,9 @@ export const useStore = create<State>((set, get) => ({
       if (n && !quiet) get().toast(`Merged ${n} duplicate transaction${n === 1 ? '' : 's'} — one copy kept (the bank's when there is one). Review or undo in Transactions → Duplicates.`)
       return n
     }
+    } finally { if (dedupeRunning === pass) dedupeRunning = null }
     })
+    return dedupeWaiting = ahead ? ahead.catch(() => 0).then(a => pass.then(b => a + b)) : pass
   },
   // 0.25.1: a value the database would refuse (an empty date, a negative amount — see lib/validate.ts) is refused here, before the
   // optimistic copy shows it: an empty transaction date used to reach every page and take the whole app down. A save that fails

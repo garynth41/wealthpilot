@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest'
 import { demoSeed } from '../app/data/demoSeed'
 import { buildContext, contextText, nameScrubber, starters, answerBlocks, boldRuns, DETAIL_MAX } from './advisor'
-import { scrub, prepare, buildRequest, readReply, refusal, SYSTEM, MAX_QUESTION, MAX_CONTEXT, MAX_TURNS } from '../../supabase/functions/ask-cresari/core'
+import { scrub, prepare, buildRequest, readReply, refusal, SYSTEM, MAX_QUESTION, MAX_CONTEXT, MAX_TURNS, readCapped } from '../../supabase/functions/ask-cresari/core'
 import { rangeStat } from './budget'
 import { netWorth } from './accounts'
 import { today, monthStart } from './dates'
@@ -17,10 +17,10 @@ const d = { ...data,
   accounts: data.accounts.map((a, i) => i === 0 ? { ...a, name: "Gavin's Chase checking", institution: 'Chase', last4: '4417', notes: 'acct 000123456789' } : a),
   goals: data.goals.map((g, i) => i === 0 ? { ...g, name: "Gavin's college fund" } : g),
   transactions: [...data.transactions, person, shop] }
-const names = ['Gavin Thomas', 'gavin.t@example.com', 'The Thomas Household']
+const names = ['Gavin Thomas', 'gavin.t@example.com'], places = ['The Thomas Household']
 
 describe('what leaves the device', () => {
-  const text = contextText(d, settings, { names }), full = contextText(d, settings, { names, detail: true })
+  const text = contextText(d, settings, { names, places }), full = contextText(d, settings, { names, places, detail: true })
   it('no member name, email, account name, institution, account number, note or memo — with or without transactions', () => {
     for (const t of [text, full]) {
       for (const bad of ['Gavin', 'gavin', 'Thomas', 'example.com', '4417', '000123456789', 'birthday', '4111', 'MARIA', 'Gonzalez', 'gonzalez', 'ZELLE'])
@@ -30,7 +30,7 @@ describe('what leaves the device', () => {
     for (const a of d.accounts) if (/freedom|total checking|sapphire|gavin/i.test(a.name)) expect([a.name, text.includes(a.name)]).toEqual([a.name, false])
   })
   it('accounts are told apart by type and number; a label keeps its meaning without the name in it', () => {
-    const c = buildContext(d, settings, { names }) as { accounts: Array<{ account: string }>; goals: Array<{ name: string }> }
+    const c = buildContext(d, settings, { names, places }) as { accounts: Array<{ account: string }>; goals: Array<{ name: string }> }
     expect(c.accounts.map(a => a.account)).toContain('Checking 1'); expect(new Set(c.accounts.map(a => a.account)).size).toBe(c.accounts.length)
     expect(c.goals[0].name).toBe('college fund')
   })
@@ -49,7 +49,7 @@ describe('what leaves the device', () => {
   })
   it('fits well inside what the server accepts', () => { expect(text.length).toBeLessThan(MAX_CONTEXT / 3); expect(full.length).toBeLessThan(MAX_CONTEXT) })
   it('the name scrubber leaves ordinary words alone', () => {
-    const c = nameScrubber(['The Thomas Household', 'Ann Lee'])
+    const c = nameScrubber(['Ann Lee'], ['The Thomas Household'])
     expect(c('Household supplies')).toBe('Household supplies'); expect(c("Ann's car loan")).toBe('car loan'); expect(c('Annual fees')).toBe('Annual fees'); expect(c('Thomas & Ann vacation')).toBe('& vacation'); expect(c('')).toBe('unnamed')
   })
   it('suggests questions that fit the household', () => { const q = starters(d, settings); expect(q.length).toBeGreaterThanOrEqual(3); expect(q.every(x => x.endsWith('?'))).toBe(true) })
@@ -78,7 +78,7 @@ describe('the server\'s side', () => {
     for (let i = 1; i < p.history.length; i++) expect(p.history[i].role).not.toBe(p.history[i - 1].role)
   })
   it('the request: the fixed instruction, the summary marked as data, then the question', () => {
-    const p = prepare({ question: 'Which debt first?', context: contextText(d, settings, { names }) }); if ('error' in p) throw new Error(p.error)
+    const p = prepare({ question: 'Which debt first?', context: contextText(d, settings, { names, places }) }); if ('error' in p) throw new Error(p.error)
     const r = buildRequest('claude-sonnet-5-5', p)
     expect(r.model).toBe('claude-sonnet-5-5'); expect(r.system).toBe(SYSTEM); expect(r.max_tokens).toBeGreaterThan(500)
     const last = r.messages[r.messages.length - 1]; expect(last.role).toBe('user'); expect(last.content).toMatch(/^<household_data>\n\{.*\}\n<\/household_data>\n\nQuestion: Which debt first\?$/s)
@@ -105,7 +105,12 @@ describe('review findings', () => {
     const c = nameScrubber(['José Émile', 'Мария', '李明', 'Al', "O'Brien"])
     expect(c('José fund')).toBe('fund'); expect(c("Émile's car")).toBe('car'); expect(c('Подарок Мария')).toBe('Подарок'); expect(c('李明 savings')).toBe('savings'); expect(c('Al groceries')).toBe('groceries')
     expect(c("O'Brien loan")).toBe('loan'); expect(c('Alarm system')).toBe('Alarm system'); expect(c('Josée fund')).toBe('Josée fund'); expect(c('Personal care')).toBe('Personal care')
-    expect(nameScrubber(['An Of'])('An emergency fund of ours')).toBe('An emergency fund of ours')   // everyday words are not treated as names
+    // an everyday word is left alone in a household's name, but not when it is a person's name (a member called An)
+    expect(nameScrubber([], ['An Of Family'])('An emergency fund of ours')).toBe('An emergency fund of ours'); expect(nameScrubber(['An'])('An groceries')).toBe('groceries')
+    // the same letter typed two ways: é as one character, or as e plus a combining accent
+    expect(nameScrubber(['José'])('Jose\u0301 fund')).toBe('fund'); expect(nameScrubber(['Jose\u0301'])('José fund')).toBe('fund')
+    // numbers that could be an account's go; a year stays
+    const n = nameScrubber(); expect(n('Electric account 12345678')).toBe('Electric account'); expect(n('Visa 4417')).toBe('Visa'); expect(n('Card 1234-5678')).toBe('Card'); expect(n('Vacation 2027')).toBe('Vacation 2027'); expect(n('401k match')).toBe('401k match'); expect(n('Top 10 list')).toBe('Top 10 list')
   })
   it('a payee is sent only as the business name the list is sure of — never the rest of the description', () => {
     const base = data.transactions.find(t => t.kind === 'expense')!
@@ -118,5 +123,17 @@ describe('review findings', () => {
     const huge = Array.from({ length: 5000 }, (_, i) => ({ role: i % 2 ? 'assistant' as const : 'user' as const, content: 'y'.repeat(50000) }))
     const t0 = performance.now(); const p = prepare({ question: 'Hi there', history: [...huge, { role: 'user', content: 7 as never }, null as never] }); expect(performance.now() - t0).toBeLessThan(400)
     if ('error' in p) throw new Error(p.error); expect(p.history.length).toBeLessThanOrEqual(MAX_TURNS); expect(p.history.every(t => t.content.length <= 6000)).toBe(true)
+  })
+})
+
+describe('reading a request body', () => {
+  const stream = (parts: Uint8Array[]) => new ReadableStream<Uint8Array>({ start(c) { for (const p of parts) c.enqueue(p); c.close() } })
+  const enc = new TextEncoder()
+  it('stops at the limit, counted in bytes, without reading the rest', async () => {
+    expect(await readCapped(stream([enc.encode('{"a":'), enc.encode('1}')]), 100)).toBe('{"a":1}'); expect(await readCapped(null, 10)).toBe('')
+    let pulled = 0; const endless = new ReadableStream<Uint8Array>({ pull(c) { pulled++; c.enqueue(new Uint8Array(1000)) } })
+    expect(await readCapped(endless, 5000)).toBeNull(); expect(pulled).toBeLessThan(12)
+    // 40 characters, but 120 bytes: the limit is on bytes
+    expect(await readCapped(stream([enc.encode('€'.repeat(40))]), 100)).toBeNull(); expect(await readCapped(stream([enc.encode('€'.repeat(40))]), 120)).toBe('€'.repeat(40))
   })
 })

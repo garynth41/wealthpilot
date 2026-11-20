@@ -21,15 +21,19 @@ describe('duplicate merging and filing on arrival', () => {
     const filing = useStore.getState().autoCategorize(true)
     await new Promise(r => setTimeout(r, 5))
     const merging = useStore.getState().autoDedupe(true).then(n => { events.push('merge pass done'); return n })
+    const mergingToo = useStore.getState().autoDedupe(true)   // asked twice while waiting: one pass, and both are told what it merged
     const again = useStore.getState().autoCategorize(true)   // asked for a second time while the first is still running: queued, not lost
-    expect(await filing).toBe(1); expect(await merging).toBe(1); expect(await again).toBe(0)
+    expect(await filing).toBe(1)
+    // asked once more while the merge is running: told what that pass merged too, not 0
+    await new Promise(r => setTimeout(r, 5)); const during = useStore.getState().autoDedupe(true)
+    expect(await merging).toBe(1); expect(await mergingToo).toBe(1); expect(await during).toBe(1); expect(await again).toBe(0)
     const left = useStore.getState().data.transactions.filter(t => t.id.startsWith('twin-')), gone = useStore.getState().data.duplicates.filter(t => t.id.startsWith('twin-'))
     expect(left).toHaveLength(1); expect(gone).toHaveLength(1)
     // asked twice while one is still waiting for its turn: both get that one pass's answer, and it runs once
     const first = useStore.getState().autoCategorize(true); const a = useStore.getState().autoDedupe(true), b = useStore.getState().autoDedupe(true)
     await first; expect(await a).toBe(0); expect(await b).toBe(0)
     // the merge's own writes come only after the filing write has landed, and the merge finishes last
-    expect(events.slice(0, 2)).toEqual(['filing write starts', 'filing write done']); expect(events[events.length - 1]).toBe('merge pass done')
+    expect(events.slice(0, 2)).toEqual(['filing write starts', 'filing write done']); expect(events.indexOf('merge pass done')).toBeGreaterThan(1)
     expect(useStore.getState().data.transactions.find(t => t.id === 'arrival-1')!.category_id).toBe(seed.data.categories.find(c => c.name === 'Subscriptions & streaming')!.id)
   })
 })

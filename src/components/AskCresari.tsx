@@ -11,7 +11,8 @@ import { sb } from '../app/supabase'
 import { LS } from '../app/config'
 import { Btn, MBody, MFoot, MHead, Note, Pill, useModal } from './ui'
 import { answerBlocks, boldRuns, buildContext, starters } from '../lib/advisor'
-import { MAX_QUESTION, type Turn } from '../../supabase/functions/ask-cresari/core'
+import { askSession } from '../lib/askSession'
+import { MAX_QUESTION } from '../../supabase/functions/ask-cresari/core'
 
 export interface AiStatus { allowed: boolean; limit: number; used: number }
 const DETAIL_KEY = LS('askDetail'), CONSENT_KEY = LS('askConsent')
@@ -19,20 +20,18 @@ const DETAIL_KEY = LS('askDetail'), CONSENT_KEY = LS('askConsent')
 export const askConsented = (userId?: string | null) => { try { return !!userId && localStorage.getItem(CONSENT_KEY) === userId } catch { return false } }
 const setAskConsent = (userId: string) => { try { localStorage.setItem(CONSENT_KEY, userId) } catch { /* asked again next time */ } }
 export const askDetailOn = () => { try { return localStorage.getItem(DETAIL_KEY) === '1' } catch { return false } }
-export const setAskDetail = (on: boolean) => { try { if (on) localStorage.setItem(DETAIL_KEY, '1'); else localStorage.removeItem(DETAIL_KEY) } catch { /* private mode: off */ } }
+/** Set the switch (here or in Settings). Switching it off also starts the conversation over — earlier answers may quote transactions, and
+ *  they would be sent along as history. Returns whether a conversation was cleared. */
+export const setAskDetail = (on: boolean) => { try { if (on) localStorage.setItem(DETAIL_KEY, '1'); else localStorage.removeItem(DETAIL_KEY) } catch { /* private mode: off */ } return !on && askSession.restart() }
 
-// the conversation: kept while the app is open (closing the panel does not lose it), never saved
-let turns: Turn[] = []; let turnsFor: string | null = null
-// which conversation is on screen: an answer that comes back for an earlier one (started over, signed out) is dropped
-let epoch = 0
-/** Signing out or changing household starts a new conversation. */
-export const resetAsk = () => { turns = []; turnsFor = null; epoch++ }
+// the conversation itself is in lib/askSession: kept while the app is open (closing the panel does not lose it), never saved,
+// and cleared by the store on sign-out
 
 /** Is the advisor open to this account? Asked once per sign-in; the server checks again on every question. */
 export function useAiStatus() {
   const { mode, user } = useStore(); const ai = useStore(s => s.ai)
   useEffect(() => {
-    if (mode !== 'db' || !user) { useStore.setState({ ai: null }); resetAsk(); return }
+    if (mode !== 'db' || !user) { useStore.setState({ ai: null }); askSession.reset(); return }
     let on = true
     Promise.resolve(sb().rpc('ai_status')).then(r => { if (on) useStore.setState({ ai: r.data && typeof r.data === 'object' ? r.data as AiStatus : null }) }).catch(() => { if (on) useStore.setState({ ai: null }) })
     return () => { on = false }
@@ -66,33 +65,39 @@ function Answer({ text }: { text: string }) {
 
 export function AskCresari() {
   const { data, settings } = useData(); const { mode, user, household } = useStore(); const ai = useStore(s => s.ai); const { close } = useModal()
-  const key = `${user?.id || 'demo'}:${household?.id || ''}`; if (turnsFor !== key) { turns = []; turnsFor = key; epoch++ }
-  const [, bump] = useState(0); const [wiped, setWiped] = useState(false); const [q, setQ] = useState(''); const [busy, setBusy] = useState(false); const [err, setErr] = useState<string | null>(null)
+  askSession.claim(`${user?.id || 'demo'}:${household?.id || ''}`)
+  const [, bump] = useState(0); const [wiped, setWiped] = useState(false); const [q, setQ] = useState(''); const [err, setErr] = useState<string | null>(null)
+  // a question still out when the panel was closed is still out when it is opened again; its reply shows up here when it lands
+  useEffect(() => askSession.subscribe(() => bump(n => n + 1)), [])
+  const turns = askSession.turns(), busy = askSession.busy()
   const [agreed, setAgreed] = useState(askConsented(user?.id)); const [detail, setDetail] = useState(askDetailOn()); const [showSent, setShowSent] = useState(false); const endRef = useRef<HTMLDivElement>(null); const boxRef = useRef<HTMLTextAreaElement>(null)
-  const names = useMemo(() => [user?.email || '', String((user?.user_metadata as { full_name?: string; name?: string } | undefined)?.full_name || (user?.user_metadata as { name?: string } | undefined)?.name || ''), household?.name || '', ...data.members.flatMap(m => [m.display_name || '', m.email || ''])], [user, household, data.members])
-  const context = useMemo(() => buildContext(data, settings, { detail, names }), [data, settings, detail, names])
+  const names = useMemo(() => [user?.email || '', String((user?.user_metadata as { full_name?: string; name?: string } | undefined)?.full_name || (user?.user_metadata as { name?: string } | undefined)?.name || ''), ...data.members.flatMap(m => [m.display_name || '', m.email || ''])], [user, data.members])
+  const context = useMemo(() => buildContext(data, settings, { detail, names, places: [household?.name || ''] }), [data, settings, detail, names, household?.name])
   const sent = useMemo(() => JSON.stringify(context), [context]); const ideas = useMemo(() => starters(data, settings), [data, settings])
   const live = mode === 'db' && !!ai?.allowed; const left = ai ? Math.max(0, ai.limit - ai.used) : 0
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'nearest' }) }, [busy, turns.length])   // eslint-disable-line react-hooks/exhaustive-deps
   const send = (text: string) => {
     const question = text.trim(); if (!question || busy || !live || !agreed || !household) return
     if (!navigator.onLine) { setErr('You are offline — Ask Cresari needs a connection'); return }
-    const history = turns.slice(); const mine = epoch; turns = [...turns, { role: 'user', content: question }]; setQ(''); setErr(null); setBusy(true); bump(n => n + 1)
+    const history = turns.slice(); const ticket = askSession.begin(question); if (ticket === null) return
+    setQ(''); setErr(null); setWiped(false)
+    // the count that comes back belongs to the account that asked: it is not written over somebody who signed in since
+    const asker = user?.id; const same = () => useStore.getState().user?.id === asker
     ask({ household_id: household.id, question, context: sent, history, detail })
-      // the count is the server's, so it is always taken; the answer only if this is still the conversation it was asked in
-      .then(r => { useStore.setState({ ai: { allowed: true, limit: r.limit, used: r.used } }); if (mine === epoch) turns = [...turns, { role: 'assistant', content: r.answer }] })
-      .catch((e: Error & Partial<AiStatus>) => { if (typeof e.limit === 'number' && ai) useStore.setState({ ai: { ...ai, limit: e.limit, used: e.used ?? ai.used } }); if (mine !== epoch) return; turns = turns.slice(0, -1); setQ(question); setErr(e.message) })
-      .finally(() => { setBusy(false); bump(n => n + 1); setTimeout(() => boxRef.current?.focus(), 50) })
+      // the answer is taken only if this is still the conversation it was asked in
+      .then(r => { if (same()) useStore.setState({ ai: { allowed: true, limit: r.limit, used: r.used } }); askSession.answer(ticket, r.answer) })
+      .catch((e: Error & Partial<AiStatus>) => { const now = useStore.getState().ai; if (same() && now && typeof e.limit === 'number') useStore.setState({ ai: { ...now, limit: e.limit, used: e.used ?? now.used } }); if (askSession.fail(ticket)) { setQ(question); setErr(e.message) } })
+      .finally(() => { setTimeout(() => boxRef.current?.focus(), 50) })
   }
-  // switching transactions off also starts the conversation over: earlier answers may quote them, and they would be sent along as history
-  const flip = (on: boolean) => { setDetail(on); setAskDetail(on); if (!on && turns.length) { turns = []; epoch++; setErr(null); setWiped(true) } else setWiped(false) }
+  // switching transactions off also starts the conversation over (setAskDetail does it, so the switch in Settings does the same)
+  const flip = (on: boolean) => { setDetail(on); const cleared = setAskDetail(on); if (cleared) setErr(null); setWiped(cleared) }
   return <>
     <MHead title="Ask Cresari" />
     <MBody>
       <Note><b>General guidance to help you think it through — not licensed financial, investment, tax or legal advice.</b> Answers come from an AI reading a summary of your household's numbers; it can be wrong, so check anything important before you act on it.</Note>
       {mode === 'demo' && <div className="ask-off"><Pill cls="info">In testing</Pill> Ask Cresari answers questions about your own household's money — where it goes, which debt to pay first, whether you are saving enough. It works on a signed-in account and is being tested with a small group for now. Below is exactly what it would be sent from this sample household.</div>}
       {mode === 'db' && !live && <div className="ask-off"><Pill cls="info">In testing</Pill> Ask Cresari is being tested with a small group for now.</div>}
-      {live && !agreed && <div className="ask-off" data-ask="consent"><b>Before you ask</b><p style={{ margin: '6px 0' }}>Ask Cresari uses an AI service — <b>Claude, made by Anthropic</b> — to write its answers. When you ask a question, the app sends Anthropic your question and a summary of your household's money (described below; you can see all of it). Cresari does not add anyone's name, email addresses, account names or numbers, or bank names to it — but your question is sent as you type it, so leave those out. Anthropic does not use it to train its models, and Cresari does not keep your questions or the answers.</p><Btn primary onClick={() => { if (user?.id) setAskConsent(user.id); setAgreed(true) }}>I agree — let me ask</Btn></div>}
+      {live && !agreed && <div className="ask-off" data-ask="consent"><b>Before you ask</b><p style={{ margin: '6px 0' }}>Ask Cresari uses an AI service — <b>Claude, made by Anthropic</b> — to write its answers. When you ask a question, the app sends Anthropic your question, the earlier questions and answers of the same conversation, and a summary of your household's money (described below; you can see all of it). Cresari does not add anyone's name, email addresses, account names or numbers, or bank names to it — but your questions are sent as you type them, so leave those out. Anthropic does not use it to train its models, and Cresari does not keep your questions or the answers.</p><Btn primary onClick={() => { if (user?.id) setAskConsent(user.id); setAgreed(true) }}>I agree — let me ask</Btn></div>}
       {live && agreed && <div className="ask-log" role="log" aria-live="polite" aria-label="Conversation">
         {turns.length === 0 && <div className="ask-start"><div className="ask-hi">What would you like to know about your money?</div><div className="ask-ideas">{ideas.map(x => <button key={x} type="button" className="chipbtn" onClick={() => send(x)} disabled={busy || left <= 0}>{x}</button>)}</div></div>}
         {turns.map((t, i) => t.role === 'user' ? <div key={i} className="ask-q"><span>{t.content}</span></div> : <div key={i} className="ask-a" data-ask="answer"><Answer text={t.content} /></div>)}
@@ -105,10 +110,10 @@ export function AskCresari() {
           onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(q) } }} />
         <Btn primary type="submit" disabled={busy || !q.trim() || left <= 0}>{busy ? 'Asking…' : 'Ask'}</Btn>
       </form>}
-      {live && agreed && ai && <div className="ask-meta"><span data-ask="left">{left} of {ai.limit} questions left today</span>{turns.length > 0 && <button type="button" className="linkbtn" disabled={busy} onClick={() => { turns = []; epoch++; setErr(null); bump(n => n + 1) }}>Start a new conversation</button>}</div>}
+      {live && agreed && ai && <div className="ask-meta"><span data-ask="left">{left} of {ai.limit} questions left today</span>{turns.length > 0 && <button type="button" className="linkbtn" disabled={busy} onClick={() => { askSession.restart(); setErr(null); setWiped(false) }}>Start a new conversation</button>}</div>}
       <div className="ask-sent">
         <label className="gm-ign" style={{ fontSize: 13, display: 'block' }}><input type="checkbox" checked={detail} disabled={busy} onChange={e => flip(e.target.checked)} data-ask="detail" /> Include my recent transactions (dates, amounts, categories, and the names of well-known businesses) for more specific answers</label>
-        <Note>Sent to the AI service (Claude, by Anthropic) with each question: a summary of your household's money — monthly totals, spending by category, your budget, balances by account type, bills, goals{detail ? ', and your last 90 days of transactions' : ''}. {wiped ? <b>The conversation was started over, so nothing from your transactions is sent again. </b> : null}<b>Cresari never adds:</b> anyone's name, email addresses, account names or numbers, bank names, notes or attachments. <b>Your question is sent as you type it</b>, so leave names and account details out of it. The conversation is not saved. <button type="button" className="linkbtn" aria-expanded={showSent} onClick={() => setShowSent(v => !v)} data-ask="show">{showSent ? 'Hide what is sent' : 'See exactly what is sent'}</button></Note>
+        <Note>Sent to the AI service (Claude, by Anthropic) with each question: the earlier questions and answers of this conversation, and a summary of your household's money — monthly totals, spending by category, your budget, balances by account type, bills, goals{detail ? ', and your last 90 days of transactions' : ''}. {wiped ? <b>The conversation was started over, so nothing from your transactions is sent again. </b> : null}<b>Cresari never adds:</b> anyone's name, email addresses, account names or numbers, bank names, notes or attachments. <b>Your question is sent as you type it</b>, so leave names and account details out of it. The conversation is not saved. <button type="button" className="linkbtn" aria-expanded={showSent} onClick={() => setShowSent(v => !v)} data-ask="show">{showSent ? 'Hide what is sent' : 'See exactly what is sent'}</button></Note>
         {showSent && <pre className="ask-pre" data-ask="sent" tabIndex={0} aria-label="What is sent with a question">{JSON.stringify(context, null, 1)}</pre>}
       </div>
     </MBody>
