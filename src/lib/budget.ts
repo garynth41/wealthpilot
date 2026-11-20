@@ -41,7 +41,7 @@ export function flowOf(t: Pick<Transaction, 'kind' | 'account_id' | 'to_account_
   return 'move'
 }
 /** Lines that count against expense categories: expenses, less refunds (split transactions by slice). */
-function spendLines(d: Data, txns: Transaction[], acct: Lookup) {
+export function spendLines(d: Data, txns: Transaction[], acct: Lookup) {
   return [...categoryLines(d, txns.filter(t => flowOf(t, acct) === 'spend')), ...categoryLines(d, txns.filter(t => flowOf(t, acct) === 'refund')).map(l => ({ ...l, amount: -l.amount }))]
 }
 const splitTouches = (d: Data, t: Transaction) => d.splits.some(s => s.transaction_id === t.id)

@@ -72,13 +72,15 @@ function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean, fi
   return { data: d, layout: L }
 }
 /** fit: size exactly to the card's part (no automatic minimum height) — for layouts split into fixed parts, like Subscriptions on Insights. */
-type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; fit?: boolean; empty?: ReactNode }
+/** What was clicked on a chart (0.30.0): the category-axis label (or slice label), the series name, the value, and the point's index in its series. */
+export interface ChartPick { label: string; series: string; value: number; index: number; curve: number }
+type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; fit?: boolean; empty?: ReactNode; /** makes bars, points and slices clickable — used to open the transactions behind them */ onPick?: (p: ChartPick) => void }
 /** A chart with nothing to draw shows a short message instead of empty axes; pass `empty` to say what would fill it. */
 export function Chart(props: ChartProps) {
   if (noData(props.data)) return <div className={`chart-empty ${props.className || ''}`} style={{ minHeight: Math.min(props.height || 260, 200) }} role="img" aria-label={`${props.title || 'Chart'}: nothing to show yet`}>{props.empty || 'Nothing to chart yet — this fills in as transactions, balances and plans are added.'}</div>
   return <ChartInner {...props} />
 }
-function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false, fit = false }: ChartProps) {
+function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false, fit = false, onPick }: ChartProps) {
   const ref = useRef<HTMLDivElement>(null); const { open } = useModal()
   // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
   // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)
@@ -98,13 +100,19 @@ function ChartInner({ data, layout = {}, height = 260, title, expand = true, cla
       r = readable(el, data, { height: h, ...layout }, false, fit)
       if (fit) r.layout.height = h   // a fixed part gets exactly its height, whatever the labels need
     }
-    (r.layout as Record<string, unknown>).datarevision = ++rev.current; if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false }) } catch (e) { console.warn('chart', e) } }
+    (r.layout as Record<string, unknown>).datarevision = ++rev.current; if (!fill) el.style.minHeight = (r.layout.height as number) + 'px'; try { void Promise.resolve(Pl.react(el, r.data as Plotly.Data[], r.layout, { displayModeBar: false, responsive: false })).then(() => bindPick(el)) } catch (e) { console.warn('chart', e) } }
+  // clicks (0.30.0): bound once per element; reads the latest onPick, and the label the reader sees is un-wrapped (customdata keeps a wrapped label's original)
+  const pickRef = useRef(onPick); pickRef.current = onPick; const bound = useRef(false)
+  const bindPick = (el: HTMLDivElement) => { if (bound.current) return; const on = (el as unknown as { on?: (ev: string, fn: (e: { points?: Array<Record<string, unknown>> }) => void) => void }).on; if (!on) return; bound.current = true
+    on.call(el, 'plotly_click', e => { const pt = e.points?.[0]; const fn = pickRef.current; if (!pt || !fn) return; const tr = (pt.data || {}) as Record<string, unknown>; const horiz = tr.orientation === 'h'
+      const raw = pt.label ?? (horiz ? pt.y : pt.x); const cd = pt.customdata; const label = String(typeof cd === 'string' ? cd : raw ?? '').replace(/<br>/g, ' ')
+      fn({ label, series: String(tr.name ?? ''), value: Number(pt.value ?? (horiz ? pt.x : pt.y) ?? 0), index: Number(pt.pointNumber ?? (pt.pointNumbers as number[] | undefined)?.[0] ?? 0), curve: Number(pt.curveNumber ?? 0) }) }) }
   useEffect(() => { const el = ref.current; if (!el) return; alive.current = true; loadPlotly().then(p => { P.current = p; draw() })
     const ro = new ResizeObserver(() => draw()); ro.observe(fill && el.parentElement ? el.parentElement : el); const onWin = () => draw(); window.addEventListener('resize', onWin); return () => { alive.current = false; ro.disconnect(); window.removeEventListener('resize', onWin); try { P.current?.purge(el) } catch { /* */ } } }, [])   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { draw() }, [data, layout, height])   // eslint-disable-line react-hooks/exhaustive-deps
   const big = () => open(<BigChart data={data} layout={layout} title={title || ''} />, { xwide: true })
   // fill: the chart grows with its card (the card must be a flex column, e.g. <Card className="fill">), so a chart beside a taller card never leaves a blank strip under it
-  return <div className={className} style={fill ? { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: height } : undefined}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button type="button" className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}{fill ? <div style={{ flex: '1 1 auto', position: 'relative', minHeight: height }}><div ref={ref} className="chart" role="img" aria-label={title || 'Chart'} style={{ position: 'absolute', inset: 0, minHeight: 0 }} /></div> : <div ref={ref} className="chart" role="img" aria-label={title || 'Chart'} style={{ minHeight: height }} />}</div>
+  return <div className={className} style={fill ? { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: height } : undefined}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button type="button" className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}{fill ? <div style={{ flex: '1 1 auto', position: 'relative', minHeight: height }}><div ref={ref} className={onPick ? 'chart pick' : 'chart'} role="img" aria-label={title || 'Chart'} title={onPick ? 'Click a bar or slice to see the transactions behind it' : undefined} style={{ position: 'absolute', inset: 0, minHeight: 0 }} /></div> : <div ref={ref} className={onPick ? 'chart pick' : 'chart'} role="img" aria-label={title || 'Chart'} title={onPick ? 'Click a bar or slice to see the transactions behind it' : undefined} style={{ minHeight: height }} />}</div>
 }
 function BigChart({ data, layout, title }: { data: Data; layout: Layout; title: string }) {
   const ref = useRef<HTMLDivElement>(null)

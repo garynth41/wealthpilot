@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useData } from '../app/hooks'
 import { Card, KPI, Note, Seg, AList, Pill, Empty, Btn } from '../components/ui'
 import { Chart, C, PALETTE, Gauge, cssVar } from '../components/Chart'
+import { useDrill } from '../components/DrillDown'
 import { merchantAnalysis, subscriptionAnalysis, wasteDetection, healthIndicators, type WasteKind } from '../lib/intelligence'
 import { fmtMoney, fm2, fmtPct } from '../lib/money'
 import { addDays, fmtD, monthEnd, monthStart, curMonth, mAdd, today } from '../lib/dates'
@@ -25,7 +26,7 @@ export function InsightsPage() {
   const waste = useMemo(() => wasteDetection(data, today(), 90), [data])
   const health = useMemo(() => healthIndicators(data, settings, look), [data, settings, look])
   const wasteTotal = waste.filter(w => w.kind !== 'unused_subscription' && w.kind !== 'rising_subscription').reduce((a, w) => a + w.amount, 0)
-  const top = merchants.slice(0, 12)
+  const top = merchants.slice(0, 12); const drill = useDrill()
   const prevMonths = [...Array(look)].map((_, i) => mAdd(curMonth(), -(look - i)))
   const gcol = (n: number) => (n >= 70 ? c.good : n >= 40 ? c.warn : c.crit)
   const steps = [{ range: [0, 40] as [number, number], color: c.critSoft }, { range: [40, 70] as [number, number], color: cssVar('--warn-soft') }, { range: [70, 100] as [number, number], color: cssVar('--good-soft') }]
@@ -57,7 +58,7 @@ export function InsightsPage() {
 
       <Card span={7} title="Merchants" hint="where the money goes" right={<Seg value={win} options={[['30', '30 days'], ['month', 'This month'], ['90', '90 days']]} onChange={setWin} />}>
         {top.length === 0 ? <Empty>No spending in this window.</Empty> : <>
-          <Chart title="Spending by merchant" data={[{ type: 'bar', orientation: 'h', x: top.map(m => m.total).reverse(), y: top.map(m => m.name).reverse(), marker: { color: top.map((_, i) => pal[i % pal.length]).reverse() }, hovertemplate: '%{y}: $%{x:,.2f}<extra></extra>' }]} layout={{ showlegend: false, xaxis: { tickprefix: '$' }, yaxis: { automargin: true }, margin: { l: 10 } }} height={Math.max(220, 26 * top.length + 60)} />
+          <Chart title="Spending by merchant" onPick={p => { const m = top[top.length - 1 - p.index]; if (m) drill(m.name, { from, to, merchant: m.key }) }} data={[{ type: 'bar', orientation: 'h', x: top.map(m => m.total).reverse(), y: top.map(m => m.name).reverse(), marker: { color: top.map((_, i) => pal[i % pal.length]).reverse() }, hovertemplate: '%{y}: $%{x:,.2f}<extra></extra>' }]} layout={{ showlegend: false, xaxis: { tickprefix: '$' }, yaxis: { automargin: true }, margin: { l: 10 } }} height={Math.max(220, 26 * top.length + 60)} />
           <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>Merchant</th><th className="num">Visits</th><th className="num">Total</th><th className="num">Avg</th><th className="num">vs prior</th><th>Categories</th></tr></thead><tbody>
             {merchants.slice(0, 25).map(m => <tr key={m.key}><td><b>{m.name}</b></td><td className="num">{m.count}</td><td className="num">{fm2(m.total)}</td><td className="num">{fm2(m.avg)}</td><td className="num" style={{ color: m.change == null ? 'var(--ink-3)' : m.change > 0.1 ? 'var(--crit)' : m.change < -0.1 ? 'var(--good)' : undefined }}>{m.change == null ? 'new' : (m.change > 0 ? '+' : '') + Math.round(m.change * 100) + '%'}</td><td style={{ color: 'var(--ink-2)' }}>{m.categories.join(', ')}</td></tr>)}
           </tbody></table></div></>}
