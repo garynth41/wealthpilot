@@ -23,6 +23,21 @@ for (const W of [1400, 390]) {
   { const sizes = []
     for (const path of ['/', '/forecast', '/insights', '/income', '/accounts', '/debts', '/investments', '/trends', '/reports']) {
       await p.goto('http://localhost:4173/#' + path); await p.waitForTimeout(1300)
+      if (path === '/forecast') {
+        // 0.33.0: the Cash calendar opens with an answer, suggests what would help, lists the weeks, and has a Month view
+        const cc = p.locator('.cc'); const answer = await cc.locator('[data-cc=answer]').innerText().catch(() => '')
+        const tips = await cc.locator('[data-cc=tips] .cc-tip').count(), weeks = await cc.locator('[data-cc=weeks] details').count(), open = await cc.locator('[data-cc=weeks] details[open]').count()
+        ok(/next 60 days/i.test(answer) && /(covered|reserve|runs out)/i.test(answer) && /tightest day|lowest day/i.test(answer) && /\$[\d,]+/.test(answer), `${W}: the Cash calendar opens with a plain answer (${answer.split('\n')[1] || answer.slice(0, 60)})`)
+        ok(tips >= 1 && tips <= 3 && weeks >= 6 && open === 2 && await cc.locator('.chart').count() === 2, `${W}: two charts, ${tips} suggestion(s), ${weeks} weeks listed with the first two open`)
+        await cc.locator('[data-cc=weeks] details').nth(3).locator('summary').click(); const rows = await cc.locator('[data-cc=weeks] details').nth(3).locator('.cc-row').count()
+        await cc.locator('.seg button', { hasText: 'Month' }).click(); await p.waitForTimeout(250)
+        const cells = await cc.locator('.cc-cell').count(), low = await cc.locator('.cc-cell.low').count() + 0; const wide = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+        await cc.locator('.cc-mnav button').last().click(); await p.waitForTimeout(200); const later = await cc.locator('.cc-mnav b').innerText()
+        ok(rows >= 1 && cells >= 28 && cells <= 31 && low <= 1 && wide <= 1 && await cc.locator('.chart').count() === 0 && /\d{4}/.test(later), `${W}: a week opens to its ${rows} item(s); Month shows ${cells} days without widening the page, and moves on to ${later}`)
+        await cc.locator('.seg button', { hasText: 'Chart' }).click(); await cc.locator('.opts button', { hasText: '120 days' }).click(); await p.waitForTimeout(900)
+        ok(/next 120 days/i.test(await cc.locator('[data-cc=answer]').innerText()) && await cc.locator('[data-cc=weeks] details').count() > weeks, `${W}: 120 days re-reads the answer and lists more weeks`)
+        await cc.locator('.opts button', { hasText: '60 days' }).click(); await p.waitForTimeout(900)
+      }
       if (path === '/reports') { await p.locator('.slicer button', { hasText: 'Everything' }).click(); await p.waitForTimeout(400); await p.selectOption('select.inp', { index: 1 }); await p.waitForTimeout(1300) }
       sizes.push(...(await p.evaluate(() => [...document.querySelectorAll('.chart')].map(e => { const r = e.getBoundingClientRect(); return { name: e.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) } }))).map(c => ({ ...c, path })))
     }
