@@ -50,11 +50,11 @@ async function standIn(route) {
   if (p === '/auth/v1/token') { const u = [TESTER, OPERATOR].find(x => x.email === body.email); return u ? json(session(u)) : json({ code: 'invalid_credentials', error_code: 'invalid_credentials', msg: 'Invalid login credentials' }, 400) }
   if (p === '/auth/v1/user') return who ? json(userObj(who)) : json({ code: 'bad_jwt', msg: 'not signed in' }, 401)
   if (p === '/auth/v1/logout') return route.fulfill({ status: 204, headers: cors })
-  // Ask Cresari (0.32.0): the tester has access (20 a day, 16 used); the function answers three questions and refuses the fourth at the limit
+  // Ask Cresari (0.32.0): the tester has access (20 a day, 15 used, then one more for the Ask AI press below); the function answers three questions and refuses the fourth at the limit
   if (p === '/functions/v1/ask-cresari' && body.task === 'categorize') { sorts.push(body); return json({ picks: [{ item: body.items.findIndex(i => /ZELLE/.test(i.text)), category: 0, sure: false }, { item: 9, category: 0, sure: true }], limit: 20, used: 16 }) }
   if (p === '/functions/v1/ask-cresari') { asks.push(body); return asks.length <= 3 ? json({ answer: 'You spent **$412** on dining out.\n\n1. Set a weekly limit\n2. Review it on Sunday', limit: 20, used: 16 + asks.length }) : json({ error: 'That is your 20 questions for today — more are available tomorrow', limit: 20, used: 20 }, 429) }
   if (p.startsWith('/auth/v1/') || p.startsWith('/functions/v1/')) return json({})
-  if (p === '/rest/v1/rpc/ai_status') return json(who?.id === TESTER.id ? { allowed: true, limit: 20, used: 16 } : { allowed: who?.id === OPERATOR.id, limit: 20, used: 0 })
+  if (p === '/rest/v1/rpc/ai_status') return json(who?.id === TESTER.id ? { allowed: true, limit: 20, used: 15 + sorts.length } : { allowed: who?.id === OPERATOR.id, limit: 20, used: 0 })
   if (p === '/rest/v1/rpc/ai_admin_overview') return who?.id === OPERATOR.id ? json({ access: 'testers', daily_limit: 20, global_daily: 500, model: 'claude-sonnet-5-5', used_24h: 19, used_30d: 140, tokens_30d: 512000, people: [{ user_id: TESTER.id, email: TESTER.email, daily_limit: null, added_at: '2026-11-20T00:00:00Z', used_24h: 19, used_30d: 60 }] }) : json({ code: '42501', message: 'operator only' }, 403)
   if (p === '/rest/v1/rpc/is_app_admin') { if (who?.id === OPERATOR.id) { await new Promise(r => setTimeout(r, OPERATOR_CHECK_MS)); return json(true) } return json(false) }
   if (p === '/rest/v1/rpc/feedback_inbox') return who?.id === OPERATOR.id ? json(body.p_before ? [] : [NOTE]) : json({ code: '42501', message: 'Only the app operator can open the feedback inbox' }, 403)
@@ -92,7 +92,7 @@ try {
   await rv.locator('button', { hasText: 'Ask AI about' }).waitFor({ timeout: 8000 }).catch(() => {})
   ok(/Ask AI about the 2/.test(await rv.locator('button', { hasText: 'Ask AI about' }).innerText().catch(() => '')) && await rv.locator('.ru-item').count() === 2, 'Review uncategorized offers Ask AI for the two merchants the app could not place')
   await rv.locator('button', { hasText: 'Ask AI about' }).click(); const notice = await rv.locator('[data-ru=ai-notice]').innerText().catch(() => '')
-  ok(sorts.length === 0 && /Claude, made by Anthropic/.test(notice) && /payments to people/.test(notice) && /a person's name in one is sent/.test(notice) && /ZELLE TO J MARTINEZ/.test(await rv.locator('[data-ru=ai-sent]').innerText()), 'the first press sends nothing: it names the AI service, says payments to people are included, and lists the descriptions')
+  ok(sorts.length === 0 && /Claude, made by Anthropic/.test(notice) && /payments to people/.test(notice) && /\(5 left\)/.test(notice) && /a person's name in one is sent/.test(notice) && /ZELLE TO J MARTINEZ/.test(await rv.locator('[data-ru=ai-sent]').innerText()), 'the first press sends nothing: it names the AI service, says payments to people are included, and lists the descriptions')
   await rv.locator('button', { hasText: 'Send these' }).click(); await rv.locator('[data-ru=ai-msg]').waitFor({ timeout: 8000 }).catch(() => {})
   const sb0 = sorts[0] || {}, sent0 = JSON.stringify(sb0)
   ok(sorts.length === 1 && sb0.household_id === HH && sb0.items?.length === 2 && sb0.items.some(i => i.text === 'ZELLE TO J MARTINEZ 4471' && i.kind === 'expense' && i.amount === 60) && sb0.categories?.length === 2 && !/private note|2026-11-10|0000000000[de]\d|cresari\.test/.test(sent0),
