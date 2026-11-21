@@ -366,10 +366,13 @@ for (const W of [1400, 390]) {
     ok((await p.locator('.modal .thread li').count()) === 3 && (await LS()).comments.length === 3, 'posting a comment adds it to the thread and stores it'); await p.click('.modal .mfoot button:has-text("Close")'); await p.waitForTimeout(200)
     ok((await p.locator('button[aria-label="3 comments"]').count()) === 1, 'the ledger button counts the comments')
     const shellN = (await LS()).transactions.filter(t => t.payee === 'Shell').length
+    // the ledger shows a page of rows at a time, and late in the month the sample's Shell purchase is past the first page: find it by searching
+    await p.locator('input[aria-label="Search this table"]').first().fill('Shell'); await p.waitForTimeout(400)
     const sh = p.locator('input[aria-label="Payee"][value="Shell"]').first(); await sh.fill('Shell Oil'); await sh.press('Tab'); await p.waitForTimeout(600)
     const act = p.locator('.toast-act:has-text("Apply to")'); ok((await act.count()) === 1 && new RegExp(`Apply to ${shellN - 1}`).test(await act.textContent()), `renaming a payee offers to rename the ${shellN - 1} earlier ones`)
     if (await act.count()) { await act.click(); await p.waitForTimeout(800) }
     ok((await LS()).transactions.filter(t => t.payee === 'Shell Oil').length === shellN, 'one tap renames every earlier Shell transaction')
+    await p.locator('input[aria-label="Search this table"]').first().fill('').catch(() => {}); await p.waitForTimeout(300)
     await p.evaluate(() => { const k = 'wealthpilot.demo'; const j = JSON.parse(localStorage.getItem(k)); j.household.settings.rules = [...(j.household.settings.rules || []), { id: 'smoke-r', pattern: 'chipotle', match: 'contains', enabled: true, review: true, tags: ['lunch'], source: 'manual' }]; localStorage.setItem(k, JSON.stringify(j)) })
     await p.goto('http://localhost:4173/#/settings'); await p.reload(); await p.waitForTimeout(900); await p.click('.seg button:has-text("Payee rules")'); await p.waitForTimeout(400)
     ok((await p.locator('th:has-text("Flag for review")').count()) === 1 && (await p.locator('th:has-text("Count toward goal")').count()) === 1, 'payee rules can add tags, flag for review and count toward a goal')
