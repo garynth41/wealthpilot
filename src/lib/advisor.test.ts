@@ -151,3 +151,10 @@ describe('account names in labels', () => {
     expect(bills.some(n => / payment$/.test(n) && !/sapphire/i.test(n))).toBe(true); expect(bills.some(n => /123/.test(n))).toBe(false); expect(bills.some(n => / autopay$/.test(n))).toBe(true); expect(bills).toContain('Joint checking fee')   // a name made only of everyday account words names nothing
   })
 })
+
+describe('email addresses in any script', () => {
+  it('are removed, and a long summary is still scrubbed quickly', () => {
+    expect(nameScrubber()('李@example.com rent')).toBe('[email] rent'); expect(nameScrubber()('josé.pérez@example.org')).toBe('[email]')
+    const t0 = performance.now(); nameScrubber()('é'.repeat(60000)); expect(performance.now() - t0).toBeLessThan(500)
+  })
+})
