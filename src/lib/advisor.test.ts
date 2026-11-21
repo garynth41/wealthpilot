@@ -158,3 +158,7 @@ describe('email addresses in any script', () => {
     const t0 = performance.now(); nameScrubber()('é'.repeat(60000)); expect(performance.now() - t0).toBeLessThan(500)
   })
 })
+
+describe('long numbers stuck to a letter', () => {
+  it('are removed from a question too', () => { const p = prepare({ question: 'Is account A123456789 the right one for rent?' }); if ('error' in p) throw new Error(p.error); expect(p.question).toBe('Is account A[number] the right one for rent?') })
+})

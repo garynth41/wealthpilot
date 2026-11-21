@@ -23,10 +23,13 @@ export const forecast: GuidePage = {
   cards: [
     {
       title: 'Cash calendar',
-      what: 'Every expected money movement from today, day by day, with the cash balance after each one. Use it to see which days are tight and why.',
+      what: 'What you will have in the bank each day from today. It opens with a plain answer — covered, dipping below your reserve, or running out — then shows the days, the weeks, what would help, and every item behind it.',
       how: [
         'Pick 30 days, 60 days, 90 days or 120 days in the card header. The numbers at the top of the page follow the same window.',
-        'Hover a dot on the chart to see the item; read down the table for every item and the running balance.',
+        'Read the answer at the top first: your tightest day, how far above or below your reserve it is, and where you end up.',
+        'On the day-by-day chart the dotted green lines are paydays, the shaded band is your reserve and the ringed point is your lowest day. Week by week shows money in beside money out; the highlighted week runs shortest.',
+        'Ways to raise your lowest point are worked out from your own items — for example a card payment that lands just before payday. They are suggestions; nothing changes until you act on one.',
+        'Open a week under What is coming to see each paycheck, bill and payment and the balance after it. Switch to Month to see the same days as a calendar.',
         'Click ⤢ to open the chart full size, where you can zoom and save a picture.',
       ],
       fields: [
@@ -115,14 +118,14 @@ export const forecast: GuidePage = {
     },
   ],
   tasks: [
-    { q: 'How do I find out when my cash runs low?', steps: ['Look at Lowest point at the top and pick a longer window (90 or 120 days) in Cash calendar.', 'Read down the Balance column for the rows in amber (below your floor) or red (below zero).', 'Move a bill, add income or plan a transfer before that date.'] },
+    { q: 'How do I find out when my cash runs low?', steps: ['Pick a longer window (90 or 120 days) in Cash calendar and read the answer at the top of the card.', 'The ringed point on the chart is your lowest day; in Month view it has a border, and days below your reserve are shaded. When today is the lowest day there is no mark — the answer says so.', 'Try one of the suggestions under the charts, move a bill, add income or plan a transfer before that date.'] },
     { q: 'How do I add a bonus, refund or big expense that is coming?', steps: ['Click + Add item under Planned one-off items.', 'Set the date, what it is and the amount (minus for money out).', 'It shows in the cash calendar and the projection straight away.'] },
     { q: 'How do I test what happens if I lose my job?', steps: ['In What if…, set Current income stops on to the last day of pay.', 'Tick Essentials only and add any side income with the Extra income slider.', 'Read the What-if box and the green dotted line, then click Save as scenario… to keep it.'] },
     { q: 'How do I compare several what-ifs?', steps: ['Save each one with Save as scenario….', 'Click Compare… and tick up to four scenarios.', 'The best value in each row is highlighted; click Load to bring one back into the sliders.'] },
     { q: 'Why does the calendar take money out every Monday?', steps: ['That is everyday spending: your last 90 days in Variable and Irregular categories that no bill covers, as a weekly amount.', 'Cover a category with a bill or subscription on Bills & Subscriptions, or mark it Fixed in Settings → Categories, and it drops out of the weekly amount.'] },
   ],
   glossary: [
-    { term: 'Cash calendar', def: 'A day-by-day list of the money expected in and out from today, with the running cash balance after each item.' },
+    { term: 'Cash calendar', def: 'What you will have in the bank each day from today, from the money expected in and out — shown as a chart, week by week, and as a month calendar.' },
     { term: 'Lowest point', def: 'The lowest cash balance the calendar reaches in the window you are looking at, and the day it happens.' },
     { term: 'Monthly burn', def: 'How much more goes out than comes in each month: bills and subscriptions, everyday spending and loan payments, less hardship relief, minus your monthly take-home. Card payments are not added — the purchases are already in spending. Covered means income is the larger.' },
     { term: 'Essentials-only runway', def: 'How many months your cash would last if you cut spending to essentials only, with income and debt payments carrying on.' },
