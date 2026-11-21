@@ -691,3 +691,17 @@ button.dd-row{cursor:pointer} button.dd-row:hover{background:var(--surface-2)} .
 .ru-pick{flex:1 1 300px;display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0} .ru-pick .inp{flex:1 1 160px;min-width:0;max-width:280px;width:auto}
 .ru-why{font-size:12.5px;color:var(--ink-3);margin-top:2px} .ru-tx{margin-top:8px}
 @media (max-width:520px){.ru-pick{justify-content:flex-start} .ru-pick .inp{max-width:none}}
+/* Ask Cresari (0.32.0) */
+.ask-log{display:flex;flex-direction:column;gap:10px;margin:10px 0;max-height:min(52vh,520px);overflow-y:auto;padding:2px}
+.ask-q{display:flex;justify-content:flex-end} .ask-q span{max-width:85%;background:var(--surface-2);border:1px solid var(--line);border-radius:12px 12px 2px 12px;padding:8px 12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ask-a{max-width:92%;background:var(--surface);border:1px solid var(--line);border-radius:12px 12px 12px 2px;padding:8px 14px;overflow-wrap:anywhere;line-height:1.5}
+.ask-a p{margin:6px 0} .ask-a ul,.ask-a ol{margin:6px 0;padding-left:22px} .ask-a li{margin:3px 0} .ask-wait{color:var(--ink-3)}
+.ask-start{padding:6px 0} .ask-hi{font-weight:600;margin-bottom:8px} .ask-ideas{display:flex;flex-wrap:wrap;gap:6px}
+.chipbtn{border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;text-align:left} .chipbtn:hover:not(:disabled){border-color:var(--accent)} .chipbtn:disabled{opacity:.5;cursor:default}
+.ask-form{display:flex;gap:8px;align-items:flex-end;margin-top:8px} .ask-form textarea{flex:1;min-width:0;resize:vertical}
+.ask-meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-top:4px}
+.ask-err{margin:8px 0;padding:8px 12px;border:1px solid var(--crit,#b3261e);border-radius:8px;font-size:13.5px}
+.ask-off{margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;line-height:1.5}
+.ask-sent{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.ask-pre{max-height:260px;overflow:auto;font-size:11.5px;line-height:1.4;background:var(--surface-2,var(--surface));border:1px solid var(--line);border-radius:8px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.linkbtn{border:0;background:none;padding:0;font:inherit;color:var(--link,var(--accent));cursor:pointer;text-decoration:underline}

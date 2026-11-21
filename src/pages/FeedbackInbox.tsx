@@ -2,7 +2,7 @@
 // testers with a link (one code per group, so sign-ups and feedback can be told apart), see how each invite is doing, and work through
 // the feedback: mark what is new, seen, planned, fixed, not planned or already reported; add a note; reply by email; turn it into a
 // GitHub issue; export it all. New feedback also arrives as a push and an email (the notify function, on production).
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useStore } from '../app/store'
 import { sb } from '../app/supabase'
 import { publicUrl, saveFile } from '../app/native'
@@ -73,6 +73,7 @@ function Inbox({ userEmail, toast }: { userEmail: string; toast: (t: string, err
           : <Note>No sign-ups or feedback yet. Share an invite link to start.</Note>}
         <Note>“No code” includes you and anyone who signed up without an invite link.</Note>
       </Card>
+      <AdvisorCard toast={toast} />
       <Card span={12} title="Inbox" hint={rows ? `${shown.length} of ${rows.length}` : 'loading…'} right={<><Btn sm onClick={() => void load()}>Refresh</Btn><Btn sm disabled={!rows?.length} onClick={() => void saveFile(`cresari-feedback-${new Date().toISOString().slice(0, 10)}.csv`, feedbackCsv(shown), 'text/csv')}>Export CSV</Btn></>}>
         <div className="btnrow fb-filters"><Seg<View> value={view} onChange={setView} options={[['open', 'Open'], ['new', 'New'], ['closed', 'Closed'], ['all', 'All']]} />
           <select className="inp" aria-label="Kind" value={kind} onChange={e => setKind(e.target.value)} style={{ width: 'auto' }}><option value="">Every kind</option>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
@@ -126,5 +127,39 @@ function InviteCard({ from }: { from: string }) {
     </div>
     <details style={{ marginTop: 10 }}><summary>The message</summary><pre className="inv-msg">{msg.subject}{'\n\n'}{msg.body}</pre></details>
     <Note>Before people you do not know sign up, Cresari has to send its sign-up emails through its own email service — until then only the demo works for them (docs/TESTING.md, step 1).</Note>
+  </Card>
+}
+
+// ---- Ask Cresari (0.32.0): who may use the advisor, the limits and the model — all changed here, without a release ----
+interface AiPerson { user_id: string; email: string; daily_limit: number | null; added_at: string; used_24h: number; used_30d: number }
+interface AiOverview { access: 'testers' | 'all' | 'off'; daily_limit: number; global_daily: number; model: string; used_24h: number; used_30d: number; tokens_30d: number; people: AiPerson[] }
+function AdvisorCard({ toast }: { toast: (t: string, err?: boolean) => void }) {
+  const [o, setO] = useState<AiOverview | null>(null); const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState(''); const [limit, setLimit] = useState(''); const [cfg, setCfg] = useState({ daily: '', global: '', model: '' })
+  // only the newest answer is shown: a Refresh that started before a change cannot put the old setting back on screen
+  const asked = useRef(0)
+  const load = useCallback(async () => { const mine = ++asked.current; const r = await sb().rpc('ai_admin_overview'); if (mine !== asked.current) return; const x = r?.data as Partial<AiOverview> | null; if (r?.error || !x || typeof x !== 'object' || !Array.isArray(x.people) || typeof x.daily_limit !== 'number') { setErr(r?.error?.message || 'the server did not answer — the advisor may not be set up on it yet'); return } const d = { used_24h: 0, used_30d: 0, tokens_30d: 0, global_daily: 0, model: '', access: 'testers', ...x } as AiOverview; setErr(null); setO(d); setCfg({ daily: String(d.daily_limit), global: String(d.global_daily), model: d.model }) }, [])
+  useEffect(() => { void load() }, [load])
+  // one change at a time, until the card has reloaded: a second press cannot overtake the first (Everyone, then Off, must end Off)
+  const going = useRef(false)
+  const run = async (make: () => PromiseLike<{ error: { message: string } | null }>, done: string) => { if (going.current) return false; going.current = true; setBusy(true); try { const what = make(); const r = await what; if (r.error) { toast(r.error.message, true); return false } toast(done); await load(); return true } finally { going.current = false; setBusy(false) } }
+  // a whole number inside the range the database accepts, or null
+  const num = (s: string, lo = 0, hi = 1000) => { const n = /^\d{1,6}$/.test(s.trim()) ? +s.trim() : NaN; return n >= lo && n <= hi ? n : null }
+  const add = () => { const e = email.trim(); if (!e) return; if (limit.trim() && num(limit) === null) { toast('The limit must be a whole number from 0 to 1000 — or leave it blank for the default', true); return } void run(() => sb().rpc('ai_admin_set', { p_email: e, p_allowed: true, p_daily_limit: limit.trim() ? num(limit) : null }), `${e} can use Ask Cresari`).then(ok => { if (ok) { setEmail(''); setLimit('') } }) }
+  const ACCESS: Array<[AiOverview['access'], string]> = [['testers', 'People listed here'], ['all', 'Everyone'], ['off', 'Off']]
+  return <Card span={12} title="Ask Cresari" hint="who can use the advisor, and how much — changes apply at once" right={<Btn sm onClick={() => void load()}>Refresh</Btn>}>
+    {err ? <div className="msg crit" role="alert">Could not load the advisor settings: {err}. Press Refresh to try again.</div> : !o ? <p className="note" style={{ margin: 0 }}>Loading…</p> : <>
+      <div className="kpis"><KPI l="Questions today" v={o.used_24h} cls="info" s={`ceiling ${o.global_daily} for everyone`} /><KPI l="Last 30 days" v={o.used_30d} cls="info" s={`${o.tokens_30d.toLocaleString()} tokens`} /><KPI l="Open to" v={o.access === 'all' ? 'Everyone' : o.access === 'off' ? 'Nobody' : `${o.people.length} + you`} cls={o.access === 'off' ? 'warn' : 'good'} s={o.access === 'testers' ? 'people listed below' : o.access === 'all' ? 'every signed-in account' : 'switched off'} /></div>
+      <div className="grid2" style={{ marginTop: 12 }}>
+        <div><div className="field"><label>Who can use it</label><span role="group" aria-label="Who can use Ask Cresari" aria-disabled={busy} inert={busy} style={busy ? { opacity: 0.55 } : undefined} data-ai="access"><Seg value={o.access} options={ACCESS} onChange={v => { if (v !== o.access) void run(() => sb().rpc('ai_admin_config', { p_access: v }), v === 'off' ? 'Ask Cresari is off' : v === 'all' ? 'Ask Cresari is open to everyone' : 'Ask Cresari is open to the people listed') }} /></span></div>
+          <div className="grid2"><div className="field"><label htmlFor="ai-daily">Questions a day, each person</label><input id="ai-daily" className="inp" inputMode="numeric" value={cfg.daily} onChange={e => setCfg(c => ({ ...c, daily: e.target.value }))} /></div>
+            <div className="field"><label htmlFor="ai-global">Questions a day, everyone</label><input id="ai-global" className="inp" inputMode="numeric" value={cfg.global} onChange={e => setCfg(c => ({ ...c, global: e.target.value }))} /></div></div>
+          <div className="field"><label htmlFor="ai-model">Model</label><input id="ai-model" className="inp" value={cfg.model} onChange={e => setCfg(c => ({ ...c, model: e.target.value }))} spellCheck={false} /></div>
+          <Btn sm disabled={busy || (cfg.daily === String(o.daily_limit) && cfg.global === String(o.global_daily) && cfg.model.trim() === o.model)} onClick={() => { const daily = num(cfg.daily, 1, 1000), all = num(cfg.global, 1, 100000); if (daily === null) { toast('Questions a day for each person: a whole number from 1 to 1000', true); return } if (all === null) { toast('Questions a day for everyone: a whole number from 1 to 100,000', true); return } void run(() => sb().rpc('ai_admin_config', { p_daily_limit: daily, p_global_daily: all, p_model: cfg.model.trim() || null }), 'Advisor settings saved') }}>Save settings</Btn>
+          <Note>Each question is counted before it is sent, so the limits also cap what the AI service can cost. Kept for each question: who asked, for which household, when, and the size of the answer — never the question or the answer.</Note></div>
+        <div><div className="field"><label htmlFor="ai-email">Give someone access</label><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><input id="ai-email" className="inp" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="the address they sign in with" style={{ flex: '2 1 200px' }} /><input className="inp" inputMode="numeric" value={limit} onChange={e => setLimit(e.target.value)} placeholder={`limit (${o.daily_limit})`} aria-label="Their daily limit (blank = the default)" style={{ flex: '1 1 90px' }} /><Btn sm primary disabled={busy || !email.trim()} onClick={add}>Add</Btn></div></div>
+          {o.people.length === 0 ? <div className="empty">Nobody has been added yet. You can always use it yourself.</div> : <div className="tblwrap"><table className="tbl"><thead><tr><th>Person</th><th className="num">Limit</th><th className="num">Today</th><th className="num">30 days</th><th /></tr></thead>
+            <tbody>{o.people.map(p => <tr key={p.user_id}><td style={{ overflowWrap: 'anywhere' }}>{p.email}</td><td className="num">{p.daily_limit ?? `${o.daily_limit} (default)`}</td><td className="num">{p.used_24h}</td><td className="num">{p.used_30d}</td><td><Btn sm disabled={busy} onClick={() => void run(() => sb().rpc('ai_admin_set', { p_email: p.email, p_allowed: false }), o.access === 'all' ? `${p.email} is off the list — they still have access while it is open to everyone, at the default limit` : `${p.email} no longer has access`)} aria-label={`Remove ${p.email}`}>Remove</Btn></td></tr>)}</tbody></table></div>}</div>
+      </div></>}
   </Card>
 }

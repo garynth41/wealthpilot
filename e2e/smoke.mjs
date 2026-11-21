@@ -86,6 +86,18 @@ for (const W of [1400, 390]) {
       ok(hit && /days · last 90 days$/.test(await dlg.locator('h2').innerText()) && +(await dlg.locator('[data-dd=count]').innerText()) > 0, `${W}: clicking a bar on a chart opens the transactions behind it (${hit ? await dlg.locator('h2').innerText() : 'no panel'})`)
       if (hit) await dlg.locator('button', { hasText: 'Done' }).click() }
   }
+  // 0.32.0: Ask Cresari in the offline demo — the button is on every screen; the panel says what it is and shows exactly what would be sent
+  { await p.goto('http://localhost:4173/#/budget'); await p.waitForTimeout(500)
+    const btn = p.locator('[data-testid=ask-btn]:visible, [data-testid=ask-icon]:visible').first(); ok(await btn.count() === 1, `${W}: the Ask button is on the page`)
+    await btn.click(); const dlg = p.locator('.modal[role=dialog]'); await dlg.waitFor({ timeout: 5000 })
+    ok(/not licensed financial/.test(await dlg.innerText()) && /small group/.test(await dlg.innerText()) && await dlg.locator('textarea').count() === 0, `${W}: Ask Cresari says it is guidance, not advice, and that it is in testing — no question box in the demo`)
+    await dlg.locator('[data-ask=show]').click(); const sent = await dlg.locator('[data-ask=sent]').innerText(); const c = (() => { try { return JSON.parse(sent) } catch { return null } })()
+    ok(!!c && c.accounts.some(a => a.account === 'Checking 1') && c.spendingByCategory.length > 5 && c.transactions === undefined && !/\b(huntington|chase|american express|freedom)\b|@/i.test(sent), `${W}: "See exactly what is sent" shows the summary — accounts by type (${c?.accounts.length}), no bank or account names, no transactions`)
+    await dlg.locator('[data-ask=detail]').check(); const more = JSON.parse(await dlg.locator('[data-ask=sent]').innerText())
+    ok(Array.isArray(more.transactions) && more.transactions.length > 10 && more.transactions.some(t => t.payee === 'kroger') && !/\b(huntington|chase|american express)\b/i.test(JSON.stringify(more)), `${W}: switching transactions on adds them (${more.transactions?.length}) with business names only`)
+    await dlg.locator('[data-ask=detail]').uncheck(); ok(await dlg.evaluate(e => e.scrollWidth <= e.clientWidth + 1), `${W}: the Ask panel fits the screen`)
+    await p.screenshot({ path: `e2e/shots/ask_${W}.png` }); await dlg.locator('button', { hasText: 'Done' }).click(); await p.waitForTimeout(200)
+  }
   // 0.31.0: Review uncategorized — rows that arrive without a category are grouped by merchant with an answer on each; Accept files them and is remembered
   { const before = await p.evaluate(() => localStorage.getItem('wealthpilot.demo'))
     const added = await p.evaluate(() => { const K = 'wealthpilot.demo', j = JSON.parse(localStorage.getItem(K) || 'null'); if (!j) return 0
