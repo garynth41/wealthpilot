@@ -15,6 +15,7 @@ import { post } from '../lib/ledger'
 import { suggest } from '../lib/rules'
 import { arrivals } from '../lib/categorize'
 import { askSession } from '../lib/askSession'
+import { forecastSnapshot, needsSnapshot } from '../lib/forecastCheck'
 import { patchProblem, InputError, isInputError } from '../lib/validate'
 import type { Account, Transaction } from './data/types'
 import { leaveOut, unpairForLeavingOut, everyAccount } from '../lib/leftOut'
@@ -89,6 +90,8 @@ interface State {
   autoDedupe: (quiet?: boolean) => Promise<number>
   /** Categorize on arrival (0.31.0): file new, untouched transactions the app is sure of. Returns how many were filed. */
   autoCategorize: (quiet?: boolean) => Promise<number>
+  /** 0.35.0: save this month's forecast once, so it can be checked against what happens (lib/forecastCheck.ts). True when one was saved. */
+  saveForecast: () => Promise<boolean>
   checkLatest: () => Promise<void>
   mergeDuplicates: (keeper: string, dups: string[], patch?: Partial<Transaction>) => Promise<void>
   restoreDuplicate: (id: string) => Promise<void>
@@ -109,6 +112,7 @@ let turn: Promise<unknown> = Promise.resolve()
 let dedupeWaiting: Promise<number> | null = null, categorizeWaiting: Promise<number> | null = null, dedupeLoud = false, categorizeLoud = false
 // the merge pass that is running now, if one is: whoever asks during it is told what it merged as well as what the next pass finds
 let dedupeRunning: Promise<number> | null = null
+let forecastSaving: Promise<boolean> | null = null
 const inTurn = <T,>(fn: () => Promise<T>): Promise<T> => { const run = turn.then(fn, fn); turn = run.catch(() => {}); return run }
 /** paycheck saves still running, per pay schedule (logPaycheck) */
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
@@ -182,7 +186,7 @@ export const useStore = create<State>((set, get) => ({
   async refresh() {
     const repo = get().repo; if (!repo) return
     // 0.29.1: a load that finishes after another household was opened belongs to that other household — drop it, success or failure
-    try { const r = await repo.loadAll(); if (get().repo !== repo) return; set({ household: r.household, data: toView(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {}).then(() => get().autoCategorize()).catch(() => {})
+    try { const r = await repo.loadAll(); if (get().repo !== repo) return; set({ household: r.household, data: toView(r.data), role: r.role, readOnly: r.readOnly, modules: r.modules, loadError: null, lastRefresh: Date.now(), offlineAt: null }); if (get().canEdit()) void get().autoDedupe().catch(() => {}).then(() => get().autoCategorize()).catch(() => {}).then(() => get().saveForecast()).catch(() => {})
       const uid = get().user?.id; if (repo.mode === 'db' && uid && !signingOut && get().repo === repo) void saveOffline(makeSnapshot(uid, r, APP_VERSION)) }
     catch (e) { if (get().repo !== repo) return; if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
       set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
@@ -258,6 +262,16 @@ export const useStore = create<State>((set, get) => ({
     void repo.logAudit('correction', `Merged ${others.length} cop${others.length === 1 ? 'y' : 'ies'} of ${keeper.name} into one account`, { keeper: keeper.id, removed: others.map(o => ({ id: o.id, ref: o.ref || null, balance: o.balance, status: o.status })), moved: plan.moved, keeperPatch: plan.keeperPatch, feed: !!nextMap }, keeper.id).catch(() => {})
     await get().refresh()
     return plan.moves.length
+  },
+  async saveForecast() {
+    // only someone who sees the whole household and may edit it: a member limited to some sections would save a forecast built from part of the data
+    const repo = get().repo; if (!repo || !get().canEdit() || get().modules !== null || !needsSnapshot(get().data)) return false
+    if (forecastSaving) return forecastSaving
+    return forecastSaving = (async () => {
+      try { const row = forecastSnapshot(get().data, get().settings()); if (!row || get().repo !== repo || !needsSnapshot(get().data)) return false; await get().insert('forecasts', row); return true }
+      // another device saved this month's first, the table is not there yet, or the app is offline: nothing is lost — the next load tries again
+      catch { return false } finally { forecastSaving = null }
+    })()
   },
   async autoCategorize(quiet) {
     if (!get().canEdit() || !get().repo) return 0

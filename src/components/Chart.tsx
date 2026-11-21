@@ -74,13 +74,13 @@ function readable(el: HTMLElement, data: Data, layout0: Layout, big: boolean, fi
 /** fit: size exactly to the card's part (no automatic minimum height) — for layouts split into fixed parts, like Subscriptions on Insights. */
 /** What was clicked on a chart (0.30.0): the category-axis label (or slice label), the series name, the value, and the point's index in its series. */
 export interface ChartPick { label: string; series: string; value: number; index: number; curve: number }
-type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; fit?: boolean; empty?: ReactNode; /** makes bars, points and slices clickable — used to open the transactions behind them */ onPick?: (p: ChartPick) => void }
+type ChartProps = { data: Data; layout?: Layout; height?: number; title?: string; expand?: boolean; className?: string; fill?: boolean; fit?: boolean; empty?: ReactNode; /** makes bars, points and slices clickable — used to open the transactions behind them */ onPick?: (p: ChartPick) => void; /** what a click does, when it is not "the transactions behind it" */ pickHint?: string }
 /** A chart with nothing to draw shows a short message instead of empty axes; pass `empty` to say what would fill it. */
 export function Chart(props: ChartProps) {
   if (noData(props.data)) return <div className={`chart-empty ${props.className || ''}`} style={{ minHeight: Math.min(props.height || 260, 200) }} role="img" aria-label={`${props.title || 'Chart'}: nothing to show yet`}>{props.empty || 'Nothing to chart yet — this fills in as transactions, balances and plans are added.'}</div>
   return <ChartInner {...props} />
 }
-function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false, fit = false, onPick }: ChartProps) {
+function ChartInner({ data, layout = {}, height = 260, title, expand = true, className = '', fill = false, fit = false, onPick, pickHint }: ChartProps) {
   const ref = useRef<HTMLDivElement>(null); const { open } = useModal()
   // One plot per element: Plotly is loaded once, updates go through Plotly.react, and purge happens only on unmount.
   // (Purging between updates let Plotly's scheduled automargin redraw run against a dead graph div.)
@@ -112,7 +112,7 @@ function ChartInner({ data, layout = {}, height = 260, title, expand = true, cla
   useEffect(() => { draw() }, [data, layout, height])   // eslint-disable-line react-hooks/exhaustive-deps
   const big = () => open(<BigChart data={data} layout={layout} title={title || ''} />, { xwide: true })
   // fill: the chart grows with its card (the card must be a flex column, e.g. <Card className="fill">), so a chart beside a taller card never leaves a blank strip under it
-  return <div className={className} style={fill ? { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: height } : undefined}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button type="button" className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}{fill ? <div style={{ flex: '1 1 auto', position: 'relative', minHeight: height }}><div ref={ref} className={onPick ? 'chart pick' : 'chart'} role="img" aria-label={title || 'Chart'} title={onPick ? 'Click a bar or slice to see the transactions behind it' : undefined} style={{ position: 'absolute', inset: 0, minHeight: 0 }} /></div> : <div ref={ref} className={onPick ? 'chart pick' : 'chart'} role="img" aria-label={title || 'Chart'} title={onPick ? 'Click a bar or slice to see the transactions behind it' : undefined} style={{ minHeight: height }} />}</div>
+  return <div className={className} style={fill ? { flex: '1 1 auto', display: 'flex', flexDirection: 'column', minHeight: height } : undefined}>{expand && <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: -26, position: 'relative', zIndex: 2 }}><button type="button" className="ch-x" onClick={big} title="Open this chart full size (zoom, hover, download)" aria-label="Open chart full size">⤢</button></div>}{fill ? <div style={{ flex: '1 1 auto', position: 'relative', minHeight: height }}><div ref={ref} className={onPick ? 'chart pick' : 'chart'} role="img" aria-label={title || 'Chart'} title={onPick ? pickHint || 'Click a bar or slice to see the transactions behind it' : undefined} style={{ position: 'absolute', inset: 0, minHeight: 0 }} /></div> : <div ref={ref} className={onPick ? 'chart pick' : 'chart'} role="img" aria-label={title || 'Chart'} title={onPick ? pickHint || 'Click a bar or slice to see the transactions behind it' : undefined} style={{ minHeight: height }} />}</div>
 }
 function BigChart({ data, layout, title }: { data: Data; layout: Layout; title: string }) {
   const ref = useRef<HTMLDivElement>(null)

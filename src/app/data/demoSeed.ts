@@ -1,7 +1,8 @@
 // Offline demo data — a believable household, dated relative to today. Also used by the test suites.
 import { addDays, addMonthsClamp, curMonth, mAdd, monthEnd, monthStart, today, weekStart } from '../../lib/dates'
 import { plannedForPeriod } from '../../lib/sinking'
-import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType, type Holding } from './types'
+import { emptyData, SETTINGS_DEFAULTS, type Category, type Data, type Household, type Priority, type CostType, type Holding, type ForecastSnapshot } from './types'
+import { forecastActuals } from '../../lib/forecastCheck'
 
 export const STARTER_CATEGORIES: Array<[string, string, 'expense' | 'income' | 'transfer', Priority, CostType, number]> = [
   ['Income', 'Paycheck', 'income', 'Essential', 'Fixed', 1], ['Income', 'Benefits', 'income', 'Essential', 'Fixed', 2], ['Income', 'Side income', 'income', 'Important', 'Variable', 3], ['Income', 'Other income', 'income', 'Important', 'Irregular', 4],
@@ -188,5 +189,19 @@ export function demoSeed(): { household: Household; data: Data } {
   { const target = d.transactions.find(x => x.payee === 'Target' && x.amount === 54.18); if (target) { const at = (h: number) => new Date(Date.parse(target.date + 'T18:00:00') + h * 3600000).toISOString()
     d.comments.push({ id: demoId(), household_id: hh, transaction_id: target.id, body: 'Was the $23 the birthday gift for Maya? If so it should be Gifts, not Shopping.', author_email: 'sam@example.com', created_by: 'demo-partner', created_at: at(2), updated_at: at(2) },
       { id: demoId(), household_id: hh, transaction_id: target.id, body: 'No — that was paper towels and detergent. Shopping is right.', author_email: 'demo@example.com', created_by: 'demo-user', created_at: at(3), updated_at: at(3) }) } }
+  // saved forecasts for the last two months (0.35.0), so "How accurate was last month's forecast?" has something to show: each is what the
+  // calendar would have expected on the 1st, set a little off from what the sample transactions then did — paychecks and card payments as
+  // expected, bills a touch higher, everyday spending noticeably higher one month and lower the other
+  {
+    const cashNow = d.accounts.filter(a => a.status === 'Active' && a.include_in_cash && ['checking', 'savings', 'cash'].includes(a.kind)).reduce((x, a) => x + (+a.balance || 0), 0)
+    ;([[1, 0.88], [2, 1.06]] as const).forEach(([k, everyday]) => {
+      const m = mAdd(cm, -k), taken_on = m + '-01', base: ForecastSnapshot = { id: demoId(), household_id: hh, taken_on, through: monthEnd(m), start_cash: 0, expected_in: 0, expected_out: 0, expected_end: 0, expected_low: 0, low_date: null, by_source: {}, notes: null, created_at: taken_on + 'T06:00:00.000Z', updated_at: taken_on + 'T06:00:00.000Z' }
+      const since = forecastActuals(d, household.settings, { ...base, through: t }), start = Math.round((cashNow - (since.in - since.out)) * 100) / 100
+      const a = forecastActuals(d, household.settings, base); if (!a.count) return
+      const by = { in_pay: a.by.in_pay, in_other: a.by.in_other, out_bills: Math.round(a.by.out_bills * 0.97), out_debt: a.by.out_debt, out_everyday: Math.round(a.by.out_everyday * everyday), out_other: a.by.out_other }
+      const inn = by.in_pay + by.in_other, out = by.out_bills + by.out_debt + by.out_everyday + by.out_other
+      d.forecasts.push({ ...base, start_cash: start, expected_in: inn, expected_out: out, expected_end: Math.round((start + inn - out) * 100) / 100, expected_low: Math.round((start - by.out_bills * 0.6) * 100) / 100, low_date: m + '-03', by_source: by })
+    })
+  }
   return { household, data: d }
 }

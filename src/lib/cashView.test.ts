@@ -9,7 +9,7 @@ function make(start: number, floor: number, list: Array<[string, string, number,
   const items: CalItem[] = list.map(([date, label, amt, src]) => ({ date, label, amt, src, kind: amt >= 0 ? 'in' : 'out' })); items.sort((a, b) => a.date.localeCompare(b.date) || b.amt - a.amt)
   let bal = start; const daily: Array<{ d: string; bal: number }> = []; let low = { bal: start, date: first }, firstFloor: string | null = null, firstZero: string | null = null
   for (let i = 0; i <= days; i++) { const d = addDays(first, i); items.filter(x => x.date === d).forEach(x => { bal += x.amt; x.bal = bal }); daily.push({ d, bal }); if (bal < low.bal) low = { bal, date: d }; if (floor && bal < floor && !firstFloor) firstFloor = d; if (bal < 0 && !firstZero) firstZero = d }
-  return { start, items, daily, low, firstFloor, firstZero, floor, inTot: items.filter(x => x.amt > 0).reduce((a, x) => a + x.amt, 0), outTot: -items.filter(x => x.amt < 0).reduce((a, x) => a + x.amt, 0), end: bal }
+  return { start, items, daily, low, firstFloor, firstZero, floor, inTot: items.filter(x => x.amt > 0).reduce((a, x) => a + x.amt, 0), outTot: -items.filter(x => x.amt < 0).reduce((a, x) => a + x.amt, 0), end: bal, account: null, assumed: 0 }
 }
 const base: Array<[string, string, number, CalItem['src']]> = [
   ['2026-11-23', 'Everyday spending (recent average per week)', -300, 'flex'], ['2026-11-30', 'Everyday spending (recent average per week)', -300, 'flex'],
@@ -58,5 +58,59 @@ describe('suggestions', () => {
     const short = calTips(make(5000, 2500, base)); expect(short[0]).toMatchObject({ key: 'gap', amount: 200, to: '/plan' }); expect(short.some(t => t.key === 'idle')).toBe(false)
     expect(calTips(make(2500, 0, base))[0]).toMatchObject({ key: 'gap', amount: 200, to: '/hardship' })
     expect(calTips(make(5000, 1000, base)).length).toBeLessThanOrEqual(3)
+  })
+})
+
+// 0.35.0 — suggestions worth acting on, one account on its own, "Can I afford it?", and a day opened
+import { afford, calDay, MIN_TIP } from './cashView'
+describe('0.35.0: a suggestion has to be worth acting on', () => {
+  const small = base.map(x => (x[1].startsWith('Amex') ? [x[0], 'Netflix (autopay)', -15, 'sub'] as typeof x : x))
+  it(`moving a due date for less than $${MIN_TIP} is not suggested — unless it closes the gap by itself`, () => {
+    expect(calTips(make(5000, 1000, small)).some(t => t.key === 'move')).toBe(false)
+    const closes = calTips(make(5000, 2590, small))   // $5 short of the reserve; moving the $15 covers it
+    expect(closes[0].key).toBe('gap'); expect(closes.find(t => t.key === 'move')).toMatchObject({ amount: 15, label: 'Netflix' })
+    expect(calTips(make(5000, 2700, small)).some(t => t.key === 'move')).toBe(false)   // $115 short: $15 does not close it
+  })
+  it('trimming everyday spending is suggested only when a tenth of it is worth it', () => {
+    const light = base.map(x => (x[3] === 'flex' ? [x[0], x[1], -100, x[3]] as typeof x : x)); expect(calTips(make(5000, 1000, light)).some(t => t.key === 'trim')).toBe(false)
+  })
+  it('of several payments before payday, the one whose move helps most is the one suggested', () => {
+    const two: typeof base = [...base, ['2026-12-02', 'Discover payment', -450, 'debt']]
+    expect(calTips(make(6000, 1000, two)).find(t => t.key === 'move')).toMatchObject({ label: 'Discover payment', amount: 450 })
+  })
+  it('one account on its own: a transfer from another cash account when it runs short; nothing about the reserve', () => {
+    const acct = { id: 'a1', name: 'Checking' } as NonNullable<Cal['account']>
+    const short = { ...make(2500, 0, base), account: acct }; const tips = calTips(short, [{ name: 'Savings', bal: 8000 }, { name: 'Wallet', bal: 40 }])
+    expect(tips[0]).toMatchObject({ key: 'transfer', amount: 200, label: 'Savings', title: 'Move $200 in from Savings' })
+    expect(calTips(short, [{ name: 'Wallet', bal: 40 }])[0].key).toBe('gap')   // nothing else could cover it
+    const fine = { ...make(9000, 0, base), account: acct }; expect(calTips(fine).some(t => t.key === 'reserve' || t.key === 'idle')).toBe(false)
+  })
+})
+describe('0.35.0: Can I afford it?', () => {
+  const cal = make(5000, 1000, base)   // lowest 2,300 on Dec 3; reserve 1,000
+  it('fits: the new lowest point, and the most that would fit that day', () => {
+    const a = afford(cal, 500, '2026-11-25'); expect(a).toMatchObject({ state: 'ok', low: { bal: 1800, date: '2026-12-03' }, max: 1300, short: 0, already: false, outside: false, fitsFrom: '2026-11-25' })
+    expect(afford(cal, 1300, '2026-11-25').state).toBe('ok'); expect(afford(cal, 1300.01, '2026-11-25').state).toBe('floor')
+  })
+  it('dips into the reserve: how far under, and the first day the same amount fits', () => {
+    const a = afford(cal, 2000, '2026-11-25'); expect(a).toMatchObject({ state: 'floor', firstBad: '2026-12-01', short: 700, max: 1300, fitsFrom: '2026-12-04' })   // after payday: 4,600 is the lowest from then on
+    expect(afford(cal, 2000, '2026-12-04')).toMatchObject({ state: 'ok', low: { bal: 2300, date: '2026-12-03' }, max: 3505 })   // a later purchase does not change earlier days
+  })
+  it('runs out: the day, and nothing fits when no later day could hold it', () => {
+    const a = afford(cal, 4500, '2026-11-25'); expect(a).toMatchObject({ state: 'out', firstBad: '2026-11-30', short: 3200 }); expect(a.fitsFrom).toBe('2026-12-18')
+    expect(afford(cal, 9000, '2026-11-25').fitsFrom).toBeNull()
+  })
+  it('already short before the purchase; a date outside the calendar; nothing typed', () => {
+    expect(afford(make(5000, 2500, base), 100, '2026-11-25')).toMatchObject({ already: true, max: 0, fitsFrom: null, state: 'floor' })
+    expect(afford(cal, 100, '2027-03-01').outside).toBe(true); expect(afford(cal, 100, '2026-11-01').outside).toBe(true)
+    expect(afford(cal, 0, '2026-11-25')).toMatchObject({ state: 'ok', low: { bal: 2300 }, fitsFrom: null })
+  })
+  it('with no reserve the line is zero', () => { expect(afford(make(5000, 0, base), 2300, '2026-11-25')).toMatchObject({ state: 'ok', max: 2300 }); expect(afford(make(5000, 0, base), 2301, '2026-11-25').state).toBe('out') })
+})
+describe('0.35.0: a day opened', () => {
+  const cal = make(5000, 1000, base)
+  it('what lands on it and what is in the bank that evening', () => {
+    expect(calDay(cal, '2026-12-04')).toMatchObject({ inTot: 2300, outTot: 0, bal: 4600 }); expect(calDay(cal, '2026-12-03').items.map(x => x.label)).toEqual(['Amex payment (autopay)'])
+    expect(calDay(cal, '2026-12-05')).toMatchObject({ items: [], bal: 4600 }); expect(calDay(cal, '2027-06-01').bal).toBeNull()
   })
 })

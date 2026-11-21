@@ -735,4 +735,32 @@ button.dd-row{cursor:pointer} button.dd-row:hover{background:var(--surface-2)} .
 .cc-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--ink-2);margin-top:8px} .cc-legend span{display:inline-flex;gap:6px;align-items:center}
 .cc-legend .sw{width:12px;height:12px;display:inline-block;box-sizing:border-box;border:1px solid var(--line-strong)} .sw.pay{background:var(--good-soft);border-color:var(--good)} .sw.low{border:2px solid var(--crit)} .sw.warn{background:var(--warn-soft);border-color:var(--warn)}
 @media (max-width:640px){ .cc-head{font-size:20px} .cc-row{grid-template-columns:58px minmax(0,1fr) auto} .cc-bal{display:none} }
+/* 0.35.0 — Forecast: two tabs, "Can I afford it?", a day you can open, one account on its own, and the accuracy check */
+.pgtabs{display:flex;gap:4px;border-bottom:2px solid var(--line);margin:0 0 16px;overflow-x:auto}
+.pgtabs button{border:0;background:none;padding:10px 16px;margin-bottom:-2px;border-bottom:3px solid transparent;font-family:var(--display);font-size:15.5px;font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap;min-height:44px}
+.pgtabs button:hover{color:var(--ink)} .pgtabs button.on{color:var(--ink);border-bottom-color:var(--accent)} .pgtabs button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.linkbtn{border:0;background:none;padding:0;font:inherit;color:var(--accent-ink,var(--accent));text-decoration:underline;cursor:pointer}
+.cc-afford{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface-2);padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.cc-afford-q{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center} .cc-afford-q>b{font-family:var(--display);font-size:16px;margin-right:4px}
+.cc-afford-q .inp,.cc-dp-add .inp{width:auto;min-width:0} .cc-afford-q>.inp{flex:1 1 180px;max-width:280px}
+.cc-money{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);color:var(--ink-3)} .cc-money .inp{width:120px;font-family:var(--mono)}
+.cc-on{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--ink-2)}
+.cc-afford-a{border-left:4px solid var(--good);background:var(--surface);border-radius:var(--radius);padding:10px 12px;font-size:14.5px;line-height:1.5;color:var(--ink-2)} .cc-afford-a b{color:var(--ink)}
+.cc-afford-a.floor,.cc-afford-a.warn{border-left-color:var(--warn)} .cc-afford-a.out{border-left-color:var(--crit)} .cc-afford-a.idle{border-left-color:var(--line-strong)}
+.cc-afford-do{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px} .cc-afford-do .cc-sub{margin:0}
+.cc-scope{width:auto!important;max-width:100%}
+.cc-cell.sel{outline:2px solid var(--accent);outline-offset:1px}
+.cc-cellbtn{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;width:100%;height:100%;min-height:76px;cursor:pointer;border-radius:calc(var(--radius) - 2px)} .cc-cellbtn:hover{background:rgba(127,127,127,.08)} .cc-cellbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cc-daypanel{border:1px solid var(--accent);border-radius:var(--radius-lg);background:var(--surface);overflow:hidden}
+.cc-dp-h{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 14px;background:var(--surface-2);font-size:14px} .cc-dp-h>b{font-family:var(--display);font-size:15.5px} .cc-dp-h>span{flex:1 1 auto;color:var(--ink-2)} .cc-dp-h .neg{color:var(--crit-ink)}
+.cc-daypanel>.cc-sub{padding:8px 14px}
+.cc-dp-add{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line-2)} .cc-dp-add .cc-sub{margin:0} .cc-dp-add>.inp:first-of-type{flex:1 1 160px;max-width:260px}
+.fa{display:flex;flex-direction:column;gap:12px}
+.fa-answer{border:1px solid var(--good);background:var(--good-soft);border-radius:var(--radius-lg);padding:12px 16px} .fa-answer.warn{border-color:var(--warn);background:var(--warn-soft)} .fa-answer.crit{border-color:var(--crit);background:var(--crit-soft)} .fa-answer.idle{border-color:var(--line);background:var(--surface-2)}
+.fa-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-family:var(--display);font-size:18px;color:var(--ink)} .fa-answer p{margin:6px 0 0;font-size:14.5px;line-height:1.5;color:var(--ink-2)} .fa-answer p b{color:var(--ink)}
+.fa-tbl{width:100%} .fa-tbl td,.fa-tbl th{padding:8px 12px} .fa-tbl .num{text-align:right;font-family:var(--mono)} .fa-tbl tr.fa-sum td{border-top:1px solid var(--line-strong);background:var(--surface-2)}
+.fa .tblwrap{max-height:none}
+.fa-hist{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden} .fa-h{display:grid;grid-template-columns:minmax(120px,1.2fr) 1fr 1fr 1.2fr;gap:10px;padding:8px 14px;font-size:13.5px;border-top:1px solid var(--line-2);align-items:center} .fa-h:first-child{border-top:0} .fa-h b{font-family:var(--mono)}
+@media (max-width:640px){ .pgtabs button{padding:10px 12px;font-size:15px} .cc-afford-q>.inp{max-width:none;flex-basis:100%} .cc-money .inp{width:104px} .fa-h{grid-template-columns:1fr 1fr} .fa-tbl td,.fa-tbl th{padding:7px 8px} .cc-dp-add>.inp:first-of-type{max-width:none;flex-basis:100%} }
+@media print{ .pgtabs,.cc-afford,.cc-dp-add{display:none} }
 @media print{ .cc-week:not([open]) > *:not(summary){display:block} }
