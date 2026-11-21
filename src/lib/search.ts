@@ -44,7 +44,7 @@ export function buildIndex(d: Data): SearchIndex {
   const txns = d.transactions.map(t => ({ t, amount: Math.abs(+t.amount || 0),
     text: fold(`${t.payee || ''} ${t.memo || ''} ${cat.get(t.category_id || '') || (t.kind === 'transfer' ? '' : 'uncategorized')} ${acct.get(t.account_id || '') || ''} ${acct.get(t.to_account_id || '') || ''} ${(t.tags || []).join(' ')} ${t.ref || ''} ${t.kind} ${t.status || ''} ${t.date} ${fmtDY(t.date)} ${splits.get(t.id) || ''}`) }))
     .sort((a, b) => b.t.date.localeCompare(a.t.date) || String(b.t.created_at || '').localeCompare(String(a.t.created_at || '')))
-  const acts = (d.activity || []).map(a => ({ a, text: fold(`${a.summary || ''} ${a.action} ${a.action === 'insert' ? 'added created' : a.action === 'delete' ? 'deleted removed' : 'changed edited updated'} ${tableName(a.table_name)} ${TABLE_WORDS[a.table_name] || ''} ${a.user_email || ''} ${String(a.created_at).slice(0, 10)} ${fmtD(String(a.created_at).slice(0, 10))}`) }))
+  const acts = (d.activity || []).map(a => ({ a, text: fold(`${a.summary || ''} ${a.action} ${a.action === 'insert' ? 'added created' : a.action === 'delete' ? 'deleted removed' : 'changed edited updated'} ${tableName(a.table_name)} ${TABLE_WORDS[a.table_name] || ''} ${a.user_email || ''} ${String(a.created_at).slice(0, 10)} ${fmtDT(a.created_at)}`) }))
   const things: SearchIndex['things'] = []
   for (const a of d.accounts.filter(a => a.status === 'Active')) things.push({ text: fold(`${a.name} ${a.institution || ''} ${a.last4 || ''}`), hit: { kind: 'account', title: a.name, sub: `${a.institution ? a.institution + ' · ' : ''}balance ${fm2(a.balance)}`, to: linkTo('/accounts', a.id), key: 'a' + a.id } })
   for (const r of d.recurring.filter(r => r.status === 'Active')) things.push({ text: fold(`${r.name} ${r.payee || ''}`), hit: { kind: 'bill', title: r.name, sub: `${fm2(r.amount)} · ${r.frequency.replace(/_/g, ' ')}${r.next_due ? ' · next ' + fmtD(r.next_due) : ''}`, to: linkTo('/bills', r.id), key: 'b' + r.id } })
@@ -74,7 +74,7 @@ export const actHit = (a: ActivityRow, q: string): Hit => ({ kind: 'activity', k
 export function searchAll(q: string, ix: SearchIndex, d: Pick<Data, 'categories' | 'accounts'>, pages: PageRef[]): SearchResult {
   const needle = fold(q), ws = words(q); const paths = new Set(pages.map(p => p.path))
   const go: Array<Hit & { sc: number }> = []
-  for (const v of pages) { const sc = needle ? Math.max(fit(fold(v.title), needle, ws), fit(fold(v.zone), needle, ws) / 2, ws.every(w => fold(v.sub).includes(w)) ? 8 : 0) : 1; if (sc) go.push({ kind: 'page', title: v.title, sub: v.sub, to: v.path, key: 'p' + v.path, sc }) }
+  for (const v of pages) { const sc = needle ? Math.max(fit(fold(v.title), needle, ws), fit(fold(v.zone), needle, ws) / 2, ws.every(w => fold(v.sub).includes(w)) ? 8 : 0, ws.every(w => fold(`${v.title} ${v.zone} ${v.sub}`).includes(w)) ? 6 : 0) : 1; if (sc) go.push({ kind: 'page', title: v.title, sub: v.sub, to: v.path, key: 'p' + v.path, sc }) }
   if (!needle) return { go: go.slice(0, 12), transactions: [], txnTotal: 0, txnIds: [], activity: [], actTotal: 0 }
   const kindPath: Record<string, string> = { account: '/accounts', bill: '/bills', goal: '/goals', planned: '/forecast' }
   for (const x of ix.things) { if (!paths.has(kindPath[x.hit.kind])) continue; const sc = fit(x.text, needle, ws); if (sc) go.push({ ...x.hit, sc: sc - 1 }) }
@@ -91,10 +91,14 @@ export function filterActivity(rows: ActivityRow[], q: string): ActivityRow[] {
   const ix = buildIndex({ categories: [], accounts: [], splits: [], transactions: [], recurring: [], goals: [], planned: [], activity: rows } as unknown as Data)
   return ix.acts.filter(x => matches(x.text, ws)).map(x => x.a)
 }
+/** A short, steady name for a search, so each long result set is kept under its own key. */
+export const setToken = (q: string) => { let h = 5381; for (const ch of fold(q)) h = ((h << 5) + h + ch.codePointAt(0)!) >>> 0; return 's' + h.toString(36) }
 /** Where "See all N transactions" goes: the ledger, showing exactly the transactions that matched. Up to LINK_MAX ids ride in the
- *  address; a longer set is handed over through session storage, as drill-down does. */
+ *  address; a longer set is handed over through session storage, as drill-down does — under a name of its own (`@set.<token>`), so a
+ *  later search never changes what an earlier link shows. Call it when the link is followed, not while results are being drawn. */
 export function ledgerSearchLink(ids: string[], q: string, store?: Pick<Storage, 'setItem'> | null, max = 300, key = 'cresari.ledgerSet'): string {
   const tail = `&from=search&q=${encodeURIComponent(q.trim())}`, direct = '/transactions?ids=' + ids.join(',') + tail
   if (ids.length <= max || !store) return direct
-  try { store.setItem(key, JSON.stringify(ids)); return '/transactions?ids=@set' + tail } catch { return direct }
+  const token = setToken(q)
+  try { store.setItem(`${key}.${token}`, JSON.stringify(ids)); return `/transactions?ids=@set.${token}` + tail } catch { return direct }
 }

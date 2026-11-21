@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useStore } from './store'
 import type { Category, Account } from './data/types'
 import { acctLabel } from '../lib/accounts'
@@ -30,17 +30,27 @@ export function useData() {
   return { ...s, data, settings, ...helpers, canEdit: s.canEdit(), isOwner: s.isOwner() }
 }
 
+/** The default account kept on this device (for someone who cannot save to the household): one value per person and household, read by
+ *  every useDefaultAccount() on the page and announced to all of them when it changes. Kept in memory too, for a browser that refuses storage. */
+const deviceDefault = (() => {
+  const mem = new Map<string, string>(), subs = new Set<() => void>()
+  return {
+    read: (key: string): string | null => { if (mem.has(key)) return mem.get(key)!; try { return localStorage.getItem(key) } catch { return null } },
+    write: (key: string, v: string) => { mem.set(key, v); try { localStorage.setItem(key, v) } catch { /* private mode: it lasts until the page is closed */ } subs.forEach(f => f()) },
+    subscribe: (f: () => void) => { subs.add(f); return () => { subs.delete(f) } },
+  }
+})()
 /** "My default account" (0.36.0, lib/defaultAccount.ts): the account this person's pages open on, and how to change it.
  *  Saved with the household (under the person's own id) for someone who can edit it; on this device for someone who cannot. */
 export function useDefaultAccount() {
   const { data, settings, saveSettings, canEdit, guarded } = useData()
   const who = useStore(s => (s.mode === 'demo' ? 'demo' : s.user?.id || '')), hh = useStore(s => s.household?.id || '')
-  const key = localKey(hh, who); const [local, setLocal] = useState<string | null>(() => { try { return localStorage.getItem(key) } catch { return null } })
-  useEffect(() => { try { setLocal(localStorage.getItem(key)) } catch { setLocal(null) } }, [key])
+  // what this device holds is one value shared by every place that shows it: marking an account on one row unmarks it on the others at once
+  const key = localKey(hh, who); const local = useSyncExternalStore(deviceDefault.subscribe, () => deviceDefault.read(key))
   const account = useMemo(() => defaultAccountOf(settings, who, data.accounts, canEdit ? null : local), [settings, who, data.accounts, canEdit, local])
   const set = useCallback((id: string | null, name?: string) => {
     if (!who) return Promise.resolve(undefined)
-    if (!canEdit) { try { if (id) localStorage.setItem(key, id); else localStorage.removeItem(key) } catch { /* private mode: it lasts until the page is closed */ } setLocal(id); return Promise.resolve(true) }
+    if (!canEdit) { deviceDefault.write(key, id || ''); return Promise.resolve(true) }   // '' = cleared on this device (an account saved with the household does not come back)
     return guarded(async () => { await saveSettings(withDefaultAccount(useStore.getState().settings(), who, id)); return true }, id ? `${name || 'That account'} is now your default account` : 'Default account cleared')
   }, [who, canEdit, key, guarded, saveSettings])
   return { account, id: account?.id || null, set, isDefault: (id?: string | null) => !!id && id === account?.id }

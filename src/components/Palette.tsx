@@ -21,14 +21,15 @@ export function Palette({ onClose }: { onClose: () => void }) {
   const groups = useMemo(() => {
     const g: Array<{ label: string; hits: Hit[] }> = []
     if (r.go.length) g.push({ label: q.trim() ? 'Go to' : 'Pages', hits: r.go })
-    if (r.txnTotal) g.push({ label: `Transactions · ${r.txnTotal} match${r.txnTotal === 1 ? '' : 'es'}`, hits: [...r.transactions, ...(r.txnTotal > 1 ? [{ kind: 'more' as const, key: 'more-t', title: r.txnTotal > r.transactions.length ? `See all ${r.txnTotal} transactions in the ledger` : `Open these ${r.txnTotal} in the ledger`, to: ledgerSearchLink(r.txnIds, q, typeof sessionStorage !== 'undefined' ? sessionStorage : null) }] : [])] })
+    if (r.txnTotal) g.push({ label: `Transactions · ${r.txnTotal} match${r.txnTotal === 1 ? '' : 'es'}`, hits: [...r.transactions, ...(r.txnTotal > 1 ? [{ kind: 'more' as const, key: 'more-t', title: r.txnTotal > r.transactions.length ? `See all ${r.txnTotal} transactions in the ledger` : `Open these ${r.txnTotal} in the ledger`, to: '' }] : [])] })
     if (r.actTotal) g.push({ label: `Activity log · ${r.actTotal} match${r.actTotal === 1 ? '' : 'es'}`, hits: [...r.activity, ...(r.actTotal > r.activity.length ? [{ kind: 'more' as const, key: 'more-a', title: `See all ${r.actTotal} in the activity log`, to: `/settings?tab=activity&q=${encodeURIComponent(q.trim())}` }] : [])] })
     return g
   }, [r, q])
   const flat = useMemo(() => groups.flatMap(g => g.hits), [groups])
   useLayer(true, onClose); useDialogFocus(box, { initial: '.pal-in' }); useEffect(() => { setIx(0) }, [q])
   useEffect(() => { document.getElementById('pal-' + flat[ix]?.key)?.scrollIntoView({ block: 'nearest' }) }, [ix, flat])
-  const go = (h: Hit) => { onClose(); nav(h.to) }
+  // "See all" for transactions: the link is made when it is followed, so a long set is stored only for a search someone actually opened
+  const go = (h: Hit) => { onClose(); nav(h.key === 'more-t' ? ledgerSearchLink(r.txnIds, q, typeof sessionStorage !== 'undefined' ? sessionStorage : null) : h.to) }
   const key = (e: React.KeyboardEvent) => { if (e.key === 'ArrowDown') { e.preventDefault(); setIx(i => Math.min(flat.length - 1, i + 1)) } else if (e.key === 'ArrowUp') { e.preventDefault(); setIx(i => Math.max(0, i - 1)) } else if (e.key === 'Enter') { e.preventDefault(); if (flat[ix]) go(flat[ix]) } else if (e.key === 'Escape') { e.preventDefault(); onClose() } }
   let n = -1
   return <div className="modalBack" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}><div className="modal palette" role="dialog" aria-modal="true" aria-label="Search" ref={box} tabIndex={-1} onKeyDown={e => trapTab(e, box.current)}>

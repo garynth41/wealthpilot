@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { demoSeed } from '../app/data/demoSeed'
 import type { ActivityRow, Data, Transaction } from '../app/data/types'
-import { buildIndex, searchAll, filterActivity, ledgerSearchLink, fold, words, TXN_SHOWN, ACT_SHOWN, type PageRef } from './search'
+import { buildIndex, searchAll, filterActivity, ledgerSearchLink, setToken, fold, words, TXN_SHOWN, ACT_SHOWN, type PageRef } from './search'
 import { defaultAccountOf, withDefaultAccount, openOn, localKey } from './defaultAccount'
 
 const { data } = demoSeed()
@@ -67,6 +67,7 @@ describe('finding places', () => {
     const goal = d.goals.find(g => g.status === 'Active')!; expect(find(goal.name).go.some(h => h.kind === 'goal')).toBe(true)
     const pl = d.planned.find(p => p.status === 'Planned')!; expect(find(pl.label).go.some(h => h.kind === 'planned' && h.to === '/forecast?view=long')).toBe(true)
   })
+  it('a page is found by words spread across its name, its section and its description', () => { const r = find('transactions spending dollar'); expect(r.go.some(h => h.kind === 'page' && h.to === '/transactions')).toBe(true); expect(find('transactions zebra').go.some(h => h.kind === 'page')).toBe(false) })
   it('with nothing typed: the pages, and nothing else', () => { const r = find(''); expect(r.go.every(h => h.kind === 'page')).toBe(true); expect(r.go.length).toBe(PAGES.length); expect(r.txnTotal + r.actTotal).toBe(0) })
   it('only what this person can open: no ledger page, no transactions; no Settings, no activity; no Accounts, no accounts', () => {
     const limited = PAGES.filter(p => !['/transactions', '/settings', '/accounts'].includes(p.path)); const r = find('zurich', limited); expect(r.txnTotal).toBe(0); expect(r.actTotal).toBe(0)
@@ -78,7 +79,12 @@ describe('the pieces', () => {
   it('"See all" opens the ledger on exactly the matches; a long set is handed over by name, and never cut short', () => {
     expect(ledgerSearchLink(['a', 'b'], ' rent & co ')).toBe('/transactions?ids=a,b&from=search&q=rent%20%26%20co')
     const many = Array.from({ length: 301 }, (_, i) => 'id' + i); const kept: Record<string, string> = {}
-    expect(ledgerSearchLink(many, 'x', { setItem: (k, v) => { kept[k] = v } })).toBe('/transactions?ids=@set&from=search&q=x'); expect(JSON.parse(kept['cresari.ledgerSet'])).toEqual(many)
+    const tx = setToken('x'), store = { setItem: (k: string, v: string) => { kept[k] = v } }
+    expect(ledgerSearchLink(many, 'x', store)).toBe(`/transactions?ids=@set.${tx}&from=search&q=x`); expect(JSON.parse(kept['cresari.ledgerSet.' + tx])).toEqual(many)
+    // each search keeps its own set: a later long search does not change what an earlier link shows
+    const other = many.slice(0, 301).map(i => 'o' + i), ty = setToken('y'); expect(ty).not.toBe(tx); expect(ledgerSearchLink(other, 'y', store)).toContain('@set.' + ty)
+    expect(JSON.parse(kept['cresari.ledgerSet.' + tx])).toEqual(many); expect(JSON.parse(kept['cresari.ledgerSet.' + ty])).toEqual(other)
+    expect(setToken(' X ')).toBe(tx); expect(setToken('x')).toMatch(/^s[0-9a-z]+$/)   // the same search, however typed, has the same name — and one that is safe in an address
     expect(ledgerSearchLink(many, 'x', { setItem: () => { throw new Error('full') } })).toContain('ids=id0,id1,'); expect(ledgerSearchLink(many, 'x', null).split(',').length).toBe(301)
   })
 })
@@ -91,7 +97,14 @@ describe('my default account', () => {
     expect(defaultAccountOf(s, 'u1', accts.map(x => (x.id === a.id ? { ...x, status: 'Closed' as const } : x)))).toBeNull()
     expect(defaultAccountOf(s, 'u1', accts.map(x => (x.id === a.id ? { ...x, excluded: true } : x)))).toBeNull()
   })
-  it('someone who cannot edit the household keeps theirs on the device', () => { expect(defaultAccountOf({}, 'u1', accts, b.id)?.id).toBe(b.id); expect(defaultAccountOf({ defaultAccounts: { u1: a.id } }, 'u1', accts, b.id)?.id).toBe(a.id); expect(localKey('h1', 'u1')).toBe('cresari.defaultAccount.h1.u1') })
+  it('someone who cannot edit the household keeps theirs on the device', () => { expect(defaultAccountOf({}, 'u1', accts, b.id)?.id).toBe(b.id); expect(localKey('h1', 'u1')).toBe('cresari.defaultAccount.h1.u1') })
+  it('what they chose on the device comes before an entry saved with the household — and so does clearing it there', () => {
+    const s = { defaultAccounts: { u1: a.id } }
+    expect(defaultAccountOf(s, 'u1', accts, b.id)?.id).toBe(b.id)      // chosen here
+    expect(defaultAccountOf(s, 'u1', accts, '')).toBeNull()            // cleared here: the household's entry does not come back
+    expect(defaultAccountOf(s, 'u1', accts, null)?.id).toBe(a.id); expect(defaultAccountOf(s, 'u1', accts)?.id).toBe(a.id)   // nothing chosen here
+    expect(defaultAccountOf(s, 'u1', accts, 'gone')?.id).toBe(a.id)    // a device choice that no longer exists falls back
+  })
   it('setting or clearing one leaves everyone else\'s alone', () => {
     const s = { defaultAccounts: { u1: a.id, u2: b.id } }
     expect(withDefaultAccount(s, 'u1', b.id)).toEqual({ defaultAccounts: { u1: b.id, u2: b.id } }); expect(withDefaultAccount(s, 'u1', null)).toEqual({ defaultAccounts: { u2: b.id } }); expect(withDefaultAccount({}, 'u1', a.id)).toEqual({ defaultAccounts: { u1: a.id } })

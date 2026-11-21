@@ -24,10 +24,11 @@ export function ReconcilePage() {
   const { data, accts, canEdit, guarded, repo } = useData(); const st = useStore.getState; const confirm = useConfirm()
   const cashAccts = useMemo(() => accts.filter(a => ['checking', 'savings', 'cash', 'credit_card', 'line_of_credit', 'store_card'].includes(a.kind)), [accts])
   // 0.36.0: opens on this person's default account when it can be reconciled
-  const def = useDefaultAccount(); const [acctId, setAcctId] = useState(() => openOn(def.account, cashAccts, cashAccts.find(a => a.bank_balance != null)?.id || cashAccts[0]?.id || ''))
-  const a = cashAccts.find(x => x.id === acctId) || null
   // a link-through from the Dashboard (0.26.0): ?focus=<account id> lands on that account's Variance, ?focus=out:<account id> on its outstanding checks
   const focusId = focusIdFrom(useLocation().search)
+  // — and the page starts on the account a link names, before the default: nothing is ever set up for one account and then shown for another
+  const def = useDefaultAccount(); const [acctId, setAcctId] = useState(() => { const linked = (focusId || '').replace(/^out:/, ''); return cashAccts.some(x => x.id === linked) ? linked : openOn(def.account, cashAccts, cashAccts.find(a => a.bank_balance != null)?.id || cashAccts[0]?.id || '') })
+  const a = cashAccts.find(x => x.id === acctId) || null
   useEffect(() => { if (!focusId) return; const id = focusId.replace(/^out:/, ''); if (cashAccts.some(x => x.id === id)) { setAcctId(id); setTimeout(() => highlight(focusId), 120) } }, [focusId, cashAccts])
   const txns = data.transactions as unknown as RTxn[]
   const mine = useMemo(() => a ? txns.filter(t => t.account_id === a.id || t.to_account_id === a.id) : [], [txns, a])
@@ -90,7 +91,7 @@ export function ReconcilePage() {
     <div style={{ marginBottom: 14 }}><Seg value={tab} options={[['register', `Register (${S.uncleared} open)`], ['match', `Match to bank (${suggestions.length})`], ['statement', 'Reconcile a statement'], ['issues', `Issues (${issues.length})`], ['history', 'History & audit']]} onChange={setTab} /></div>
 
     {tab === 'register' && <div className="grid g12">
-      {canEdit && <Card span={5} title="Record a check, payment or deposit" hint="goes into the register as outstanding until the bank shows it"><RegisterForm account={a} onDone={() => undefined} /></Card>}
+      {canEdit && <Card span={5} title="Record a check, payment or deposit" hint="goes into the register as outstanding until the bank shows it"><RegisterForm key={a.id} account={a} onDone={() => undefined} /></Card>}
       <Card span={canEdit ? 7 : 12} title="Outstanding — not yet at the bank" hint="matched automatically when the bank feed shows them; or match / mark cleared by hand">
         {outstanding(mine, a).length === 0 ? <Empty>Nothing outstanding — the bank has shown everything you recorded.</Empty> : <div className="tblwrap"><table className="tbl"><thead><tr><th>Date</th><th>Chk #</th><th>Payee</th><th>Memo</th><th className="num">Amount</th><th /></tr></thead><tbody>
           {outstanding(mine, a).sort((x, y) => x.date.localeCompare(y.date)).map(t => line(t as Transaction, canEdit && <span className="btnrow"><Btn sm onClick={() => markCleared(t as Transaction)}>Cleared</Btn><Btn sm danger onClick={() => voidEntry(t as Transaction)}>Void</Btn></span>))}

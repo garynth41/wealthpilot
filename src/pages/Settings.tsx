@@ -20,7 +20,7 @@ import { APP_NAME, APP_VERSION, APP_BUILD } from '../app/config'
 import { Card, Btn, Pill, Note, Field, useConfirm, Seg, useModal, MHead, MBody, MFoot, PasswordInput } from '../components/ui'
 import { Table, type Col } from '../components/Table'
 import { CategoryEditor, CategoryGroups, GroupNameDialog, groupChoices, NEW_GROUP } from '../components/CategoryTools'
-import { orderCategories, moveCategory, moveGroup, setGroup, renameGroup, copyDraft, placeNew, groupOf, type CatChange } from '../lib/categoryOrder'
+import { orderCategories, moveCategory, moveGroup, setGroup, renameGroup, copyDraft, placeNew, groupOf, NO_GROUP, type CatChange } from '../lib/categoryOrder'
 import { MailSetup } from './Email'
 import { fmtMoney, fm2, fmtNum, parseNum } from '../lib/money'
 import { LOCALES, localePreference, setLocale, resolvedLocale, privacyOn, setPrivacy } from '../lib/display'
@@ -45,6 +45,8 @@ export function SettingsPage() {
   const fromLink = (): (typeof TABS)[number] => { const t = sp.get('tab'); return (TABS as readonly string[]).includes(t || '') ? t as (typeof TABS)[number] : 'general' }
   const [tab, setTab] = useState<(typeof TABS)[number]>(fromLink); const [actQ, setActQ] = useState(() => sp.get('q') || '')
   const linkKey = `${sp.get('tab') || ''}|${sp.get('q') || ''}`; useEffect(() => { if (sp.get('tab')) { setTab(fromLink()); setActQ(sp.get('q') || '') } }, [linkKey])   // eslint-disable-line react-hooks/exhaustive-deps
+  // picking a tab is written to the address too, so a link to a tab always lands on it — even the one that was open a moment ago
+  const pickTab = (k: (typeof TABS)[number]) => { setTab(k); setSp(p => { const n = new URLSearchParams(p); if (k === 'general') n.delete('tab'); else n.set('tab', k); if (k !== 'activity') n.delete('q'); return n }, { replace: true }) }
   const activity = useMemo(() => filterActivity(data.activity, actQ), [data.activity, actQ])
   const [name, setName] = useState(household?.name || ''); const [s, setS] = useState({ ...settings }); const fileRef = useRef<HTMLInputElement>(null)
   // 0.25.1: the thresholds are kept as typed until Save. A 0 is saved as 0 where it means something (no reserve floor, no savings target,
@@ -57,7 +59,8 @@ export function SettingsPage() {
     if (!t) { useStore.getState().toast('Some planning thresholds need a fix — the message is under each one. Nothing was saved.', true); requestAnimationFrame(() => document.querySelector<HTMLElement>('.field.has-error input')?.focus()); return }
     guarded(async () => { if (name !== household?.name) await repo!.renameHousehold(name); await saveSettings({ periodType: s.periodType, periodAnchor: s.periodAnchor || null, semimonthlyDays: s.semimonthlyDays, reserveFloor: t.reserveFloor, runwayGreen: t.runwayGreen, runwayYellow: t.runwayYellow, dueSoonDays: t.dueSoonDays, budgetCritPct: t.budgetCritPct, savingsTargetPct: t.savingsTargetPct, includeRetirementInCash: !!s.includeRetirementInCash, payFrequencyDefault: s.payFrequencyDefault }); await refresh() }, 'Settings saved') }
   // Categories (0.36.0): listed group by group (lib/categoryOrder.ts). Moves, renames and copies come back as a few small changes, applied together.
-  const catRows = useMemo(() => orderCategories(data.categories), [data.categories]); const catRank = useMemo(() => new Map(catRows.map((c, i) => [c.id, i])), [catRows])
+  const catRows = useMemo(() => orderCategories(data.categories).map(c => ((c.group || '').trim() ? c : { ...c, group: NO_GROUP })), [data.categories]);   // no group is the group "Other", and is shown as that
+  const catRank = useMemo(() => new Map(catRows.map((c, i) => [c.id, i])), [catRows])
   const [catBusy, setCatBusy] = useState(false)
   const applyCats = (changes: CatChange[], ok?: string, then?: () => Promise<unknown>) => { if (catBusy) return Promise.resolve(undefined); setCatBusy(true)
     return guarded(async () => { for (let i = 0; i < changes.length; i += 6) await Promise.all(changes.slice(i, i + 6).map(ch => update('categories', ch.id, ch.patch as Partial<Category>))); if (then) await then(); return true }, ok).finally(() => setCatBusy(false)) }
@@ -77,7 +80,7 @@ export function SettingsPage() {
   const importJson = (modeI: 'merge' | 'replace') => { const f = fileRef.current?.files?.[0]; if (!f) return useStore.getState().toast('Choose a backup file first', true); const r = new FileReader(); r.onload = () => guarded(async () => { const j = JSON.parse(String(r.result)); if (modeI === 'replace' && !(await confirm('Replace EVERYTHING in this household with the backup? This cannot be undone.', 'Replace'))) return; const n = await repo!.importJson(j, modeI); await refresh(); useStore.getState().toast(restoreMessage(n)) }); r.readAsText(f) }
   const tabs: Array<[typeof tab, string]> = [['general', 'General'], ['categories', 'Categories'], ['rules', 'Payee rules'], ['members', 'Members'], ['notifications', 'Notifications'], ['security', 'Security'], ['data', 'Backup & data'], ['activity', 'Activity log']]
   return <>
-    <div style={{ marginBottom: 14 }}><Seg value={tab} options={tabs} onChange={setTab} /></div>
+    <div style={{ marginBottom: 14 }}><Seg value={tab} options={tabs} onChange={pickTab} /></div>
     {tab === 'general' && <div className="grid g12">
       <Card span={6} title="Household"><Field label="Name"><input className="inp" value={name} onChange={e => setName(e.target.value)} disabled={!isOwner} /></Field><OtherHouseholds /><Note>Signed in as {mode === 'demo' ? 'demo' : user?.email} · {APP_NAME} v{APP_VERSION} · build {APP_BUILD}</Note></Card>
       <Card span={6} title="Budget cadence" hint="how the Budget page slices time"><Field label="Budget by"><select className="inp" value={s.periodType} onChange={e => setS({ ...s, periodType: e.target.value as PeriodType })}><option value="month">Calendar month</option><option value="pay">Pay period (from your primary income source)</option><option value="biweekly">Every 2 weeks (from an anchor date)</option><option value="semimonthly">Twice a month</option><option value="week">Week (Mon–Sun)</option></select></Field>
@@ -93,7 +96,7 @@ export function SettingsPage() {
       <DeleteHouseholdCard />
       <AboutCard />
     </div>}
-    {tab === 'categories' && <Card title="Categories" hint="kept together by group · priority (Essential / Important / Discretionary) · fixed or variable · default budget copied into each new period · rollover carries unspent money forward" right={canEdit ? <Btn primary sm onClick={() => guarded(() => { const p = placeNew(data.categories, { name: 'New category', group: 'Other' }); return insert('categories', { name: 'New category', group: 'Other', kind: 'expense', priority: 'Important', cost_type: 'Variable', default_budget: 0, budget_cadence: 'period', rollover: false, sort_order: p.sort_order, archived: false }) }, 'Added — it is at the end of Other')}>+ Add category</Btn> : undefined}>
+    {tab === 'categories' && <Card title="Categories" hint="kept together by group · priority (Essential / Important / Discretionary) · fixed or variable · default budget copied into each new period · rollover carries unspent money forward" right={canEdit ? <Btn primary sm disabled={catBusy} onClick={() => { const p = placeNew(data.categories, { name: 'New category', group: 'Other' }); void applyCats(p.changes, 'Added — it is at the end of Other', () => insert('categories', { name: 'New category', group: 'Other', kind: 'expense', priority: 'Important', cost_type: 'Variable', default_budget: 0, budget_cadence: 'period', rollover: false, sort_order: p.sort_order, archived: false })) }}>+ Add category</Btn> : undefined}>
       <CategoryGroups cats={data.categories} canEdit={canEdit} busy={catBusy} onMove={(g, dir) => { const ch = moveGroup(data.categories, g, dir); if (ch.length) void applyCats(ch) }} onRename={renameGrp} />
       <Table name="categories" rows={catRows} cols={catCols} editable={canEdit} onChange={changeCat} pinActions
         actions={canEdit ? c => { const sib = catRows.filter(x => groupOf(x) === groupOf(c)), i = sib.findIndex(x => x.id === c.id); return <>
