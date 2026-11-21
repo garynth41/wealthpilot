@@ -42,5 +42,9 @@ describe('saving this month\'s forecast', () => {
     expect(useStore.getState().data.forecasts).toHaveLength(before)                                                  // household B's screen is untouched
     expect((await repo.loadAll()).data.forecasts.filter(f => f.through === monthEnd('2026-11'))).toHaveLength(1)     // …and A's forecast is saved where it belongs
   })
-  it('nothing is saved in the last days of a month', async () => { setToday('2026-11-28'); open(); expect(await useStore.getState().saveForecast()).toBe(false); setToday('2026-11-10') })
+  it('nothing is saved in the last days of a month — and that answer is not kept: the next month, in the same session, is saved', async () => {
+    setToday('2026-11-28'); open(); expect(await useStore.getState().saveForecast()).toBe(false); expect(await useStore.getState().saveForecast()).toBe(false)
+    setToday('2026-12-01'); expect(await useStore.getState().saveForecast()).toBe(true); expect(useStore.getState().data.forecasts.filter(f => f.through === monthEnd('2026-12'))).toHaveLength(1)
+    setToday('2026-11-10')
+  })
 })

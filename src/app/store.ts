@@ -269,11 +269,15 @@ export const useStore = create<State>((set, get) => ({
     // only someone who sees the whole household and may edit it: a member limited to some sections would save a forecast built from part of the data
     const repo = get().repo; if (!repo || !get().canEdit() || get().modules !== null || !needsSnapshot(get().data)) return false
     if (forecastSaving) return forecastSaving
-    return forecastSaving = (async () => {
+    const pending = (async () => {
       try { const row = forecastSnapshot(get().data, get().settings()); if (!row || get().repo !== repo || !needsSnapshot(get().data)) return false; await get().insert('forecasts', row); return true }
       // another device saved this month's first, the table is not there yet, or the app is offline: nothing is lost — the next load tries again
-      catch { return false } finally { forecastSaving = null }
+      catch { return false }
     })()
+    // kept only while it is running: when there is nothing to save the work above ends at once, and clearing it from inside would happen
+    // before it was stored here — leaving a finished "nothing saved" answer in place for the rest of the session
+    forecastSaving = pending; void pending.finally(() => { if (forecastSaving === pending) forecastSaving = null })
+    return pending
   },
   async autoCategorize(quiet) {
     if (!get().canEdit() || !get().repo) return 0
