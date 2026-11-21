@@ -20,11 +20,12 @@ export const accounts: GuidePage = {
     {
       title: 'Account balances as last updated',
       what: 'One read-only list of every active account with its current balance and when it last changed — the quickest way to see everything at once.',
-      how: ['Click a column heading to sort.', 'Click History on any row to see that account\'s balance over time and look up its balance on a past date.', 'To change a balance, edit it in the Cash, savings & investments or Credit cards & loans table below.'],
+      how: ['Click a column heading to sort.', 'Click ☆ on a row to make that account your default: the pages that start from an account open on it until you change it. ★ Default marks the one that is; click it again to clear it.', 'Click History on any row to see that account\'s balance over time and look up its balance on a past date.', 'To change a balance, edit it in the Cash, savings & investments or Credit cards & loans table below.'],
       fields: [
         { term: 'Current balance', text: 'Debts show with a minus sign. A green ✓ means a verified bank figure is on file (from the bank feed, a statement or a reconciliation); hover to see it.' },
         { term: 'Available', text: 'For cards and lines of credit, the credit limit minus the balance; for other accounts, the balance itself. A dash means no limit is entered.' },
         { term: 'Last updated', text: 'The date the balance was last set, and how long ago that was.' },
+        { term: '☆ / ★ Default', text: 'Your default account — one per person. The ledger\'s account filter, a new transaction\'s "Paid from", Reconcile, the cash calendar\'s one-account view and a statement import\'s "Into account" open on it. Other members choose their own; yours follows you to every device when you can edit the household, and stays on this device when you cannot. A link that names what to show (a search result, the Uncategorized tile) is not narrowed to it.' },
         { term: 'History', text: 'Opens the balance history: a chart of every recorded balance and a "Balance on" date box that tells you the balance at the end of any past day.' },
       ],
       tips: ['A balance changes three ways: you type it, a transaction posts to the account, or a statement import or bank sync sets it. Every change is kept as balance history, one point per account per day.'],

@@ -108,14 +108,19 @@ export const settings: GuidePage = {
     },
     {
       title: 'Categories',
-      what: 'On the Categories tab: every category with its group, priority, cost type and default budget. They drive the budget, reports, trends, liquidity and the hardship plan.',
+      what: 'On the Categories tab: every category with its group, priority, cost type and default budget, listed group by group. They drive the budget, reports, trends, liquidity and the hardship plan. A group keeps its categories together everywhere — so a group named for a person puts everything of theirs side by side.',
       how: [
-        'Click + Add category, then fill in the new row.',
+        'Click + Add category, then fill in the new row. It starts at the end of the Other group.',
         'Click any cell to change it; it saves when you press Enter or click away.',
+        'To copy a category, click Duplicate on its row. A window opens with the same settings under a new name: change the name, the group or anything else, then Save the copy. Nothing is created until you save, and Cancel leaves no trace.',
+        'To put a category in a group, pick the group in its Group cell. Choose ＋ New group… to name a new one — a person, a trip, a property.',
+        'To change the order, use ↑ and ↓: on a row they move the category within its group; in the Groups panel they move the whole group, with everything in it.',
+        'Rename in the Groups panel renames a group for all its categories. Type the name of a group that already exists and the two are merged.',
         'Use ✕ to delete a category. Its transactions become uncategorized, so archive it instead if you want to keep the history.',
       ],
       fields: [
-        { term: 'Group', text: 'The heading the category sits under in the budget and reports (Housing, Food, Bills and so on).' },
+        { term: 'Groups', text: 'The panel above the table: every group in the order the app lists them, with how many categories each holds and their default budgets added up. ↑ and ↓ move a group; Rename renames or merges it.' },
+        { term: 'Group', text: 'The heading the category sits under in the budget, the reports and the category pickers (Housing, Food, Bills — or a person\'s name). A category joins the end of the group you pick. Two categories may share a name when they are in different groups: Rent under one person and Rent under another.' },
         { term: 'Category', text: 'The name shown everywhere.' },
         { term: 'Kind', text: 'expense, income or transfer. A transfer category budgets money moved between your own accounts, such as a savings move or a card payment.' },
         { term: 'Priority', text: 'Essential, Important or Discretionary.' },
@@ -123,13 +128,16 @@ export const settings: GuidePage = {
         { term: 'Default budget', text: 'The amount copied into each new budget period.' },
         { term: 'Cadence', text: 'What the default budget means: per period (used as typed), per month (spread over the period by days) or per year (sinking fund) — a yearly cost set aside a twelfth a month.' },
         { term: 'Rollover', text: 'Carries money left unspent in this category forward to the next period.' },
-        { term: 'Order', text: 'Its place in lists; lower numbers come first.' },
+        { term: '↑ / ↓ (Actions)', text: 'Move the category up or down among the categories of its own group. They stop at the top and bottom of the group; to move a category to another group, change its Group.' },
+        { term: 'Duplicate (Actions)', text: 'Opens a copy to edit and save. The copy keeps the kind, priority, cost type, default budget, cadence, rollover and notes, and is placed straight after the original — or at the end of another group if you choose one. It has no transactions, payee rules or budget history of its own.' },
         { term: 'Archived', text: 'Retires the category from the budget and pickers but keeps its history. Archived rows are greyed out.' },
         { term: 'Notes / ID', text: 'Your own notes, and a short reference you can quote or search for.' },
         { term: 'Total default budget', text: 'Under the table: the default budgets of every active expense category added up per period, and the same for income.' },
       ],
       tips: [
         'Income categories are tinted green.',
+        'The Actions and ✕ columns stay in view at the right edge when the table is wider than the screen.',
+        'A group disappears when its last category leaves it, and appears when a category is put in it — there is nothing separate to create or delete.',
         'Search this table, CSV, Excel and ⚙ Columns above the table find rows, download them and hide columns.',
       ],
     },
@@ -460,6 +468,7 @@ export const settings: GuidePage = {
     {
       title: 'Activity log',
       what: 'On the Activity log tab: who changed what in the household, newest first — the most recent 300 changes.',
+      how: ['Type in Search the activity log to narrow it: a name, a kind of record such as transactions, a word such as deleted, or a date such as Nov 12. Several words narrow it further.', 'The search box at the top of every page looks through the same entries; "See all in the activity log" brings you here with the search filled in.', 'Clear shows every entry again.'],
       fields: [
         { term: 'When', text: 'Date and time of the change.' },
         { term: 'Who', text: 'The member who made it, or — when none is recorded.' },
@@ -521,6 +530,8 @@ export const settings: GuidePage = {
     { q: 'How do I add a passkey?', steps: ['On the phone or computer you want to use, open the Security tab.', 'Click + Add a passkey on this device and confirm with your face, fingerprint, PIN or security key.', 'Next time, choose "Sign in with a passkey".'] },
     { q: 'How do I get alerts on my phone or by email?', steps: ['Open the Notifications tab.', 'For push, click Enable on this device on each phone or computer and allow notifications.', 'For email, tick Email me and type an address under Send to (or tick Email for each member under Who gets what).', 'Choose the alerts under What to alert on, then click Send a test.'] },
     { q: 'How do I download a backup and restore it?', steps: ['Open the Backup & data tab and click Download JSON backup (or Download beside a nightly backup).', 'To restore, choose the file in the Restore card.', 'Click Merge into this household to add it, or Replace everything to start over from the backup.'] },
+    { q: 'How do I keep everything for one person together?', steps: ['Open the Categories tab.', 'On one of their categories, open the Group cell and choose ＋ New group…, then type the person\'s name.', 'Put their other categories in the same group from each one\'s Group cell.', 'In the Groups panel, use ↑ and ↓ to place the group where you want it. The budget, the reports and every category picker follow.'] },
+    { q: 'How do I copy a category, change it and save it?', steps: ['Open the Categories tab and click Duplicate on the category\'s row.', 'Change the name, the group or any other setting in the window that opens.', 'Click Save the copy. To give up, click Cancel — nothing is created.'] },
     { q: 'How do I make a payee rule?', steps: ['Open the Payee rules tab and click + Add rule.', 'Type part of the merchant name under Payee pattern and pick the Match.', 'Choose Set category (and anything else it should set).', 'Click Apply to N transactions to file the existing ones.'] },
   ],
   glossary: [

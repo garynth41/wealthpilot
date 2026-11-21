@@ -18,7 +18,8 @@ export const GENERAL: { intro: string; start: StartStep[]; tasks: GuideTask[]; f
   basics: [
     { h: 'Finding your way', items: [
       'The menu on the left groups pages by job: Overview, Spending Intelligence, Account Balances, Cash & Account Operations, Investments & Retirement, Tax Planning, Goals & Financial Planning, Reports & Analytics, and Security & Settings. On a phone, tap ☰.',
-      'Press Ctrl K (or /) to jump to any page, account, bill, goal or payee by typing part of its name.',
+      'The search box at the top of every page (⌕ on a phone; Ctrl K or / on a keyboard) looks through everything: every transaction on file — payee, memo, category, account, tags, date and amount — the activity log, and your accounts, bills, goals, planned items and pages. Several words narrow the search; a number finds an amount (45 finds $45.00 to $45.99, 45.20 exactly that). Pick a result to go to it, or "See all" to open the ledger on exactly the transactions that matched.',
+      'Mark one account as your default with the ☆ beside it on Account Balances (or beside the account filter on Transactions and the cash calendar). The pages that start from an account then open on it — the ledger\'s account filter, a new transaction\'s "Paid from", Reconcile, the cash calendar\'s one-account view and a statement import — until you change the default. It is yours alone; picking something else on a page lasts for that visit.',
       'Every card has a small ? beside its heading — it opens this guide at that card. Help (or F1) opens the guide for the whole page.',
     ] },
     { h: 'Editing', items: [

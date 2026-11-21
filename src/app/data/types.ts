@@ -206,6 +206,7 @@ export interface Settings {
   taxInCalendar?: boolean           // 0.22.0: federal estimated-tax payments in the cash calendar (default on when a tax profile exists)
   setupDismissed?: boolean          // 0.23.0: the Dashboard's getting-started checklist was hidden
   defaultInflationPct?: number      // 0.22.0: inflation used for new goals and the insurance needs estimate (default 3)
+  defaultAccounts?: Record<string, UUID>   // 0.36.0: each person's default account, by user id — the account pages open on (lib/defaultAccount.ts)
 }
 /** What 'Apply this plan' wrote (0.20.0), so other pages agree with the Plan view and a re-apply replaces rather than adds. */
 export interface AppliedPlan { scenarioId?: string | null; name?: string | null; assumptions: Record<string, unknown>; appliedAt: string; debtExtra: number; goalExtra: Record<string, number>; retireExtra: number; strategy?: 'avalanche' | 'snowball' }

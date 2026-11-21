@@ -59,6 +59,9 @@ reset role;
 
 -- the owner can delete (a restore that replaces everything), and the rows go with the household
 set role authenticated; select set_config('request.jwt.claims', json_build_object('sub', :'O')::text, false) \gset
+-- 0025: a signed-in user cannot empty the table (row-level security does not cover truncate), nor hang a trigger on it
+select pg_temp.ok(pg_temp.refused($q$truncate public.forecast_snapshots$q$), 'nobody signed in can empty the table');
+select pg_temp.ok((select string_agg(privilege_type, ',' order by privilege_type) = 'DELETE,INSERT,SELECT' from information_schema.role_table_grants where table_schema = 'public' and table_name = 'forecast_snapshots' and grantee = 'authenticated'), 'signed-in users hold read, add and delete on it — nothing else');
 select pg_temp.ok(pg_temp.rows(format($q$delete from public.forecast_snapshots where household_id = %L$q$, :'h')) = 1, 'the owner can delete one');
 reset role;
 delete from public.households where id = :'h2';

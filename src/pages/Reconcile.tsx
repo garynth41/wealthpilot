@@ -1,4 +1,6 @@
 // Checkbook Reconciliation — register, matching, statement reconciliation, issues, history. All rules in lib/reconcile.ts and lib/dedupe.ts.
+import { useDefaultAccount } from '../app/hooks'
+import { openOn } from '../lib/defaultAccount'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { focusIdFrom, highlight } from '../lib/focus'
@@ -21,7 +23,8 @@ const AUDIT_PILL: Record<string, string> = { sync: 'good', import: 'info', sync_
 export function ReconcilePage() {
   const { data, accts, canEdit, guarded, repo } = useData(); const st = useStore.getState; const confirm = useConfirm()
   const cashAccts = useMemo(() => accts.filter(a => ['checking', 'savings', 'cash', 'credit_card', 'line_of_credit', 'store_card'].includes(a.kind)), [accts])
-  const [acctId, setAcctId] = useState(cashAccts.find(a => a.bank_balance != null)?.id || cashAccts[0]?.id || '')
+  // 0.36.0: opens on this person's default account when it can be reconciled
+  const def = useDefaultAccount(); const [acctId, setAcctId] = useState(() => openOn(def.account, cashAccts, cashAccts.find(a => a.bank_balance != null)?.id || cashAccts[0]?.id || ''))
   const a = cashAccts.find(x => x.id === acctId) || null
   // a link-through from the Dashboard (0.26.0): ?focus=<account id> lands on that account's Variance, ?focus=out:<account id> on its outstanding checks
   const focusId = focusIdFrom(useLocation().search)
