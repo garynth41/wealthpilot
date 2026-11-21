@@ -1,3 +1,5 @@
+import { useDefaultAccount } from '../app/hooks'
+import { openOn } from '../lib/defaultAccount'
 import { useMemo, useState, type ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../app/hooks'
@@ -20,7 +22,7 @@ const COLS: Array<[keyof Mapping, string]> = [['date', 'Date'], ['payee', 'Payee
 
 export function ConnectionsPage() {
   const { data, settings, accts, saveSettings, insertMany, update, guarded, canEdit, repo } = useData()
-  const [stage, setStage] = useState<Stage>('pick'); const [file, setFile] = useState<{ name: string; text: string } | null>(null); const [acctId, setAcctId] = useState(accts[0]?.id || '')
+  const [stage, setStage] = useState<Stage>('pick'); const [file, setFile] = useState<{ name: string; text: string } | null>(null); const def = useDefaultAccount(); const [acctId, setAcctId] = useState(() => openOn(def.account, accts, accts[0]?.id || ''))   // 0.36.0: the default account first
   const [rows, setRows] = useState<string[][]>([]); const [map, setMap] = useState<Mapping | null>(null); const [ofx, setOfx] = useState<ReturnType<typeof parseOfx> | null>(null)
   const [skipDups, setSkipDups] = useState(true); const [setBalance, setSetBalance] = useState(true); const [result, setResult] = useState<ImportLog | null>(null); const [err, setErr] = useState('')
   const [sync, setSync] = useState<SyncStatus | null>(null); const sk = syncKpi(sync)

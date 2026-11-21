@@ -1,3 +1,4 @@
+import { DefaultAccountBtn } from '../components/DefaultAccount'
 import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
 import type { Account, Statement } from '../app/data/types'
@@ -77,7 +78,8 @@ export function AccountsPage() {
             { k: 'balance', label: 'Current balance', type: 'ro', cls: 'num', sortVal: a => (isLiability(a) ? -1 : 1) * balanceOf(a, data), fmt: a => <span style={{ color: isLiability(a) ? 'var(--crit-ink)' : undefined }} title={a.bank_balance != null ? `verified: bank ${fm2(a.bank_balance)} as of ${a.bank_balance_as_of || '—'} ± outstanding entries` : 'book balance (no bank figure yet)'}>{isLiability(a) ? '−' : ''}{fm2(Math.abs(balanceOf(a, data)))}{a.bank_balance != null && <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--good-ink)' }}>✓</span>}</span> },
             { k: '_avail', label: 'Available', type: 'ro', cls: 'num', sortVal: a => availableBalance(a, data) ?? -1, fmt: a => { const v = availableBalance(a, data); return v == null ? '—' : fm2(v) } },
             { k: 'balance_as_of', label: 'Last updated', type: 'ro', sortVal: a => a.balance_as_of || '', fmt: a => a.balance_as_of ? <>{fmtDY(a.balance_as_of)} <span style={{ color: 'var(--ink-3)' }}>· {ago(a.balance_as_of)}</span></> : '—' }]}
-          actions={a => <Btn sm onClick={() => open(<HistoryModal a={a} onDone={close} />)} aria-label={`Balance history for ${a.name}`}>History</Btn>} />
+          actions={a => <span className="btnrow"><DefaultAccountBtn id={a.id} name={a.name} compact /><Btn sm onClick={() => open(<HistoryModal a={a} onDone={close} />)} aria-label={`Balance history for ${a.name}`}>History</Btn></span>} />
+        <Note>☆ marks an account as <b>your default</b>: the pages that start from an account — the ledger's account filter, a new transaction, Reconcile, the cash calendar's one-account view and a statement import — open on it until you change it. It is yours alone; other members choose their own.</Note>
         <Note>Balances change three ways: you type one in, a transaction posts to the account, or a statement import or bank sync sets it. Every change is kept as balance history — <b>History</b> shows it and the balance on any past date.</Note>
       </Card>
       <Card span={12} title="Cash, savings & investments" hint="type the balance from your bank; transactions you log move it from there" right={canEdit ? <><Btn sm onClick={() => add('checking')}>+ Checking</Btn><Btn sm onClick={() => add('savings')}>+ Savings</Btn><Btn sm onClick={() => add('investment')}>+ Investment</Btn><Btn sm onClick={() => add('retirement')}>+ Retirement</Btn><Btn sm onClick={() => add('cash')}>+ Cash</Btn></> : undefined}>

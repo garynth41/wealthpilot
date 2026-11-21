@@ -67,6 +67,10 @@ for (const W of [1400, 390]) {
         const fa = p.locator('[data-fa=card]'); const faA = await fa.locator('[data-fa=answer]').innerText()
         ok(/(% off|right on)/.test(faA) && /expected you to end \w+ with \$[\d,]+/.test(faA) && await fa.locator('[data-fa=rows] tbody tr').count() >= 5 && await fa.locator('[data-fa=history] .fa-h').count() === 1 && /Cresari expected you to end/.test(await fa.locator('[data-fa=running]').innerText()), `${W}: last month's forecast is checked against what happened (${faA.split('\n')[0]}), with an earlier month and this month's saved forecast`)
         const wide2 = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth); ok(wide2 <= 1, `${W}: none of it widens the page`)
+        // 0.36.0: the search is on the phone's top bar as well
+        if (W === 390) { await p.locator('[data-gsearch=icon]').click(); await p.waitForTimeout(300); await p.fill('.pal-in', 'kroger'); await p.waitForTimeout(350)
+          ok(/Transactions · \d+ match/i.test(await p.locator('.pal-list').innerText()) && await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1, `${W}: the search opens from the top bar on a phone and fits the screen`)
+          await p.screenshot({ path: 'e2e/shots/search_390.png' }); await p.keyboard.press('Escape'); await p.waitForTimeout(200) }
         await p.screenshot({ path: `e2e/shots/forecast_plus_${W}.png`, fullPage: true })
       }
       if (path === '/reports') { await p.locator('.slicer button', { hasText: 'Everything' }).click(); await p.waitForTimeout(400); await p.selectOption('select.inp', { index: 1 }); await p.waitForTimeout(1300) }
@@ -365,9 +369,97 @@ for (const W of [1400, 390]) {
     ok((await p.locator('.opts button:has-text("#smoke")').count()) === 0, 'Ctrl-Z undoes the bulk tag')
     p.once('dialog', d => d.accept('Smoke view')); await p.click('.opts button:has-text("★ Save this view")'); await p.waitForTimeout(600)
     ok((await p.locator('.opts button:has-text("Smoke view")').count()) === 1, 'a saved view is pinned above the ledger')
-    await p.keyboard.press('Control+k'); await p.waitForTimeout(300); ok((await p.locator('.modal.palette').count()) === 1, 'Ctrl-K opens the command palette')
-    await p.fill('.pal-in', 'kroger'); await p.waitForTimeout(300); ok(/payee/i.test(await p.locator('.pal-list').textContent()) && /Kroger/.test(await p.locator('.pal-list').textContent()), 'the palette finds a payee'); await p.keyboard.press('Enter'); await p.waitForTimeout(700)
-    ok(/#\/transactions/.test(p.url()) && (await p.locator('.focus-hit').count()) >= 1, 'opening a palette hit lands on the row and highlights it')
+    await p.keyboard.press('Control+k'); await p.waitForTimeout(300); ok((await p.locator('.modal.palette').count()) === 1, 'Ctrl-K opens the search')
+    await p.fill('.pal-in', 'kroger'); await p.waitForTimeout(300); ok(/Transactions · \d+ match/i.test(await p.locator('.pal-list').textContent()) && /Kroger/.test(await p.locator('.pal-list').textContent()), 'the search finds transactions by payee'); await p.keyboard.press('Enter'); await p.waitForTimeout(700)
+    ok(/#\/transactions/.test(p.url()) && (await p.locator('.focus-hit').count()) >= 1, 'opening a search hit lands on the row and highlights it')
+    // 0.36.0: the global search box — every transaction and the activity log, from any page
+    {
+      await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(700)
+      const box = p.locator('[data-gsearch=box]'); ok(await box.isVisible() && /Search transactions, activity/.test(await box.innerText()), 'a search box sits at the top of every page')
+      await box.click(); await p.waitForTimeout(300); ok(await p.locator('.modal.palette .pal-in').evaluate(el => el === document.activeElement), 'clicking it opens the search with the cursor in it')
+      await p.fill('.pal-in', 'kroger'); await p.waitForTimeout(350)
+      const list = await p.locator('.pal-list').innerText(); const nT = +(list.match(/Transactions · (\d+) match/i) || [])[1] || 0
+      ok(nT >= 2 && /Activity log · \d+ match/i.test(list) && /Groceries/.test(list) && /\$[\d,]+\.\d\d/.test(list), `"kroger" finds ${nT} transactions (with date, amount, account and category) and the activity log`)
+      await p.fill('.pal-in', 'kroger 68.40'); await p.waitForTimeout(350); ok(/Transactions · 1 match(?!es)/i.test(await p.locator('.pal-list').innerText()), 'a second word narrows it, and a number finds the amount: "kroger 68.40" is one transaction')
+      await p.fill('.pal-in', 'zzqqxx'); await p.waitForTimeout(300); ok(/Nothing matches/.test(await p.locator('.pal-list').innerText()), 'nothing found is said plainly')
+      await p.fill('.pal-in', 'kroger'); await p.waitForTimeout(350); await p.locator('.pal-hit.more').first().click(); await p.waitForTimeout(1200)
+      const ban = await p.locator('[data-ledger-set=search]').innerText().catch(() => '')
+      ok(/from=search/.test(p.url()) && new RegExp(`Showing ${nT} transactions matching`).test(ban) && /kroger/.test(ban), `"See all" opens the ledger on exactly those ${nT}, from every date and account`)
+      const shown = await p.locator('.tblhead .n').first().innerText().catch(() => ''); ok(new RegExp(`^${nT} row`).test(shown.trim()), `the ledger lists ${nT} rows (${shown.trim()})`)
+      await p.locator('[data-ledger-set] button', { hasText: 'Show all' }).click(); await p.waitForTimeout(500)
+      // the activity log, searched the same way
+      await p.keyboard.press('Control+k'); await p.waitForTimeout(250); await p.fill('.pal-in', 'kroger'); await p.waitForTimeout(350); await p.locator('.pal-hit', { hasText: 'Activity' }).first().click(); await p.waitForTimeout(1000)
+      const cnt = await p.locator('[data-activity=count]').innerText().catch(() => '')
+      ok(/tab=activity/.test(p.url()) && /\d+ of \d+ entries match/.test(cnt) && await p.locator('[data-activity=search]').inputValue() === 'kroger', `an activity hit opens the activity log filtered the same way (${cnt})`)
+      await p.locator('[data-activity=search]').fill('zzqqxx'); await p.waitForTimeout(300); ok(/Nothing in the activity log matches/.test(await p.locator('.card', { hasText: 'Activity log' }).innerText()), 'the activity log has its own search')
+    }
+    // 0.36.0: my default account — set once, and the pages that start from an account open on it
+    {
+      await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(1200)
+      const row = p.locator('tr', { hasText: 'Huntington Checking' }).first(); const star = row.locator('[data-default-account]')
+      ok(await star.getAttribute('data-default-account') === 'off', 'no account is the default to begin with')
+      await star.click(); await p.waitForTimeout(900); ok(await row.locator('[data-default-account=on]').count() === 1 && await p.locator('[data-default-account=on]').count() === 1, 'one click makes Huntington Checking my default — and only that one')
+      await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(1300)
+      const onBtn = p.locator('.slicer', { hasText: 'Account' }).locator('.opts button.on'); ok(/★ Huntington Checking/.test(await onBtn.innerText()), 'the ledger opens on the default account, starred')
+      const nDef = await p.locator('.tblhead .n').first().innerText()
+      await p.locator('.slicer', { hasText: 'Account' }).locator('.opts button', { hasText: /^All$/ }).click(); await p.waitForTimeout(400); const nAll = await p.locator('.tblhead .n').first().innerText()
+      ok(parseInt(nAll, 10) > parseInt(nDef, 10), `"All" is one click away (${nDef.trim()} → ${nAll.trim()})`)
+      await p.goto('http://localhost:4173/#/transactions?kind=uncat'); await p.waitForTimeout(1000); ok(/^All$/.test((await p.locator('.slicer', { hasText: 'Account' }).locator('.opts button.on').innerText()).trim()), 'a link that names what to show is not narrowed to the default account')
+      await p.goto('http://localhost:4173/#/forecast'); await p.waitForTimeout(2200)
+      ok(await p.locator('.cc [data-cc=scope]').evaluate(el => el.options[el.selectedIndex].text) === '★ Huntington Checking only' && /Huntington Checking only/i.test(await p.locator('.cc [data-cc=answer]').innerText()), 'the cash calendar opens on the default account')
+      await p.locator('.cc [data-cc=scope]').selectOption({ index: 0 }); await p.waitForTimeout(700); ok(/^next 60 days$/i.test((await p.locator('.cc [data-cc=answer] .cc-eyebrow').innerText()).trim()), 'and "All cash together" is still one pick away')
+      await p.goto('http://localhost:4173/#/reconcile'); await p.waitForTimeout(1200); ok(/Huntington Checking/.test(await p.locator('select.inp').first().evaluate(el => el.options[el.selectedIndex].text)), 'Reconcile opens on it too')
+      await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(1200); await p.locator('.slicer', { hasText: 'Account' }).locator('[data-default-account=on]').click(); await p.waitForTimeout(900)
+      await p.goto('http://localhost:4173/#/accounts'); await p.waitForTimeout(900); await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(1200)
+      ok(/^All$/.test((await p.locator('.slicer', { hasText: 'Account' }).locator('.opts button.on').innerText()).trim()) && await p.locator('[data-default-account=on]').count() === 0, 'clearing the default puts every page back to how it opened before')
+    }
+    // 0.36.0: categories — a copy edited before it is saved, and groups that keep a person's categories together
+    {
+      await p.goto('http://localhost:4173/#/settings?tab=categories'); await p.waitForTimeout(1300)
+      const groups = () => p.locator('[data-cat=groups] li').evaluateAll(els => els.map(e => e.getAttribute('data-group')))
+      const rowsIn = async g => (await p.locator('.tbl-grid tbody tr').evaluateAll((trs, g) => trs.filter(tr => tr.querySelector('select[aria-label="Group"]')?.value === g).map(tr => tr.querySelector('input[aria-label="Category"]')?.value || ''), g))
+      const count = async () => parseInt(await p.locator('.tblhead .n').first().innerText(), 10)
+      const g0 = await groups(), n0 = await count()
+      ok(g0.length >= 8 && g0[0] === 'Income' && g0.includes('Housing'), `the groups are listed in order (${g0.length}: ${g0.slice(0, 4).join(', ')}…)`)
+      const tbl = p.locator('.tbl-grid'); await p.locator('.tblhead input[type=search], .tblhead input').first().fill('Rent'); await p.waitForTimeout(400)
+      const rent = tbl.locator('tbody tr', { has: p.locator('input[value="Rent / mortgage"]') }); await rent.locator('[data-cat=duplicate]').click(); await p.waitForTimeout(350)
+      const ed = p.locator('[data-cat=editor]')
+      ok(await ed.locator('[data-cat=name]').inputValue() === 'Rent / mortgage (copy)' && await ed.locator('[data-cat=group]').inputValue() === 'Housing' && await ed.locator('[data-cat=budget]').inputValue() === '1850', 'Duplicate opens a copy to edit: same group and budget, a name that is free')
+      await p.locator('.modal button', { hasText: 'Cancel' }).click(); await p.waitForTimeout(300); ok(await count() === 1 && (await rowsIn('Housing')).length === 1, 'Cancel leaves nothing behind')
+      await rent.locator('[data-cat=duplicate]').click(); await p.waitForTimeout(300)
+      await ed.locator('[data-cat=name]').fill('Rent / mortgage'); await p.locator('.modal button[type=submit]').click(); await p.waitForTimeout(300)
+      ok(/Housing already has an expense category called Rent \/ mortgage/.test(await ed.innerText()) && await ed.count() === 1, 'the same name in the same group is refused, and the dialog stays')
+      await ed.locator('[data-cat=name]').fill('Rent'); await ed.locator('[data-cat=group]').fill('Gavionne'); await p.waitForTimeout(150)
+      ok(/New group/.test(await ed.innerText()), 'typing a group that does not exist says it will be new')
+      await p.locator('.modal button[type=submit]').click(); await p.waitForTimeout(900); await p.locator('.tblhead input').first().fill(''); await p.waitForTimeout(400)
+      const g1 = await groups(); ok(await p.locator('.modal').count() === 0 && g1[g1.length - 1] === 'Gavionne' && await count() === n0 + 1 && (await rowsIn('Gavionne')).join() === 'Rent', `saved: Rent is under a new group, Gavionne, last of ${g1.length}`)
+      // a second category joins the group from its Group cell — through "New group…" for a group that already exists
+      await p.locator('.tblhead input').first().fill('Fuel'); await p.waitForTimeout(400)
+      const fuel = tbl.locator('tbody tr', { has: p.locator('input[value="Fuel"]') }); await fuel.locator('select[aria-label="Group"]').selectOption('＋ New group…'); await p.waitForTimeout(300)
+      await p.locator('[data-cat=group-input]').fill('Gavionne'); await p.waitForTimeout(150); ok(/already exists — the category will join it/.test(await p.locator('[data-cat=group-name]').innerText()), 'naming a group that exists says the category will join it')
+      await p.locator('.modal button[type=submit]').click(); await p.waitForTimeout(900); await p.locator('.tblhead input').first().fill(''); await p.waitForTimeout(400)
+      ok((await rowsIn('Gavionne')).join() === 'Rent,Fuel' && !(await rowsIn('Transport')).includes('Fuel'), 'Fuel moved out of Transport to the end of Gavionne')
+      // inside the group: Fuel above Rent, and it stops there
+      const fuelRow = tbl.locator('tbody tr', { has: p.locator('input[value="Fuel"]') }); await fuelRow.locator('button[aria-label="Move Fuel up in Gavionne"]').click(); await p.waitForTimeout(800)
+      ok((await rowsIn('Gavionne')).join() === 'Fuel,Rent' && await tbl.locator('tbody tr', { has: p.locator('input[value="Fuel"]') }).locator('button[aria-label="Move Fuel up in Gavionne"]').isDisabled(), 'a category moves up inside its group and stops at the top of it')
+      // the whole group moves, and everything in it moves with it
+      await p.locator('[data-cat=groups] li[data-group="Gavionne"] button[aria-label="Move the Gavionne group up"]').click(); await p.waitForTimeout(900)
+      const g2 = await groups(), order = await p.locator('.tbl-grid tbody tr select[aria-label="Group"]').evaluateAll(els => els.map(e => e.value))
+      ok(g2.indexOf('Gavionne') === g1.length - 2 && order.lastIndexOf('Gavionne') < order.indexOf(g2[g2.length - 1]) && order.filter(x => x === 'Gavionne').length === 2 && order.lastIndexOf('Gavionne') - order.indexOf('Gavionne') === 1, 'the group moves up a place and its two categories go with it, side by side')
+      // the pickers follow: on the ledger's add form the group's categories sit together
+      await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(1200)
+      const picker = await p.locator('select').evaluateAll(sels => { const s = sels.find(x => [...x.options].some(o => /Gavionne › Fuel/.test(o.text))); return s ? [...s.options].map(o => o.text) : [] })
+      ok(picker.indexOf('Gavionne › Rent') - picker.indexOf('Gavionne › Fuel') === 1, 'a category picker lists Gavionne › Fuel and Gavionne › Rent together')
+      // rename = merge when the name exists; then put everything back
+      await p.goto('http://localhost:4173/#/settings?tab=categories'); await p.waitForTimeout(1200)
+      await p.locator('[data-cat=groups] li[data-group="Gavionne"] button', { hasText: 'Rename' }).click(); await p.waitForTimeout(300); await p.locator('[data-cat=group-input]').fill('Transport'); await p.waitForTimeout(150)
+      ok(/puts the two groups together/.test(await p.locator('[data-cat=group-name]').innerText()) && /Merge the groups/.test(await p.locator('.modal button[type=submit]').innerText()), 'renaming a group to one that exists offers to merge them')
+      await p.locator('.modal button[type=submit]').click(); await p.waitForTimeout(1000)
+      const g3 = await groups(), tr = await rowsIn('Transport'); ok(!g3.includes('Gavionne') && g3.length === g0.length && tr.slice(-2).join() === 'Fuel,Rent', 'merged: Gavionne is gone and its categories follow Transport\'s own')
+      const copy = tbl.locator('tbody tr', { has: p.locator('input[value="Rent"]') }); await copy.locator('button.del').click(); await p.waitForTimeout(250); await p.click('.modal button:has-text("Delete")'); await p.waitForTimeout(700)
+      ok(await count() === n0 && (await groups()).join() === g0.join(), 'the copy is deleted and the groups are as they were')
+      await p.screenshot({ path: 'e2e/shots/categories_groups.png' })
+    }
     await p.keyboard.press('g'); await p.keyboard.press('d'); await p.waitForTimeout(500); ok(p.url().endsWith('#/'), 'G then D jumps to the Dashboard')
     ok(/Safe to spend/.test(await p.locator('.kpis').first().textContent()) && /\/day for \d+ day/.test(await p.locator('.kpis').first().textContent()), 'the Dashboard shows Safe to spend with a per-day figure')
     await p.keyboard.press('?'); await p.waitForTimeout(300); ok(/Keyboard shortcuts/.test(await p.locator('.modal').textContent()), '? opens the shortcut list'); await p.keyboard.press('Escape'); await p.waitForTimeout(200)

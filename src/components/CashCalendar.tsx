@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Chart, C } from './Chart'
 import { Note, Btn } from './ui'
+import { DefaultAccountBtn } from './DefaultAccount'
 import type { CalItem } from '../lib/forecast'
 import { calWeeks, tightestWeek, calVerdict, calTips, calMonths, afford, calDay, amountOf, type Cal } from '../lib/cashView'
 import { fmtMoney } from '../lib/money'
@@ -26,8 +27,10 @@ export interface CashCalendarProps {
   accounts: CashScope[]; scope: string | null; onScope: (id: string | null) => void; home: string | null
   /** add a planned one-off item (amount: plus in, minus out); absent when the person cannot edit */
   onPlan?: (row: { date: string; label: string; amount: number }) => Promise<unknown>
+  /** this person's default account (0.36.0): starred in the list, and what the calendar opened on */
+  defaultId?: string | null
 }
-export function CashCalendar({ cal, days, onDays, wide, accounts, scope, onScope, home, onPlan }: CashCalendarProps) {
+export function CashCalendar({ cal, days, onDays, wide, accounts, scope, onScope, home, onPlan, defaultId }: CashCalendarProps) {
   const [view, setView] = useState<'chart' | 'month'>('chart'); const c = C()
   const one = cal.account, others = accounts.filter(a => a.id !== one?.id), homeName = accounts.find(a => a.id === home)?.name || ''
   const weeks = useMemo(() => calWeeks(cal), [cal]); const tight = useMemo(() => tightestWeek(weeks), [weeks]); const v = useMemo(() => calVerdict(cal), [cal]); const tips = calTips(cal, others)   // not kept between draws: its amounts follow the hide-amounts setting
@@ -72,7 +75,8 @@ export function CashCalendar({ cal, days, onDays, wide, accounts, scope, onScope
     </div>
     <div className="cc-bar">
       <span className="seg" role="group" aria-label="How to show the calendar">{(['chart', 'month'] as const).map(x => <button type="button" key={x} className={view === x ? 'on' : ''} aria-pressed={view === x} onClick={() => setView(x)}>{x === 'chart' ? 'Chart' : 'Month'}</button>)}</span>
-      {accounts.length > 1 && <select className="inp cc-scope" aria-label="Which cash to show" value={scope || ''} onChange={e => onScope(e.target.value || null)} data-cc="scope"><option value="">All cash together</option>{accounts.map(x => <option key={x.id} value={x.id}>{x.name} only</option>)}</select>}
+      {accounts.length > 1 && <select className="inp cc-scope" aria-label="Which cash to show" value={scope || ''} onChange={e => onScope(e.target.value || null)} data-cc="scope"><option value="">All cash together</option>{accounts.map(x => <option key={x.id} value={x.id}>{x.id === defaultId ? '★ ' : ''}{x.name} only</option>)}</select>}
+      {accounts.length > 1 && one && <DefaultAccountBtn id={one.id} name={one.name} />}
       <span className="opts">{[30, 60, 90, 120].map(d => <button type="button" key={d} className={d === days ? 'on' : ''} aria-pressed={d === days} onClick={() => onDays(d)}>{d} days</button>)}</span>
     </div>
     {view === 'chart' ? <>

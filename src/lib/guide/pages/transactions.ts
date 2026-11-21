@@ -33,7 +33,8 @@ export const transactions: GuidePage = {
       fields: [
         { term: 'Range', text: 'The current budget period (shown by its name), Last 30 days, This month, Last 90 days or All. The page opens on the current budget period.' },
         { term: 'Type (filter)', text: 'All, Expenses, Income, Transfers, or Uncategorized — expenses and income with no category.' },
-        { term: 'Account (filter)', text: 'All, or one account. A transfer shows under both the account it left and the one it went to.' },
+        { term: 'Account (filter)', text: 'All, or one account. A transfer shows under both the account it left and the one it went to. With a default account set (★), the page opens on that account; All is one click away. With an account picked, ☆ Make my default (or ★ My default, to clear it) appears underneath.' },
+        { term: 'Showing N transactions matching…', text: 'Shown when you came from the search box with "See all": exactly the transactions that matched, from every date and account. Show all returns to the ordinary ledger.' },
         { term: 'Tag (filter)', text: 'Shown once any transaction has a tag: All, or one #tag.' },
         { term: '★ Save this view', text: 'Asks for a name and saves the current Range, Type, Account and Tag as a button under Saved views. Saved views are shared by everyone in the household.' },
         { term: 'Saved views', text: 'Click a view to apply it; × removes it.' },

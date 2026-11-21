@@ -68,6 +68,12 @@ select:disabled{color:var(--ink-3);background:var(--surface-2)}
 kbd{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:3px;padding:1px 5px;color:var(--ink-2)}
 .modal.palette{width:min(640px,100%);padding:0} .pal-in{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:14px 16px;font-size:16px;background:var(--surface)} .pal-in:focus{outline:none;border-color:var(--accent)}
 .pal-list{list-style:none;margin:0;padding:6px;max-height:min(420px,60vh);overflow:auto} .pal-list li{display:grid;grid-template-columns:84px 1fr;gap:2px 10px;padding:8px 10px;border-radius:var(--radius);cursor:pointer;align-items:baseline} .pal-list li.on{background:var(--accent-soft)}
+/* 0.36.0 — global search: the box in the top bar, grouped results */
+.gsearch{display:inline-flex;align-items:center;gap:8px;min-width:250px;height:34px;padding:0 10px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface);color:var(--ink-3);font:inherit;font-size:13.5px;cursor:text;text-align:left} .gsearch:hover{border-color:var(--accent);color:var(--ink-2)} .gsearch:focus-visible{outline:2px solid var(--accent);outline-offset:1px} .gsearch .gs-ph{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .gsearch kbd{font-size:11px}
+@media (max-width:1280px){ .gsearch{min-width:170px} } @media print{ .gsearch{display:none} }
+.pal-list .pal-group{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:10px 10px 4px;font-weight:600}
+.pal-list .pal-hit{display:grid;grid-template-columns:84px 1fr;gap:2px 10px;padding:8px 10px;border-radius:var(--radius);cursor:pointer;align-items:baseline} .pal-list .pal-hit.on{background:var(--accent-soft)} .pal-list .pal-hit.more{grid-template-columns:1fr;color:var(--accent-ink,var(--accent));font-weight:500} .pal-list .pal-hit .pal-sub{grid-column:2} .pal-list .pal-hit.more .pal-title{grid-column:1}
+.defacct{white-space:nowrap} .defacct.on{border-color:var(--accent);color:var(--accent-ink,var(--accent))}
 .pal-kind{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);grid-row:span 2;align-self:center} .pal-title{font-weight:500} .pal-sub{font-size:12px;color:var(--ink-3)} .pal-empty{color:var(--ink-3);padding:12px} .pal-foot{padding:8px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* ---- main ---- */
@@ -764,3 +770,18 @@ button.dd-row{cursor:pointer} button.dd-row:hover{background:var(--surface-2)} .
 @media (max-width:640px){ .pgtabs button{padding:10px 12px;font-size:15px} .cc-afford-q>.inp{max-width:none;flex-basis:100%} .cc-money .inp{width:104px} .fa-h{grid-template-columns:1fr 1fr} .fa-tbl td,.fa-tbl th{padding:7px 8px} .cc-dp-add>.inp:first-of-type{max-width:none;flex-basis:100%} }
 @media print{ .pgtabs,.cc-afford,.cc-dp-add{display:none} }
 @media print{ .cc-week:not([open]) > *:not(summary){display:block} }
+
+/* 0.36.0 — Settings → Categories: the groups, in order */
+.catgroups{border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface-2);padding:10px 12px;margin-bottom:12px}
+.catgroups-h{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin-bottom:8px} .catgroups-h b{font-family:var(--display);font-size:15.5px} .catgroups-h span{font-size:12.5px;color:var(--ink-3)}
+.catgroups ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px}
+.catgroups li{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--radius);padding:6px 8px;min-width:0}
+.cg-n{flex:0 0 22px;height:22px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);font-family:var(--mono);font-size:11.5px;display:grid;place-items:center;color:var(--ink-3)}
+.cg-name{flex:1 1 auto;min-width:0;display:flex;flex-direction:column} .cg-name b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .cg-name small{font-size:12px;color:var(--ink-3)}
+.catgroups .btnrow{flex:0 0 auto;display:inline-flex;gap:4px}
+/* a table's Actions and delete columns kept in view at the right edge (Table pinActions) */
+.tbl-grid .pinr{position:sticky;right:0} .tbl-grid .pinr.pinr1{right:41px}
+.tbl-grid > tbody > tr > td.pinr{z-index:1;background:var(--surface)} .tbl-grid > thead > tr > th.pinr{z-index:3}
+.tbl-grid > tbody > tr > td.pinr1,.tbl-grid > thead > tr > th.pinr1{box-shadow:-8px 0 8px -8px rgba(15,17,20,.28)} :root[data-theme="dark"] .tbl-grid .pinr1{box-shadow:-8px 0 8px -8px rgba(0,0,0,.7)}
+.tbl-grid > tbody > tr > td.pinr .btnrow{flex-wrap:nowrap}
+@media (max-width:640px){ .catgroups ol{grid-template-columns:1fr} }

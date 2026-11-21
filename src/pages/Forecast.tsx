@@ -1,3 +1,4 @@
+import { useDefaultAccount } from '../app/hooks'
 import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
 import type { PlannedItem } from '../app/data/types'
@@ -25,7 +26,9 @@ export function ForecastPage() {
   const go = (v: 'near' | 'long') => setSp(p => { const n = new URLSearchParams(p); if (v === 'long') n.set('view', 'long'); else n.delete('view'); return n }, { replace: true })
   // one cash account on its own, or all cash together (the choice is dropped if the account goes away)
   const cash = useMemo(() => cashAccounts(data, settings).map(a => ({ id: a.id, name: acctLabel(a, data.accounts), bal: balanceOf(a, data) })), [data, settings]); const home = useMemo(() => everydayAccount(data, settings)?.id || null, [data, settings])
-  const [scope0, setScope] = useState<string | null>(null); const scope = scope0 && cash.some(a => a.id === scope0) ? scope0 : null
+  // 0.36.0: with a default account that is one of the cash accounts, the calendar opens on it; "All cash together" is one pick away and lasts for the visit
+  const def = useDefaultAccount(); const [scope0, setScope] = useState<string | null | undefined>(undefined)
+  const scope = scope0 === undefined ? (cash.length > 1 && def.id && cash.some(a => a.id === def.id) ? def.id : null) : scope0 && cash.some(a => a.id === scope0) ? scope0 : null
   const t = today(); const cal = useMemo(() => cashCalendar(data, settings, days, { accountId: scope }), [data, settings, days, scope]); const wide = useMemo(() => (days >= 120 ? cal : cashCalendar(data, settings, 120, { accountId: scope })), [data, settings, days, scope, cal])
   // the gauge's reserve check is about all cash together, whatever the calendar is showing
   const wideAll = useMemo(() => (scope ? cashCalendar(data, settings, days) : cal), [data, settings, days, scope, cal])
@@ -54,7 +57,7 @@ export function ForecastPage() {
       {!hasMoneyData(data) && <div className="span12 banner info">The forecast is built from your <Link to="/accounts">account balances</Link>, <Link to="/income">pay schedules</Link>, <Link to="/bills">bills</Link> and recent spending — add those and the calendar, runway and projection fill in.</div>}
       {tab === 'near' ? <>
       <Card span={12} title="Cash calendar" hint="what you will have in the bank each day · paychecks, bills, subscriptions, card and loan payments, planned items and everyday spending at your recent pace">
-        <CashCalendar cal={cal} days={days} onDays={setDays} wide={wide} accounts={cash} scope={scope} onScope={setScope} home={home} onPlan={onPlan} />
+        <CashCalendar cal={cal} days={days} onDays={setDays} wide={wide} accounts={cash} scope={scope} onScope={setScope} home={home} onPlan={onPlan} defaultId={def.id} />
         <p className="cc-sub" style={{ marginTop: 10 }}>{plannedOpen ? `${plannedOpen} planned one-off item${plannedOpen === 1 ? ' is' : 's are'} in this calendar.` : 'One-off money in or out you already know about belongs in the calendar too.'} <button type="button" className="linkbtn" onClick={() => go('long')}>Planned one-off items are under Long range →</button></p></Card>
       <Card span={12} title="How accurate was last month's forecast?" hint="each month's forecast is saved, then checked against what really happened">
         <ForecastAccuracy data={data} settings={settings} canSave={canEdit && modules === null} /></Card>
