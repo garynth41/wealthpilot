@@ -11,7 +11,7 @@ export const isInputError = (e: unknown): e is InputError => e instanceof InputE
 /** What one row of each collection is called in a sentence. */
 const NOUN: Partial<Record<Collection, string>> = {
   transactions: 'A transaction', paySchedules: 'An income source', planned: 'A planned item', accounts: 'An account', statements: 'A statement', categories: 'A category',
-  recurring: 'A bill or subscription', occurrences: 'A bill payment', goals: 'A goal', contributions: 'A contribution', snapshots: 'A snapshot', periods: 'A budget period',
+  recurring: 'A bill or subscription', occurrences: 'A bill payment', goals: 'A goal', contributions: 'A contribution', snapshots: 'A snapshot', forecasts: 'A saved forecast', periods: 'A budget period',
   lines: 'A budget line', holdings: 'A holding', lots: 'A tax lot', insurance: 'A policy', estate: 'A checklist item', balances: 'A balance history point',
   scores: 'A credit score', splits: 'A split line', comments: 'A comment', hardship: 'A creditor', scenarios: 'A scenario', emailItems: 'An email record',
 }
@@ -28,6 +28,7 @@ export const REQUIRED: Partial<Record<Collection, Record<string, string>>> = {
   goals: { name: 'a name', kind: 'a kind', starting_amount: 'a starting amount (0 if none)', monthly_contribution: 'a monthly amount (0 if none)', priority: 'a priority', status: 'a status' },
   contributions: { date: 'a date', amount: 'an amount' },
   snapshots: { date: 'a date' },
+  forecasts: { taken_on: 'the day it was saved', through: 'the day it runs to' },
   periods: { start_date: 'a start date', end_date: 'an end date' },
   lines: { planned: 'a planned amount (0 if none)' },
   holdings: { name: 'a name', asset_class: 'an asset class', risk: 'a risk level', quantity: 'a quantity (0 if none)', price: 'a price (0 if unknown)', cost_basis: 'a cost basis (0 if unknown)' },

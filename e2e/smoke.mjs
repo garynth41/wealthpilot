@@ -37,6 +37,37 @@ for (const W of [1400, 390]) {
         await cc.locator('.seg button', { hasText: 'Chart' }).click(); await cc.locator('.opts button', { hasText: '120 days' }).click(); await p.waitForTimeout(900)
         ok(/next 120 days/i.test(await cc.locator('[data-cc=answer]').innerText()) && await cc.locator('[data-cc=weeks] details').count() > weeks, `${W}: 120 days re-reads the answer and lists more weeks`)
         await cc.locator('.opts button', { hasText: '60 days' }).click(); await p.waitForTimeout(900)
+        // 0.35.0: two tabs, four tiles, "Can I afford it?", a day you can open and plan on, one account on its own, the accuracy check
+        const tabs = p.locator('.pgtabs [role=tab]'); ok(await tabs.count() === 2 && /Next 60 days/.test(await tabs.first().innerText()) && await tabs.first().getAttribute('aria-selected') === 'true' && await p.locator('.kpis .kpi').count() === 4, `${W}: Forecast has two tabs and four tiles; it opens on Next 60 days`)
+        await cc.locator('[data-cc=afford-amt]').fill('900'); await p.waitForTimeout(700); const yes = await cc.locator('[data-cc=afford-a]').innerText()
+        await cc.locator('[data-cc=afford-amt]').fill('20000'); await p.waitForTimeout(700); const no = await cc.locator('[data-cc=afford-a]').innerText()
+        ok(/Yes — it fits/.test(yes) && /lowest point would be \$[\d,]+/.test(yes) && /most you could spend that day/.test(yes) && /(Not on that day|dipping into your reserve)/.test(no) && /the most that fits is \$[\d,]+/.test(no), `${W}: Can I afford it? — $900 fits, $20,000 does not, and both say the most that would`)
+        await cc.locator('[data-cc=afford] button', { hasText: 'Clear' }).click(); ok(await cc.locator('[data-cc=afford-a]').count() === 0, `${W}: Clear empties the check`)
+        const tips2 = await cc.locator('[data-cc=tips] .cc-tip').allInnerTexts(); ok(tips2.length >= 1 && !tips2.some(t => /rises by \$([0-4]?\d)(\D|$)/.test(t)), `${W}: no suggestion is worth less than $50`)
+        // a day opens from the month; something planned for it lands in the calendar, and comes out again when deleted on Long range
+        await cc.locator('.seg button', { hasText: 'Month' }).click(); await p.waitForTimeout(250)
+        const dayBtn = cc.locator('.cc-cellbtn').nth(2); const dayLabel = await dayBtn.getAttribute('aria-label'); await dayBtn.click(); await p.waitForTimeout(200)
+        const panel = cc.locator('[data-cc=day]'); const before = await panel.locator('.cc-row').count()
+        ok(await panel.count() === 1 && /In the bank that evening: \$[\d,]+/.test(await panel.innerText()) && await panel.locator('button', { hasText: 'Add to this day' }).isDisabled(), `${W}: a day opens (${(dayLabel || '').split(':')[0]}) with what is in the bank that evening`)
+        if (W === 1400) {
+          await panel.locator('input[aria-label="What it is"]').fill('E2E bike repair'); await panel.locator('input[aria-label="Amount"]').fill('77'); await panel.locator('button', { hasText: 'Add to this day' }).click(); await p.waitForTimeout(700)
+          ok(await panel.locator('.cc-row').count() === before + 1 && /E2E bike repair/.test(await panel.innerText()) && /−\$77/.test(await panel.innerText()), `${W}: planning something for that day adds it to the day`)
+          await tabs.nth(1).click(); await p.waitForTimeout(1200)
+          const row = p.locator('.tbl tr', { has: p.locator('input[value="E2E bike repair"]') }); ok(/view=long/.test(p.url()) && await row.count() === 1, `${W}: it is in Planned one-off items on the Long range tab (the address keeps the tab)`)
+          await row.locator('button[aria-label*="Delete"], button:has-text("✕"), button:has-text("×")').last().click(); await p.waitForTimeout(250); await p.click('.modal button:has-text("Delete")'); await p.waitForTimeout(700)
+          ok(await p.locator('.tbl input[value="E2E bike repair"]').count() === 0 && await p.locator('.kpis .kpi').count() === 4 && await p.locator('.card-head', { hasText: 'What if' }).count() === 1 && await p.locator('.cc').count() === 0, `${W}: deleted again; Long range holds the projection, What if…, the gauge and planned items`)
+          await tabs.first().click(); await p.waitForTimeout(900)
+        } else { await panel.locator('button[aria-label="Close this day"]').click(); await cc.locator('.seg button', { hasText: 'Chart' }).click() }
+        await p.waitForTimeout(300)
+        // one account on its own
+        const scope = p.locator('.cc [data-cc=scope]'); const all = await p.locator('.cc [data-cc=answer]').innerText(); await scope.selectOption({ label: 'Huntington Checking only' }); await p.waitForTimeout(900)
+        const oneA = await p.locator('.cc [data-cc=answer]').innerText(); ok(/Huntington Checking only/i.test(oneA) && oneA !== all && /on its own/.test(await p.locator('.cc').innerText()) && /Huntington Checking today/i.test(await p.locator('.kpis .kpi').first().innerText()), `${W}: one account on its own re-reads the answer and the first tile (${oneA.split('\n')[1] || ''})`)
+        await scope.selectOption({ index: 0 }); await p.waitForTimeout(900)
+        // the accuracy check
+        const fa = p.locator('[data-fa=card]'); const faA = await fa.locator('[data-fa=answer]').innerText()
+        ok(/(% off|right on)/.test(faA) && /expected you to end \w+ with \$[\d,]+/.test(faA) && await fa.locator('[data-fa=rows] tbody tr').count() >= 5 && await fa.locator('[data-fa=history] .fa-h').count() === 1 && /Cresari expected you to end/.test(await fa.locator('[data-fa=running]').innerText()), `${W}: last month's forecast is checked against what happened (${faA.split('\n')[0]}), with an earlier month and this month's saved forecast`)
+        const wide2 = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth); ok(wide2 <= 1, `${W}: none of it widens the page`)
+        await p.screenshot({ path: `e2e/shots/forecast_plus_${W}.png`, fullPage: true })
       }
       if (path === '/reports') { await p.locator('.slicer button', { hasText: 'Everything' }).click(); await p.waitForTimeout(400); await p.selectOption('select.inp', { index: 1 }); await p.waitForTimeout(1300) }
       sizes.push(...(await p.evaluate(() => [...document.querySelectorAll('.chart')].map(e => { const r = e.getBoundingClientRect(); return { name: e.getAttribute('aria-label'), w: Math.round(r.width), h: Math.round(r.height) } }))).map(c => ({ ...c, path })))

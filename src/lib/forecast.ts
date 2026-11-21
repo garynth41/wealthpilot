@@ -2,7 +2,7 @@
 import type { Account, Data, Recurring, Settings } from '../app/data/types'
 import { addDays, addMonthsClamp, diffDays, parse, today, monthStart, monthEnd, curMonth, mAdd } from './dates'
 import { sum } from './money'
-import { cashOnHand, liabilities, debtPlanned, debtBal, debtDueState, acctLabel, netWorth, countsAsCash } from './accounts'
+import { cashOnHand, liabilities, debtPlanned, debtBal, debtDueState, acctLabel, netWorth, countsAsCash, assets, balanceOf } from './accounts'
 import { payDates, monthlyIncome, paycheckOnFile, oneOffPay } from './paySchedule'
 import { upcoming, recMonthly, recActive, isOutflow } from './recurring'
 import { rangeStat, monthlyDebt, monthlyCardPayments } from './budget'
@@ -39,26 +39,62 @@ export function accountPaymentsDue(d: Data, from: string, to: string): Array<{ a
   }
   return out.sort((x, y) => x.date.localeCompare(y.date))
 }
+/** The accounts that count as cash, largest balance first. */
+export const cashAccounts = (d: Data, s: Settings): Account[] => assets(d).filter(a => countsAsCash(a, s)).sort((a, b) => balanceOf(b, d) - balanceOf(a, d))
+/** The account everyday money runs through (0.35.0): the cash account most of the pay lands in (each schedule as a monthly amount, so
+ *  weekly pay is weighed fairly against monthly pay); with no pay pointed at an account, the
+ *  checking account with the most in it; failing that, the largest cash account. Used by the one-account view of the cash calendar for
+ *  anything that does not say which account it comes out of. */
+export function everydayAccount(d: Data, s: Settings): Account | null {
+  const cash = cashAccounts(d, s); if (!cash.length) return null
+  const pay = new Map<string, number>(); d.paySchedules.filter(p => p.status === 'Active' && p.deposit_account_id).forEach(p => pay.set(p.deposit_account_id!, (pay.get(p.deposit_account_id!) || 0) + monthlyIncome([p])))
+  const paid = cash.filter(a => (pay.get(a.id) || 0) > 0).sort((a, b) => pay.get(b.id)! - pay.get(a.id)!)[0]
+  return paid || cash.find(a => a.kind === 'checking') || cash[0]
+}
+export interface CalOpts {
+  /** 0.35.0: one cash account on its own instead of all cash together — what lands in and leaves that account, from its own balance.
+   *  An item with no account set is counted against the everyday account. The reserve is not applied: it is about all cash together. */
+  accountId?: string | null
+}
 /** Money in and out, day by day, starting from cash on hand. Uses pay schedules, recurring items (unpaid), planned one-offs and the variable-spend run-rate. */
-export function cashCalendar(d: Data, s: Settings, days = 60) {
+export function cashCalendar(d: Data, s: Settings, days = 60, opts: CalOpts = {}) {
   const t = today(), to = addDays(t, days), items: CalItem[] = []
+  const one = opts.accountId ? d.accounts.find(a => a.id === opts.accountId) || null : null, home = one ? everydayAccount(d, s)?.id || null : null
+  // one-account view: is this the account an item touches? With no account on the item, the everyday account takes it — and it is counted, so the screen can say how many were assumed
+  const assumed = new Set<string>()
+  const here = (id: string | null | undefined, key: string) => { if (!one) return true; if (id) return id === one.id; if (one.id === home) { assumed.add(key); return true } return false }
   const add = (x: CalItem) => { if (x.date >= t && x.date <= to && Math.abs(x.amt) >= 0.005) items.push(x) }
   // a payday whose deposit is already on file (0.25.1: logged, from the bank feed or a day early) is in cash on hand — not added again
-  d.paySchedules.filter(p => p.status === 'Active').forEach(p => payDates(p, t, to).forEach(dd => { if (!paycheckOnFile(d, p, dd)) add({ date: dd, label: p.name, amt: +p.net_amount || 0, kind: 'in', src: 'pay', id: p.id }) }))
-  const up = upcoming(d, t, to); up.forEach(u => { if (u.status === 'paid' || u.status === 'skipped') return; const eff = cashEffect(d, s, u.r); if (!eff) return; add({ date: u.date, label: u.r.name + (u.r.autopay ? ' (autopay)' : ''), amt: eff * u.amount, kind: eff < 0 ? 'out' : 'in', src: u.r.kind === 'subscription' ? 'sub' : u.r.kind === 'debt_payment' ? 'debt' : u.r.kind === 'income' ? 'pay' : 'bill', id: u.r.id }) })
+  d.paySchedules.filter(p => p.status === 'Active').forEach(p => { if (!here(p.deposit_account_id, 'pay:' + p.id)) return; payDates(p, t, to).forEach(dd => { if (!paycheckOnFile(d, p, dd)) add({ date: dd, label: p.name, amt: +p.net_amount || 0, kind: 'in', src: 'pay', id: p.id }) }) })
+  /** what a recurring item does to the one account being looked at: a transfer leaves the account it comes from and lands in the one it goes to */
+  const effectHere = (r: Recurring): -1 | 0 | 1 => {
+    if (r.kind === 'income') return here(r.account_id, 'rec:' + r.id) ? 1 : 0
+    if (r.kind === 'savings' || r.kind === 'transfer') {
+      // both ends first: with no "from" account the everyday account is the source — and a transfer whose two ends are this same account moves nothing
+      const from = r.account_id || home, to = r.liability_account_id || null
+      if (from === to) return 0
+      if (to === one!.id) return 1
+    }
+    return here(r.account_id, 'rec:' + r.id) ? -1 : 0
+  }
+  const up = upcoming(d, t, to); up.forEach(u => { if (u.status === 'paid' || u.status === 'skipped') return; const eff = one ? effectHere(u.r) : cashEffect(d, s, u.r); if (!eff) return; add({ date: u.date, label: u.r.name + (u.r.autopay ? ' (autopay)' : ''), amt: eff * u.amount, kind: eff < 0 ? 'out' : 'in', src: u.r.kind === 'subscription' ? 'sub' : u.r.kind === 'debt_payment' ? 'debt' : u.r.kind === 'income' ? 'pay' : 'bill', id: u.r.id }) })
   // liabilities without a recurring payment item still get paid on their due date
-  accountPaymentsDue(d, t, to).forEach(x => add({ date: x.date, label: `${acctLabel(x.a, d.accounts)} payment`, amt: -x.amount, kind: 'out', src: 'debt', id: x.a.id }))
-  d.planned.filter(p => p.status === 'Planned').forEach(p => add({ date: p.date.slice(0, 10), label: p.label, amt: +p.amount || 0, kind: (+p.amount || 0) >= 0 ? 'in' : 'out', src: 'planned', id: p.id }))
+  // (paid from the account its autopay draws on when that is set; otherwise the everyday account)
+  accountPaymentsDue(d, t, to).forEach(x => { if (here(x.a.autopay_account_id, 'due:' + x.a.id)) add({ date: x.date, label: `${acctLabel(x.a, d.accounts)} payment`, amt: -x.amount, kind: 'out', src: 'debt', id: x.a.id }) })
+  d.planned.filter(p => p.status === 'Planned').forEach(p => { if (here(null, 'plan:' + p.id)) add({ date: p.date.slice(0, 10), label: p.label, amt: +p.amount || 0, kind: (+p.amount || 0) >= 0 ? 'in' : 'out', src: 'planned', id: p.id }) })
   // federal estimated-tax deadlines (0.22.0): planned estimates and any safe-harbor shortfall, from the tax planner
-  estimatedTaxDue(d, s, t, to).forEach(x => add({ date: x.date, label: x.label, amt: -x.amount, kind: 'out', src: 'tax' }))
+  estimatedTaxDue(d, s, t, to).forEach(x => { if (here(null, 'tax:' + x.date)) add({ date: x.date, label: x.label, amt: -x.amount, kind: 'out', src: 'tax' }) })
   // everyday spending: variable categories at the recent run-rate, spread over the weeks ahead (less what has already been spent this period of the month)
+  // — for one account, only what was spent from that account: what goes on a card reaches cash through the card payment
   const varCats = d.categories.filter(c => c.kind === 'expense' && c.cost_type !== 'Fixed' && !c.archived && !recActive(d).some(r => r.category_id === c.id))
-  const last90 = rangeStat(d, addDays(t, -90), addDays(t, -1)); const perWeek = sum(varCats.map(c => last90.byCat[c.name] || 0)) / (90 / 7)
+  const last90 = rangeStat(one ? { ...d, transactions: d.transactions.filter(x => x.account_id === one.id) } : d, addDays(t, -90), addDays(t, -1)); const perWeek = sum(varCats.map(c => last90.byCat[c.name] || 0)) / (90 / 7)
   if (perWeek > 0) { let w = addDays(t, (8 - parse(t).getDay()) % 7 || 7); while (w <= to) { add({ date: w, label: 'Everyday spending (recent average per week)', amt: -perWeek, kind: 'out', src: 'flex' }); w = addDays(w, 7) } }
   items.sort((a, b) => a.date.localeCompare(b.date) || b.amt - a.amt)
-  const start = cashOnHand(d, s); let bal = start; const daily: Array<{ d: string; bal: number }> = []; let low = { bal: start, date: t }, firstFloor: string | null = null, firstZero: string | null = null; const floor = +s.reserveFloor || 0
+  const start = one ? balanceOf(one, d) : cashOnHand(d, s); let bal = start; const daily: Array<{ d: string; bal: number }> = []; let low = { bal: start, date: t }, firstFloor: string | null = null, firstZero: string | null = null; const floor = one ? 0 : +s.reserveFloor || 0
   for (let dd = t; dd <= to; dd = addDays(dd, 1)) { items.filter(x => x.date === dd).forEach(x => { bal += x.amt; x.bal = bal }); daily.push({ d: dd, bal }); if (bal < low.bal) low = { bal, date: dd }; if (floor && bal < floor && !firstFloor) firstFloor = dd; if (bal < 0 && !firstZero) firstZero = dd }
-  return { start, items, daily, low, firstFloor, firstZero, floor, inTot: sum(items.filter(x => x.amt > 0).map(x => x.amt)), outTot: -sum(items.filter(x => x.amt < 0).map(x => x.amt)), end: bal }
+  return { start, items, daily, low, firstFloor, firstZero, floor, inTot: sum(items.filter(x => x.amt > 0).map(x => x.amt)), outTot: -sum(items.filter(x => x.amt < 0).map(x => x.amt)), end: bal,
+    /** the one account this is for (null: all cash together), and how many of its items had no account set and were counted against it */
+    account: one, assumed: assumed.size }
 }
 /** Bills and payments already past their due date and still unpaid (0.25.1) — the same ones the Dashboard lists as overdue: every bill,
  *  subscription, debt payment or savings transfer from the last 30 days with no payment matched or recorded and not skipped (autopay

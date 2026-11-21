@@ -12,7 +12,7 @@ import type { Collection } from '../app/data/types'
 type Row = Record<string, unknown>
 /** Parents before children. */
 export const RESTORE_ORDER: Collection[] = ['accounts', 'categories', 'scenarios', 'scores', 'estate', 'periods', 'lines', 'paySchedules', 'holdings', 'lots', 'recurring', 'insurance', 'goals',
-  'statements', 'reconciliations', 'transactions', 'splits', 'comments', 'attachments', 'occurrences', 'contributions', 'planned', 'snapshots', 'hardship', 'emailItems']
+  'statements', 'reconciliations', 'transactions', 'splits', 'comments', 'attachments', 'occurrences', 'contributions', 'planned', 'snapshots', 'forecasts', 'hardship', 'emailItems']
 /** Which columns point at which table (mirrors the foreign keys in supabase/migrations). */
 export const REFS: Partial<Record<Collection, Record<string, Collection>>> = {
   accounts: { linked_account_id: 'accounts', autopay_account_id: 'accounts' },
@@ -30,7 +30,7 @@ export const REFS: Partial<Record<Collection, Record<string, Collection>>> = {
 /** Links a row cannot exist without (NOT NULL in the schema): when the parent is missing the row is left out. */
 const REQUIRED: Partial<Record<Collection, string[]>> = { lines: ['period_id', 'category_id'], lots: ['holding_id'], statements: ['account_id'], reconciliations: ['account_id'], splits: ['transaction_id'], comments: ['transaction_id'], occurrences: ['recurring_id'], contributions: ['goal_id'] }
 /** Never changed by a restore: completed reconciliations are immutable, and a comment can only be edited by its author. */
-const NO_UPDATE = new Set<Collection>(['reconciliations', 'comments'])
+const NO_UPDATE = new Set<Collection>(['reconciliations', 'comments', 'forecasts'])
 const META = new Set(['id', 'household_id', 'created_at', 'updated_at', 'created_by', 'updated_by'])
 
 const lc = (v: unknown) => String(v ?? '').trim().toLowerCase()
@@ -61,6 +61,7 @@ export const NATURAL_KEY: Partial<Record<Collection, (r: Row) => string | null>>
   contributions: r => `${r.goal_id}|${d10(r.date)}|${money(r.amount)}|${r.transaction_id ?? ''}`,
   planned: r => `${d10(r.date)}|${lc(r.label)}|${money(r.amount)}`,
   snapshots: r => `!${d10(r.date)}`,
+  forecasts: r => `!${d10(r.through)}`,
   hardship: r => `${lc(r.entity)}|${lc(r.type)}`,
   emailItems: r => { const ev = Array.isArray(r.evidence) ? (r.evidence[0] as { msg_id?: string } | undefined) : undefined; return ev?.msg_id ? `${r.kind}|msg:${ev.msg_id}` : null },
 }
@@ -115,6 +116,7 @@ export async function restoreBackup(existing: Partial<Record<Collection, Row[]>>
       }
       if (REQUIRED[coll]?.some(f => blank(out[f]))) drop = true
       if (coll === 'attachments' && blank(out.transaction_id) && blank(out.statement_id)) drop = true
+      if (coll === 'forecasts' && Array.isArray(out.cash_accounts)) out.cash_accounts = (out.cash_accounts as string[]).map(k => idMap.accounts.get(k) ?? k)   // the accounts a saved forecast counted as cash, under their new ids
       if (coll === 'snapshots' && out.by_account && typeof out.by_account === 'object') out.by_account = Object.fromEntries(Object.entries(out.by_account as Record<string, unknown>).map(([k, v]) => [idMap.accounts.get(k) ?? k, v]))
       if (drop) { sum.skipped++; continue }
       prepared.push({ src, out, deferred, unresolved })

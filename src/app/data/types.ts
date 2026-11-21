@@ -136,6 +136,17 @@ export interface BalancePoint { id: UUID; household_id: UUID; account_id: UUID; 
 export interface CreditScore extends Stamped { person: string; date: ISODate; score: number; bureau?: 'Equifax' | 'Experian' | 'TransUnion' | 'Combined' | 'Other' | null; model?: string | null; source?: string | null; notes?: string | null }
 export interface PlannedItem extends Stamped { ref?: string | null; date: ISODate; label: string; category: string; amount: number; status: 'Planned' | 'Done' | 'Cancelled'; transaction_id?: UUID | null; notes?: string | null }
 export interface NetWorthSnapshot extends Stamped { date: ISODate; cash: number; assets: number; liabilities: number; by_account: Record<string, number>; notes?: string | null }
+/** What the cash calendar expected for the rest of a month, saved once that month (0.35.0) so it can be checked against what happened
+ *  (lib/forecastCheck.ts). Written once and never changed: the amounts are all cash together, positive, by what kind of item they were. */
+export interface ForecastSnapshot extends Stamped {
+  taken_on: ISODate; through: ISODate; start_cash: number; expected_in: number; expected_out: number; expected_end: number; expected_low: number; low_date?: ISODate | null
+  by_source: Partial<Record<ForecastGroup, number>>; notes?: string | null
+  /** the accounts that counted as cash when it was saved: the check keeps to these, whatever is marked as cash later */
+  cash_accounts?: UUID[] | null
+  /** how far the transactions on file went when it was saved (the newest one's server time): anything dated the same day and entered later is not in start_cash */
+  observed_at?: string | null
+}
+export type ForecastGroup = 'in_pay' | 'in_other' | 'out_bills' | 'out_debt' | 'out_everyday' | 'out_other'
 export interface Hardship extends Stamped {
   ref?: string | null; entity: string; type: string; account_id?: UUID | null; recurring_id?: UUID | null; monthly_obligation?: number | null
   phone?: string | null; contact_name?: string | null; status: string; program?: string | null; relief_monthly?: number | null; relief_start?: ISODate | null; relief_end?: ISODate | null
@@ -222,12 +233,12 @@ export interface PayeeRule { id: string; pattern: string; match: 'contains' | 's
 export interface ImportLog { at: string; file: string; format: 'csv' | 'ofx' | 'qif'; account_id: string; rows: number; added: number; skipped: number; balance?: number | null; /** 0.24.0: a move from another app — its name and how many accounts the file covered */ source?: string; accounts?: number }
 export const SETTINGS_DEFAULTS: Settings = { periodType: 'month', periodAnchor: null, semimonthlyDays: [1, 15], reserveFloor: 0, runwayGreen: 6, runwayYellow: 3, dueSoonDays: 7, budgetCritPct: 10, savingsTargetPct: 20, includeRetirementInCash: false, payFrequencyDefault: 'biweekly' }
 
-export type Collection = 'balances' | 'scores' | 'lots' | 'insurance' | 'estate' | 'comments' | 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations'
-export const TABLE: Record<Collection, string> = { balances: 'balance_history', scores: 'credit_scores', lots: 'holding_lots', insurance: 'insurance_policies', estate: 'estate_items', comments: 'transaction_comments', scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations' }
+export type Collection = 'balances' | 'scores' | 'lots' | 'insurance' | 'estate' | 'comments' | 'scenarios' | 'splits' | 'attachments' | 'accounts' | 'statements' | 'categories' | 'paySchedules' | 'periods' | 'lines' | 'transactions' | 'recurring' | 'occurrences' | 'goals' | 'contributions' | 'planned' | 'snapshots' | 'hardship' | 'emailItems' | 'holdings' | 'reconciliations' | 'forecasts'
+export const TABLE: Record<Collection, string> = { balances: 'balance_history', scores: 'credit_scores', lots: 'holding_lots', insurance: 'insurance_policies', estate: 'estate_items', comments: 'transaction_comments', scenarios: 'scenarios', splits: 'transaction_splits', attachments: 'attachments', accounts: 'accounts', statements: 'statements', categories: 'categories', paySchedules: 'pay_schedules', periods: 'budget_periods', lines: 'budget_lines', transactions: 'transactions', recurring: 'recurring', occurrences: 'bill_occurrences', goals: 'goals', contributions: 'goal_contributions', planned: 'planned_items', snapshots: 'net_worth_snapshots', hardship: 'hardship_outreach', emailItems: 'email_items', holdings: 'holdings', reconciliations: 'reconciliations', forecasts: 'forecast_snapshots' }
 export interface Data {
   accounts: Account[]; statements: Statement[]; categories: Category[]; paySchedules: PaySchedule[]; periods: BudgetPeriod[]; lines: BudgetLine[]
   transactions: Transaction[]; splits: TransactionSplit[]; attachments: Attachment[]; comments: TransactionComment[]; scenarios: Scenario[]; recurring: Recurring[]; occurrences: BillOccurrence[]; goals: Goal[]; contributions: GoalContribution[]
-  planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
+  planned: PlannedItem[]; snapshots: NetWorthSnapshot[]; forecasts: ForecastSnapshot[]; hardship: Hardship[]; emailItems: EmailItem[]; holdings: Holding[]; reconciliations: Reconciliation[]
   lots: HoldingLot[]; insurance: InsurancePolicy[]; estate: EstateItem[]; balances: BalancePoint[]; scores: CreditScore[]
   /** immutable cash-operations audit trail, newest first */
   audit: AuditEvent[]
@@ -239,5 +250,5 @@ export interface Data {
 }
 /** What a left-out account takes with it: its own rows only. Nothing here is counted or listed outside the Accounts page. */
 export interface OffBooks { accounts: Account[]; transactions: Transaction[]; duplicates: Transaction[]; recurring: Recurring[]; paySchedules: PaySchedule[]; statements: Statement[]; balances: BalancePoint[]; holdings: Holding[]; reconciliations: Reconciliation[]; goals: Goal[]; emailItems: EmailItem[]; hardship: Hardship[] }
-export const emptyData = (): Data => ({ balances: [], scores: [], lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
+export const emptyData = (): Data => ({ forecasts: [], balances: [], scores: [], lots: [], insurance: [], estate: [], comments: [], scenarios: [], splits: [], attachments: [], duplicates: [], reconciliations: [], audit: [], accounts: [], statements: [], categories: [], paySchedules: [], periods: [], lines: [], transactions: [], recurring: [], occurrences: [], goals: [], contributions: [], planned: [], snapshots: [], hardship: [], emailItems: [], holdings: [], emailLedger: [], members: [], invites: [], activity: [] })
 export type RowOf<C extends Collection> = Data[C][number]
