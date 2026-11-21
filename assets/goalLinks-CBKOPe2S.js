@@ -1,0 +1,1 @@
+import{Dt as e,q as t}from"./native-CM5Nudqt.js";async function n(n){let r=t.getState(),i=new Set(n.map(e=>typeof e==`string`?e:e.id)),a=r.data.transactions.filter(e=>i.has(e.id)),o=e(r.data,a);return o.length?(await r.insertMany(`contributions`,o),o.length):0}export{n as t};
