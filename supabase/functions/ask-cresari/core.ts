@@ -14,7 +14,7 @@ export interface AskBody { household_id?: string; question?: string; context?: s
 export function scrub(s: unknown): string {
   return String(s ?? '')
     // bounded lengths: an unbounded match would be tried from every character of a long run and take seconds on a large summary
-    .replace(/[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}/g, '[email]')
+    .replace(/[\p{L}\p{M}\p{N}._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24}/gu, '[email]')
     .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[number]')
     .replace(/\b(?:\d{4}[ -]){3}\d{1,4}\b/g, '[number]')
     .replace(/(?:\+?1[ .-]?)?\(?\b\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b/g, '[number]')

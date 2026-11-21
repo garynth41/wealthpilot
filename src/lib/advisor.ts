@@ -98,7 +98,7 @@ export function buildContext(d: Data, s: Settings, o: ContextOptions = {}) {
   const un = uncategorized(d, monthStart(months[0]), asOf)
   const ctx: Record<string, unknown> = {
     today: asOf, currency: 'USD',
-    note: 'Summary built by the Cresari app. Accounts are labelled by type. No names, emails or account numbers are included.',
+    note: 'Summary built by the Cresari app. Accounts are labelled by type. Emails and account numbers are not included. People\'s names are removed from bill, goal and category labels where recognized.',
     monthly: stats.filter((x, i) => x.m === cur || stats.slice(0, i + 1).some(y => y.st.count > 0)).map(x => ({ month: x.m, ...(x.m === cur ? { partial: true } : {}), income: r0(x.st.income), spending: r0(x.st.spend), loanPayments: r0(x.st.loans), cardPayments: r0(x.st.cards), movedToSavings: r0(x.st.saved), leftOver: r0(x.st.net) })),
     averages: { basedOnMonths: full.map(x => x.m), income: avg(st => st.income), spending: avg(st => st.spend), essential: avg(st => st.ess), important: avg(st => st.imp), discretionary: avg(st => st.disc), loanPayments: avg(st => st.loans), leftOver: avg(st => st.net) },
     spendingByCategory: byCategory,
