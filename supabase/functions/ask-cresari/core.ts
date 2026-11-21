@@ -18,7 +18,7 @@ export function scrub(s: unknown): string {
     .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[number]')
     .replace(/\b(?:\d{4}[ -]){3}\d{1,4}\b/g, '[number]')
     .replace(/(?:\+?1[ .-]?)?\(?\b\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b/g, '[number]')
-    .replace(/\b\d{9,}\b/g, '[number]')
+    .replace(/\d{9,}/g, '[number]')   // any run of nine digits, also one stuck to a letter (A123456789)
 }
 
 export const SYSTEM = `You are Cresari's built-in money guide. Cresari is a household budgeting and financial-planning app. The person asking is a member of the household whose figures are in the <household_data> block.

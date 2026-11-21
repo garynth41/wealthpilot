@@ -118,7 +118,7 @@ export const forecast: GuidePage = {
     },
   ],
   tasks: [
-    { q: 'How do I find out when my cash runs low?', steps: ['Pick a longer window (90 or 120 days) in Cash calendar and read the answer at the top of the card.', 'The ringed point on the chart is your lowest day; in Month view it has a border, and days below your reserve are shaded.', 'Try one of the suggestions under the charts, move a bill, add income or plan a transfer before that date.'] },
+    { q: 'How do I find out when my cash runs low?', steps: ['Pick a longer window (90 or 120 days) in Cash calendar and read the answer at the top of the card.', 'The ringed point on the chart is your lowest day; in Month view it has a border, and days below your reserve are shaded. When today is the lowest day there is no mark — the answer says so.', 'Try one of the suggestions under the charts, move a bill, add income or plan a transfer before that date.'] },
     { q: 'How do I add a bonus, refund or big expense that is coming?', steps: ['Click + Add item under Planned one-off items.', 'Set the date, what it is and the amount (minus for money out).', 'It shows in the cash calendar and the projection straight away.'] },
     { q: 'How do I test what happens if I lose my job?', steps: ['In What if…, set Current income stops on to the last day of pay.', 'Tick Essentials only and add any side income with the Extra income slider.', 'Read the What-if box and the green dotted line, then click Save as scenario… to keep it.'] },
     { q: 'How do I compare several what-ifs?', steps: ['Save each one with Save as scenario….', 'Click Compare… and tick up to four scenarios.', 'The best value in each row is highlighted; click Load to bring one back into the sliders.'] },

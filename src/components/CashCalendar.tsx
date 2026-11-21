@@ -17,7 +17,7 @@ const k = (n: number) => '$' + Math.round(n).toLocaleString('en-US')
 
 export function CashCalendar({ cal, days, onDays }: { cal: Cal; days: number; onDays: (d: number) => void }) {
   const [view, setView] = useState<'chart' | 'month'>('chart'); const c = C()
-  const weeks = useMemo(() => calWeeks(cal), [cal]); const tight = useMemo(() => tightestWeek(weeks), [weeks]); const v = useMemo(() => calVerdict(cal), [cal]); const tips = useMemo(() => calTips(cal), [cal])
+  const weeks = useMemo(() => calWeeks(cal), [cal]); const tight = useMemo(() => tightestWeek(weeks), [weeks]); const v = useMemo(() => calVerdict(cal), [cal]); const tips = calTips(cal)   // not kept between draws: its amounts follow the hide-amounts setting
   const first = cal.daily[0]?.d || '', last = cal.daily[cal.daily.length - 1]?.d || ''
   const head = v.state === 'out' ? `Cash runs out on ${fmtDY(v.date)}.` : v.state === 'floor' ? `Cash dips below your reserve on ${fmtDY(v.date)}.` : cal.floor ? 'You are covered — cash never drops below your reserve.' : 'You are covered — cash stays above zero.'
   const lowIsToday = v.low.date === first
@@ -59,7 +59,7 @@ export function CashCalendar({ cal, days, onDays }: { cal: Cal; days: number; on
 type Colors = ReturnType<typeof C>
 function DayChart({ cal, c }: { cal: Cal; c: Colors }) {
   const xs = cal.daily.map(x => x.d), ys = cal.daily.map(x => x.bal), first = xs[0], last = xs[xs.length - 1]
-  const top = Math.max(...ys, cal.floor, 1), bottom = Math.min(0, ...ys), span = top - bottom
+  const top = Math.max(...ys, cal.start, cal.floor, 1), bottom = Math.min(0, cal.start, ...ys), span = top - bottom
   const pays = cal.items.filter(x => x.src === 'pay' && x.amt > 0); const bigPay = Math.max(0, ...pays.map(x => x.amt)); const paydays = pays.filter(x => x.amt >= bigPay * 0.5)
   const phone = typeof window !== 'undefined' && window.matchMedia('(max-width:700px)').matches
   // the few largest payments get a name on the chart; everything else is in the list below
@@ -96,22 +96,22 @@ function WeekChart({ weeks, tight, c }: { weeks: ReturnType<typeof calWeeks>; ti
 }
 /** The same days as a real calendar: what comes in and goes out on each day, and what is in the bank that evening. */
 function MonthGrid({ cal }: { cal: Cal }) {
-  const months = useMemo(() => calMonths(cal), [cal]); const [at, setAt] = useState(0); const m = months[Math.min(at, months.length - 1)] || ''
+  const months = useMemo(() => calMonths(cal), [cal]); const [at0, setAt] = useState(0); const at = Math.min(at0, Math.max(0, months.length - 1)); const m = months[at] || ''   // a shorter window can leave the stored month past the end
   const byDay = useMemo(() => { const o: Record<string, CalItem[]> = {}; cal.items.forEach(x => { (o[x.date] ||= []).push(x) }); return o }, [cal]); const bal = useMemo(() => Object.fromEntries(cal.daily.map(x => [x.d, x.bal])), [cal])
   if (!m) return null
   const [y, mo] = m.split('-').map(Number); const firstDow = new Date(y, mo - 1, 1).getDay(), n = new Date(y, mo, 0).getDate()
   const cells: Array<string | null> = [...Array(firstDow).fill(null), ...Array.from({ length: n }, (_, i) => `${m}-${String(i + 1).padStart(2, '0')}`)]
   const name = new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   return <div className="cc-month" data-cc="month">
-    <div className="cc-mnav"><button type="button" className="btn sm" disabled={at <= 0} onClick={() => setAt(a => Math.max(0, a - 1))} aria-label="Earlier month">‹</button><b>{name}</b><button type="button" className="btn sm" disabled={at >= months.length - 1} onClick={() => setAt(a => Math.min(months.length - 1, a + 1))} aria-label="Later month">›</button></div>
+    <div className="cc-mnav"><button type="button" className="btn sm" disabled={at <= 0} onClick={() => setAt(Math.max(0, at - 1))} aria-label="Earlier month">‹</button><b>{name}</b><button type="button" className="btn sm" disabled={at >= months.length - 1} onClick={() => setAt(Math.min(months.length - 1, at + 1))} aria-label="Later month">›</button></div>
     <div className="cc-mwrap"><div className="cc-mgrid" role="grid" aria-label={`Cash calendar for ${name}`}>
       {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <div className="cc-dow" key={d} role="columnheader">{d}</div>)}
       {cells.map((d, i) => { if (!d) return <div key={i} />
         const inside = d in bal, its = byDay[d] || [], inn = its.reduce((a, x) => a + (x.amt > 0 ? x.amt : 0), 0), out = its.reduce((a, x) => a + (x.amt < 0 ? -x.amt : 0), 0), low = d === cal.low.date && d !== cal.daily[0]?.d
         const b = bal[d]; const tone = !inside ? ' off' : b < 0 ? ' crit' : cal.floor && b < cal.floor ? ' warn' : its.some(x => x.src === 'pay' && x.amt > 0) ? ' pay' : ''
-        return <div className={`cc-cell${tone}${low ? ' low' : ''}`} key={i} role="gridcell" aria-label={`${fmtD(d)}${inside ? `: ${inn ? `${k(inn)} in, ` : ''}${out ? `${k(out)} out, ` : ''}${k(b)} in the bank` : ''}`}>
-          <div className="cc-ctop"><b>{parse(d).getDate()}</b>{inside && (its.length > 0 || low) ? <span>{k(b)}</span> : null}</div>
-          {inn > 0 && <div className="cc-in">+{k(inn)}</div>}{out > 0 && <div className="cc-out">−{k(out)}</div>}
+        return <div className={`cc-cell${tone}${low ? ' low' : ''}`} key={i} role="gridcell" aria-label={`${fmtD(d)}${inside ? `: ${inn ? `${fmtMoney(inn)} in, ` : ''}${out ? `${fmtMoney(out)} out, ` : ''}${fmtMoney(b)} in the bank` : ''}`}>
+          <div className="cc-ctop"><b>{parse(d).getDate()}</b>{inside && (its.length > 0 || low) ? <span>{fmtMoney(b)}</span> : null}</div>
+          {inn > 0 && <div className="cc-in">+{fmtMoney(inn)}</div>}{out > 0 && <div className="cc-out">−{fmtMoney(out)}</div>}
           {its.length > 0 && <div className="cc-names">{its.slice(0, 2).map(x => clean(x.label).split(' — ')[0]).join(', ')}{its.length > 2 ? ` +${its.length - 2}` : ''}</div>}
           {low && <div className="cc-lowtag">Lowest point</div>}
         </div> })}

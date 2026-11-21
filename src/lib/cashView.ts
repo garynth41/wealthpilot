@@ -2,6 +2,7 @@
 // Everything here is worked out from cashCalendar()'s items — nothing new is assumed about the household.
 import type { CalItem, cashCalendar } from './forecast'
 import { addDays, diffDays, parse } from './dates'
+import { fmtMoney } from './money'
 
 export type Cal = ReturnType<typeof cashCalendar>
 export interface CalWeek { from: string; to: string; items: CalItem[]; inTot: number; outTot: number; net: number; end: number; low: number }
@@ -40,7 +41,8 @@ export function calVerdict(cal: Cal): CalVerdict {
 
 export interface CalTip { key: 'move' | 'trim' | 'idle' | 'gap' | 'reserve'; title: string; text: string; gain: string; to?: string; amount: number; date?: string; label?: string }
 const FIXED_DATE = /\b(rent|mortgage|tax|hoa|tuition|child support|alimony)\b/i
-const money = (n: number) => '$' + Math.round(Math.abs(n)).toLocaleString('en-US')
+// amounts go through fmtMoney, so they are masked when amounts are hidden
+const money = (n: number) => fmtMoney(Math.abs(n))
 /** Up to three things that would help, each from the person's own items:
  *   move  a card, loan or bill payment that lands in the days before a paycheck, right where cash is lowest — moved to after payday
  *   trim  everyday spending cut by a tenth
