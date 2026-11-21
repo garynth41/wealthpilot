@@ -25,11 +25,13 @@ reset role;
 set role authenticated; select set_config('request.jwt.claims', json_build_object('sub', :'O')::text, false) \gset
 insert into public.forecast_snapshots (household_id, taken_on, through, start_cash, expected_in, expected_out, expected_end, expected_low, low_date, by_source)
   values (:'h', '2026-11-03', '2026-11-30', 5000, 4600, 3900, 5700, 4100, '2026-11-12', '{"in_pay": 4600, "out_bills": 2100, "out_everyday": 1800}');
+select pg_temp.ok((select cash_accounts = '[]'::jsonb and observed_at is null from public.forecast_snapshots where household_id = :'h'), 'the accounts counted as cash start as an empty list');
 select pg_temp.ok((select count(*) = 1 and bool_and(created_by = :'O') from public.forecast_snapshots where household_id = :'h'), 'an owner saves a forecast, and it is stamped with who saved it');
 select pg_temp.ok(pg_temp.refused(format($q$insert into public.forecast_snapshots (household_id, taken_on, through) values (%L, '2026-11-20', '2026-11-30')$q$, :'h')), 'a second forecast for the same month is refused');
 select pg_temp.ok(pg_temp.refused(format($q$insert into public.forecast_snapshots (household_id, taken_on, through) values (%L, '2026-12-10', '2026-12-01')$q$, :'h')), 'one that ends before it starts is refused');
 select pg_temp.ok(pg_temp.refused(format($q$insert into public.forecast_snapshots (household_id, taken_on, through, expected_out) values (%L, '2026-12-01', '2026-12-31', -5)$q$, :'h')), 'money out cannot be negative');
 select pg_temp.ok(pg_temp.refused(format($q$insert into public.forecast_snapshots (household_id, taken_on, through, by_source) values (%L, '2026-12-01', '2026-12-31', '[1]')$q$, :'h')), 'the breakdown has to be a set of named totals');
+select pg_temp.ok(pg_temp.refused(format($q$insert into public.forecast_snapshots (household_id, taken_on, through, cash_accounts) values (%L, '2026-12-01', '2026-12-31', '{}')$q$, :'h')), 'the accounts counted as cash have to be a list');
 -- nobody changes a saved forecast, the owner included
 select pg_temp.ok(pg_temp.refused(format($q$update public.forecast_snapshots set expected_end = 1 where household_id = %L$q$, :'h')), 'a saved forecast cannot be changed, even by the owner');
 reset role;

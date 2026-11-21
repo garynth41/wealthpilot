@@ -141,6 +141,10 @@ export interface NetWorthSnapshot extends Stamped { date: ISODate; cash: number;
 export interface ForecastSnapshot extends Stamped {
   taken_on: ISODate; through: ISODate; start_cash: number; expected_in: number; expected_out: number; expected_end: number; expected_low: number; low_date?: ISODate | null
   by_source: Partial<Record<ForecastGroup, number>>; notes?: string | null
+  /** the accounts that counted as cash when it was saved: the check keeps to these, whatever is marked as cash later */
+  cash_accounts?: UUID[] | null
+  /** how far the transactions on file went when it was saved (the newest one's server time): anything dated the same day and entered later is not in start_cash */
+  observed_at?: string | null
 }
 export type ForecastGroup = 'in_pay' | 'in_other' | 'out_bills' | 'out_debt' | 'out_everyday' | 'out_other'
 export interface Hardship extends Stamped {

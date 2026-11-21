@@ -19,6 +19,9 @@ create table if not exists public.forecast_snapshots (
   expected_low numeric(14,2) not null default 0,
   low_date date,
   by_source jsonb not null default '{}'::jsonb check (jsonb_typeof(by_source) = 'object'),
+  -- the accounts that counted as cash when it was saved (the check keeps to these), and how far the transactions on file went then
+  cash_accounts jsonb not null default '[]'::jsonb check (jsonb_typeof(cash_accounts) = 'array'),
+  observed_at timestamptz,
   notes text,
   created_by uuid references auth.users(id) default auth.uid(),
   updated_by uuid references auth.users(id),

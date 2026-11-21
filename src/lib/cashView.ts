@@ -2,7 +2,7 @@
 // Everything here is worked out from cashCalendar()'s items — nothing new is assumed about the household.
 import type { CalItem, cashCalendar } from './forecast'
 import { addDays, diffDays, parse, fmtD } from './dates'
-import { fmtMoney } from './money'
+import { fmtMoney, parseNum } from './money'
 
 export type Cal = ReturnType<typeof cashCalendar>
 export interface CalWeek { from: string; to: string; items: CalItem[]; inTot: number; outTot: number; net: number; end: number; low: number }
@@ -107,6 +107,9 @@ export function afford(cal: Cal, amount: number, date: string): Afford {
   if (!already && amt > 0 && at >= 0) for (let i = at; i < days.length; i++) if (suffix[i] - amt >= cal.floor - 0.005) { fitsFrom = days[i].d; break }
   return { state, low, before: cal.low, firstBad: firstZero || firstFloor, short: Math.max(0, cal.floor - low.bal), max, fitsFrom, already, outside }
 }
+/** An amount as typed into "Can I afford it?" or a day's plan, read the way the rest of the app reads money — so "12,50" is twelve and a
+ *  half where a comma is the decimal mark, and 1,250 in the US. 0 when it is not a positive amount (the screen then asks for a number). */
+export const amountOf = (typed: string): number => { const v = parseNum(typed); return v != null && isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : 0 }
 /** One day of the calendar: what lands on it, the totals, and what is in the bank that evening (null outside the window). */
 export function calDay(cal: Cal, date: string) {
   const items = cal.items.filter(x => x.date === date), bal = cal.daily.find(x => x.d === date)?.bal ?? null

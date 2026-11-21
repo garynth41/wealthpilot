@@ -41,12 +41,13 @@ export function accountPaymentsDue(d: Data, from: string, to: string): Array<{ a
 }
 /** The accounts that count as cash, largest balance first. */
 export const cashAccounts = (d: Data, s: Settings): Account[] => assets(d).filter(a => countsAsCash(a, s)).sort((a, b) => balanceOf(b, d) - balanceOf(a, d))
-/** The account everyday money runs through (0.35.0): the cash account most of the pay lands in; with no pay pointed at an account, the
+/** The account everyday money runs through (0.35.0): the cash account most of the pay lands in (each schedule as a monthly amount, so
+ *  weekly pay is weighed fairly against monthly pay); with no pay pointed at an account, the
  *  checking account with the most in it; failing that, the largest cash account. Used by the one-account view of the cash calendar for
  *  anything that does not say which account it comes out of. */
 export function everydayAccount(d: Data, s: Settings): Account | null {
   const cash = cashAccounts(d, s); if (!cash.length) return null
-  const pay = new Map<string, number>(); d.paySchedules.filter(p => p.status === 'Active' && p.deposit_account_id).forEach(p => pay.set(p.deposit_account_id!, (pay.get(p.deposit_account_id!) || 0) + (+p.net_amount || 0)))
+  const pay = new Map<string, number>(); d.paySchedules.filter(p => p.status === 'Active' && p.deposit_account_id).forEach(p => pay.set(p.deposit_account_id!, (pay.get(p.deposit_account_id!) || 0) + monthlyIncome([p])))
   const paid = cash.filter(a => (pay.get(a.id) || 0) > 0).sort((a, b) => pay.get(b.id)! - pay.get(a.id)!)[0]
   return paid || cash.find(a => a.kind === 'checking') || cash[0]
 }
@@ -68,12 +69,18 @@ export function cashCalendar(d: Data, s: Settings, days = 60, opts: CalOpts = {}
   /** what a recurring item does to the one account being looked at: a transfer leaves the account it comes from and lands in the one it goes to */
   const effectHere = (r: Recurring): -1 | 0 | 1 => {
     if (r.kind === 'income') return here(r.account_id, 'rec:' + r.id) ? 1 : 0
-    if ((r.kind === 'savings' || r.kind === 'transfer') && r.liability_account_id === one!.id && r.account_id !== one!.id) return 1
+    if (r.kind === 'savings' || r.kind === 'transfer') {
+      // both ends first: with no "from" account the everyday account is the source — and a transfer whose two ends are this same account moves nothing
+      const from = r.account_id || home, to = r.liability_account_id || null
+      if (from === to) return 0
+      if (to === one!.id) return 1
+    }
     return here(r.account_id, 'rec:' + r.id) ? -1 : 0
   }
   const up = upcoming(d, t, to); up.forEach(u => { if (u.status === 'paid' || u.status === 'skipped') return; const eff = one ? effectHere(u.r) : cashEffect(d, s, u.r); if (!eff) return; add({ date: u.date, label: u.r.name + (u.r.autopay ? ' (autopay)' : ''), amt: eff * u.amount, kind: eff < 0 ? 'out' : 'in', src: u.r.kind === 'subscription' ? 'sub' : u.r.kind === 'debt_payment' ? 'debt' : u.r.kind === 'income' ? 'pay' : 'bill', id: u.r.id }) })
   // liabilities without a recurring payment item still get paid on their due date
-  accountPaymentsDue(d, t, to).forEach(x => { if (here(null, 'due:' + x.a.id)) add({ date: x.date, label: `${acctLabel(x.a, d.accounts)} payment`, amt: -x.amount, kind: 'out', src: 'debt', id: x.a.id }) })
+  // (paid from the account its autopay draws on when that is set; otherwise the everyday account)
+  accountPaymentsDue(d, t, to).forEach(x => { if (here(x.a.autopay_account_id, 'due:' + x.a.id)) add({ date: x.date, label: `${acctLabel(x.a, d.accounts)} payment`, amt: -x.amount, kind: 'out', src: 'debt', id: x.a.id }) })
   d.planned.filter(p => p.status === 'Planned').forEach(p => { if (here(null, 'plan:' + p.id)) add({ date: p.date.slice(0, 10), label: p.label, amt: +p.amount || 0, kind: (+p.amount || 0) >= 0 ? 'in' : 'out', src: 'planned', id: p.id }) })
   // federal estimated-tax deadlines (0.22.0): planned estimates and any safe-harbor shortfall, from the tax planner
   estimatedTaxDue(d, s, t, to).forEach(x => { if (here(null, 'tax:' + x.date)) add({ date: x.date, label: x.label, amt: -x.amount, kind: 'out', src: 'tax' }) })

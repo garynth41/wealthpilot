@@ -62,7 +62,8 @@ describe('suggestions', () => {
 })
 
 // 0.35.0 — suggestions worth acting on, one account on its own, "Can I afford it?", and a day opened
-import { afford, calDay, MIN_TIP } from './cashView'
+import { afford, calDay, amountOf, MIN_TIP } from './cashView'
+import { setLocale } from './display'
 describe('0.35.0: a suggestion has to be worth acting on', () => {
   const small = base.map(x => (x[1].startsWith('Amex') ? [x[0], 'Netflix (autopay)', -15, 'sub'] as typeof x : x))
   it(`moving a due date for less than $${MIN_TIP} is not suggested — unless it closes the gap by itself`, () => {
@@ -112,5 +113,14 @@ describe('0.35.0: a day opened', () => {
   it('what lands on it and what is in the bank that evening', () => {
     expect(calDay(cal, '2026-12-04')).toMatchObject({ inTot: 2300, outTot: 0, bal: 4600 }); expect(calDay(cal, '2026-12-03').items.map(x => x.label)).toEqual(['Amex payment (autopay)'])
     expect(calDay(cal, '2026-12-05')).toMatchObject({ items: [], bal: 4600 }); expect(calDay(cal, '2027-06-01').bal).toBeNull()
+  })
+})
+describe('0.35.0: an amount as typed', () => {
+  it('is read the way the rest of the app reads money; anything that is not a positive amount is 0', () => {
+    expect(amountOf('900')).toBe(900); expect(amountOf(' $1,250.50 ')).toBe(1250.5); expect(amountOf('12.345')).toBe(12.35)
+    for (const bad of ['', 'abc', '-5', '0', '12abc', '1.2.3']) expect(amountOf(bad)).toBe(0)
+    // where a comma is the decimal mark, 12,50 is twelve and a half — not 1,250
+    setLocale('de-DE'); try { expect(amountOf('12,50')).toBe(12.5); expect(amountOf('1.234,56')).toBe(1234.56) } finally { setLocale('auto') }
+    expect(amountOf('12,50')).toBe(1250)
   })
 })

@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom'
 import { Chart, C } from './Chart'
 import { Note, Btn } from './ui'
 import type { CalItem } from '../lib/forecast'
-import { calWeeks, tightestWeek, calVerdict, calTips, calMonths, afford, calDay, type Cal } from '../lib/cashView'
+import { calWeeks, tightestWeek, calVerdict, calTips, calMonths, afford, calDay, amountOf, type Cal } from '../lib/cashView'
 import { fmtMoney } from '../lib/money'
 import { addDays, diffDays, fmtD, fmtDY, fmtDow, parse, today } from '../lib/dates'
 
@@ -38,7 +38,7 @@ export function CashCalendar({ cal, days, onDays, wide, accounts, scope, onScope
   // a day picked on the chart or in Month; dropped when the window no longer holds it
   const [day0, setDay] = useState<string | null>(null); const day = day0 && day0 >= first && day0 <= last ? day0 : null
   // "Can I afford it?"
-  const [what, setWhat] = useState(''); const [amt, setAmt] = useState(''); const [on, setOn] = useState(''); const amount = Math.max(0, Number(amt.replace(/[^0-9.]/g, '')) || 0), onDate = on || addDays(today(), 7)
+  const [what, setWhat] = useState(''); const [amt, setAmt] = useState(''); const [on, setOn] = useState(''); const amount = amountOf(amt), badAmt = !!amt.trim() && !(amount > 0), onDate = on || addDays(today(), 7); const [saving, setSaving] = useState(false)
   const inWindow = onDate >= first && onDate <= last, src = inWindow ? cal : wide, wideLast = wide.daily[wide.daily.length - 1]?.d || last
   const a = useMemo(() => (amount > 0 ? afford(src, amount, onDate) : null), [src, amount, onDate])
   return <div className="cc">
@@ -53,9 +53,10 @@ export function CashCalendar({ cal, days, onDays, wide, accounts, scope, onScope
     <div className="cc-afford" data-cc="afford">
       <div className="cc-afford-q"><b id="cc-afford-h">Can I afford it?</b>
         <input className="inp" aria-label="What it is (optional)" placeholder="What is it? (optional)" value={what} maxLength={60} onChange={e => setWhat(e.target.value)} />
-        <span className="cc-money"><span aria-hidden="true">$</span><input className="inp" inputMode="decimal" aria-label="How much it costs" placeholder="Amount" value={amt} onChange={e => setAmt(e.target.value)} data-cc="afford-amt" /></span>
+        <span className="cc-money"><span aria-hidden="true">$</span><input className="inp" inputMode="decimal" aria-label="How much it costs" placeholder="Amount" value={amt} onChange={e => setAmt(e.target.value)} data-cc="afford-amt" aria-invalid={badAmt || undefined} /></span>
         <label className="cc-on">on <input className="inp" type="date" aria-label="The day you would pay" value={onDate} min={first} max={wideLast} onChange={e => setOn(e.target.value)} /></label>
         {(amt || what || on) && <Btn sm onClick={() => { setAmt(''); setWhat(''); setOn('') }}>Clear</Btn>}</div>
+      {badAmt && <div className="cc-afford-a idle" role="status" data-cc="afford-bad">Type the amount as a number, such as 900 or 1,250.50.</div>}
       {a && <div className={`cc-afford-a ${a.outside ? 'idle' : a.already ? 'warn' : a.state}`} role="status" data-cc="afford-a">
         {a.outside ? <>Cresari looks 120 days ahead. Pick a day on or before {fmtDY(wideLast)}.</>
           : a.already ? <><b>You are already short before this.</b> {one ? one.name : 'Cash'} {src.firstZero ? 'runs out' : 'dips below your reserve'} on {fmtDY(src.firstZero || src.firstFloor)} as things stand. Spending {fmtMoney(amount)} on {fmtD(onDate)} would take the lowest point to {fmtMoney(a.low.bal)}.</>
@@ -64,7 +65,8 @@ export function CashCalendar({ cal, days, onDays, wide, accounts, scope, onScope
         {!a.outside && <div className="cc-afford-do">
           {!inWindow && <span className="cc-sub">{fmtD(onDate)} is past the {days} days shown, so this looks through {fmtD(wideLast)}.</span>}
           {a.fitsFrom && a.fitsFrom !== onDate && a.state !== 'ok' && <Btn sm onClick={() => setOn(a.fitsFrom!)}>Try {fmtD(a.fitsFrom)}</Btn>}
-          {onPlan && <Btn sm primary={a.state === 'ok' && !a.already} onClick={() => { void onPlan({ date: onDate, label: what.trim() || 'Planned purchase', amount: -amount }).then(() => { setAmt(''); setWhat(''); setOn('') }) }}>Add it to my plan on {fmtD(onDate)}</Btn>}
+          {onPlan && <Btn sm primary={a.state === 'ok' && !a.already} disabled={saving} onClick={() => { if (saving) return; setSaving(true)   // one save at a time; what was typed stays if it does not go through
+            void onPlan({ date: onDate, label: what.trim() || 'Planned purchase', amount: -amount }).then(r => { if (r !== undefined) { setAmt(''); setWhat(''); setOn('') } }).finally(() => setSaving(false)) }}>{saving ? 'Adding…' : `Add it to my plan on ${fmtD(onDate)}`}</Btn>}
         </div>}
       </div>}
     </div>
@@ -104,8 +106,8 @@ function ItemRow({ x, floor }: { x: CalItem; floor: number }) {
 function DayPanel({ cal, date, onClose, onPlan, onTry }: { cal: Cal; date: string; onClose: () => void; onPlan?: CashCalendarProps['onPlan']; onTry: (d: string) => void }) {
   const d = calDay(cal, date); const [label, setLabel] = useState(''); const [amt, setAmt] = useState(''); const [dir, setDir] = useState<'out' | 'in'>('out'); const [busy, setBusy] = useState(false)
   useEffect(() => { setLabel(''); setAmt('') }, [date])
-  const n = Math.max(0, Number(amt.replace(/[^0-9.]/g, '')) || 0)
-  const save = async () => { if (!onPlan || !(n > 0) || busy) return; setBusy(true); try { await onPlan({ date, label: label.trim() || (dir === 'in' ? 'Planned money in' : 'Planned purchase'), amount: dir === 'in' ? n : -n }); setLabel(''); setAmt('') } finally { setBusy(false) } }
+  const n = amountOf(amt), bad = !!amt.trim() && !(n > 0)
+  const save = async () => { if (!onPlan || !(n > 0) || busy) return; setBusy(true); try { const r = await onPlan({ date, label: label.trim() || (dir === 'in' ? 'Planned money in' : 'Planned purchase'), amount: dir === 'in' ? n : -n }); if (r !== undefined) { setLabel(''); setAmt('') } } finally { setBusy(false) } }
   return <div className="cc-daypanel" data-cc="day" role="region" aria-label={`What lands on ${fmtDY(date)}`}>
     <div className="cc-dp-h"><b>{fmtDow(date)}, {fmtDY(date)}</b><span>{d.bal == null ? '' : <>In the bank that evening: <b className={d.bal < 0 ? 'neg' : ''}>{fmtMoney(d.bal)}</b></>}</span><button type="button" className="btn sm" onClick={onClose} aria-label="Close this day">✕</button></div>
     {d.items.length ? d.items.map((x, j) => <ItemRow key={j} x={x} floor={cal.floor} />) : <div className="cc-sub" style={{ margin: '4px 0' }}>Nothing is scheduled for this day.</div>}
@@ -113,7 +115,7 @@ function DayPanel({ cal, date, onClose, onPlan, onTry }: { cal: Cal; date: strin
       {onPlan && <><span className="cc-sub">Plan something for this day:</span>
         <input className="inp" aria-label="What it is" placeholder="What is it?" value={label} maxLength={60} onChange={e => setLabel(e.target.value)} />
         <select className="inp" aria-label="Money out or in" value={dir} onChange={e => setDir(e.target.value as 'out' | 'in')}><option value="out">Money out</option><option value="in">Money in</option></select>
-        <span className="cc-money"><span aria-hidden="true">$</span><input className="inp" inputMode="decimal" aria-label="Amount" placeholder="Amount" value={amt} onChange={e => setAmt(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void save() }} /></span>
+        <span className="cc-money"><span aria-hidden="true">$</span><input className="inp" inputMode="decimal" aria-label="Amount" placeholder="Amount" value={amt} onChange={e => setAmt(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void save() }} aria-invalid={bad || undefined} /></span>
         <Btn sm primary disabled={!(n > 0) || busy} onClick={() => void save()}>Add to this day</Btn></>}
       <Btn sm onClick={() => onTry(date)}>Can I afford something this day?</Btn>
     </div>

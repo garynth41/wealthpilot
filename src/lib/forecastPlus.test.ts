@@ -9,7 +9,8 @@ import { setToday, monthEnd } from './dates'
 import { NATURAL_KEY, RESTORE_ORDER } from './restore'
 import { MODULES } from './access'
 
-beforeAll(() => setToday('2026-11-10')); afterAll(() => setToday(null))
+// the date is fixed before anything below is built: the sample household is dated from "today" while the file is being read, not when the tests run
+setToday('2026-11-10'); beforeAll(() => setToday('2026-11-10')); afterAll(() => setToday(null))
 
 describe('one cash account on its own', () => {
   const { data, household } = demoSeed(); const s = household.settings
@@ -51,6 +52,27 @@ describe('one cash account on its own', () => {
   })
   it('one account can run tight while cash overall is fine — the reason for the view', () => {
     const h = cashCalendar(data, s, 60, { accountId: home.id }); expect(h.low.bal).toBeLessThan(all.low.bal); expect(all.firstFloor).toBeNull()
+  })
+  it('pay is weighed as a monthly amount: $1,000 a week outweighs $3,000 a month', () => {
+    const d = structuredClone(data); const [a, b] = cashAccounts(d, s); const p = d.paySchedules.find(x => x.status === 'Active')!
+    d.paySchedules = [{ ...p, id: 'w', frequency: 'weekly', net_amount: 1000, deposit_account_id: a.id }, { ...p, id: 'm', frequency: 'monthly', net_amount: 3000, deposit_account_id: b.id }]
+    expect(everydayAccount(d, s)!.id).toBe(a.id)
+    d.paySchedules = [{ ...p, id: 'w', frequency: 'weekly', net_amount: 500, deposit_account_id: a.id }, { ...p, id: 'm', frequency: 'monthly', net_amount: 3000, deposit_account_id: b.id }]; expect(everydayAccount(d, s)!.id).toBe(b.id)
+  })
+  it('a transfer with no "from" account comes out of the everyday account — and into it from itself is nothing at all', () => {
+    const d = structuredClone(data); const other = cash.find(a => a.id !== home.id)!; const tr = d.recurring.find(r => r.status === 'Active' && (r.kind === 'savings' || r.kind === 'transfer'))!
+    tr.account_id = null; tr.liability_account_id = home.id
+    expect(cashCalendar(d, s, 60, { accountId: home.id }).items.some(x => x.id === tr.id)).toBe(false)
+    tr.liability_account_id = other.id
+    expect(cashCalendar(d, s, 60, { accountId: home.id }).items.filter(x => x.id === tr.id).every(x => x.amt < 0)).toBe(true); expect(cashCalendar(d, s, 60, { accountId: home.id }).items.some(x => x.id === tr.id)).toBe(true)
+    expect(cashCalendar(d, s, 60, { accountId: other.id }).items.filter(x => x.id === tr.id).every(x => x.amt > 0)).toBe(true); expect(cashCalendar(d, s, 60, { accountId: other.id }).items.some(x => x.id === tr.id)).toBe(true)
+  })
+  it('a card paid automatically from an account is in that account\'s calendar, not the everyday one', () => {
+    const d = structuredClone(data); const other = cash.find(a => a.id !== home.id)!
+    const due = cashCalendar(d, s, 60, { accountId: home.id }).items.find(x => x.src === 'debt' && d.accounts.some(a => a.id === x.id))!; expect(due).toBeTruthy()
+    d.accounts.find(a => a.id === due.id)!.autopay_account_id = other.id
+    expect(cashCalendar(d, s, 60, { accountId: home.id }).items.some(x => x.id === due.id)).toBe(false); expect(cashCalendar(d, s, 60, { accountId: other.id }).items.some(x => x.id === due.id && x.amt < 0)).toBe(true)
+    expect(cashCalendar(d, s, 60).items.some(x => x.id === due.id)).toBe(true)   // all cash together: unchanged
   })
   it('an account that is not there falls back to all cash', () => { const c = cashCalendar(data, s, 60, { accountId: 'nope' }); expect(c.account).toBeNull(); expect(c.start).toBe(all.start) })
 })
@@ -98,6 +120,20 @@ describe('what the recorded transactions show for a saved forecast', () => {
     ]
     expect(forecastActuals(d, s, saved())).toMatchObject({ out: 42, in: 0, count: 2 })
   })
+  it('keeps to the accounts that counted as cash when it was saved, whatever is marked as cash later', () => {
+    const d = household(); d.transactions = [tx('2026-10-10', 'transfer', 2000, 'chk', { to_account_id: 'sav' }), tx('2026-10-12', 'expense', 40, 'sav')]
+    const f = saved({ cash_accounts: ['chk', 'sav'] }); expect(forecastActuals(d, s, f)).toMatchObject({ out: 40, in: 0 })
+    d.accounts[1].include_in_cash = false   // savings no longer counts as cash: the saved forecast still started from both
+    expect(forecastActuals(d, s, f)).toMatchObject({ out: 40, in: 0 }); expect(forecastActuals(d, s, saved())).toMatchObject({ out: 2000 })   // a row saved without the list falls back to today's marking
+  })
+  it('"entered afterwards" is judged against what was on file when the forecast was worked out, not when the row was stored', () => {
+    const d = household(); d.transactions = [tx('2026-10-01', 'expense', 100, 'chk', { created_at: '2026-10-01T06:00:03.000Z' })]
+    // another device entered it after this one read the data (05:59:58) but before the forecast row was stored (06:00:05): it is not in start_cash, so it counts
+    expect(forecastActuals(d, s, saved({ created_at: '2026-10-01T06:00:05.000Z', observed_at: '2026-10-01T05:59:58.000Z' }))).toMatchObject({ out: 100, count: 1 })
+    expect(forecastActuals(d, s, saved({ created_at: '2026-10-01T06:00:05.000Z', observed_at: null }))).toMatchObject({ out: 0 })
+    // and timestamps are compared as moments, whatever form they are written in
+    expect(forecastActuals(d, s, saved({ observed_at: '2026-10-01T05:59:58+00:00' }))).toMatchObject({ out: 100 })
+  })
   it('an account left out of the figures, or one that does not count as cash, is not cash', () => {
     const d = household(); d.accounts[1].include_in_cash = false; d.transactions = [tx('2026-10-10', 'expense', 50, 'sav'), tx('2026-10-10', 'transfer', 300, 'chk', { to_account_id: 'sav' })]
     expect(forecastActuals(d, s, saved()).by).toMatchObject({ out_everyday: 0, out_other: 300 })
@@ -131,6 +167,8 @@ describe('saving this month\'s forecast', () => {
   it('what the calendar expects from today to the end of the month, by kind of item, adding up', () => {
     const d = household(); const f = forecastSnapshot(d, s)!
     expect(f).toMatchObject({ taken_on: '2026-11-10', through: '2026-11-30', start_cash: 8000, notes: null })
+    expect(f.cash_accounts).toEqual(['sav', 'chk']); expect(Number.isNaN(Date.parse(f.observed_at!))).toBe(false)
+    d.transactions = [tx('2026-11-02', 'expense', 5, 'chk', { created_at: '2026-11-02T10:00:00.000Z' }), tx('2026-11-08', 'expense', 5, 'chk', { created_at: '2026-11-09T08:30:00.000Z' })]; expect(forecastSnapshot(d, s)!.observed_at).toBe('2026-11-09T08:30:00.000Z'); d.transactions = []
     expect(f.expected_in).toBe(4000); expect(f.by_source.in_pay).toBe(4000)          // paydays Nov 13 and Nov 27; rent was due on the 5th, before today
     expect(f.expected_end).toBe(Math.round((f.start_cash + f.expected_in - f.expected_out) * 100) / 100)
     const parts = Object.entries(f.by_source); expect(parts.filter(([k]) => k.startsWith('in')).reduce((a, [, v]) => a + v!, 0)).toBeCloseTo(f.expected_in, 2); expect(parts.filter(([k]) => k.startsWith('out')).reduce((a, [, v]) => a + v!, 0)).toBeCloseTo(f.expected_out, 2)

@@ -116,6 +116,7 @@ export async function restoreBackup(existing: Partial<Record<Collection, Row[]>>
       }
       if (REQUIRED[coll]?.some(f => blank(out[f]))) drop = true
       if (coll === 'attachments' && blank(out.transaction_id) && blank(out.statement_id)) drop = true
+      if (coll === 'forecasts' && Array.isArray(out.cash_accounts)) out.cash_accounts = (out.cash_accounts as string[]).map(k => idMap.accounts.get(k) ?? k)   // the accounts a saved forecast counted as cash, under their new ids
       if (coll === 'snapshots' && out.by_account && typeof out.by_account === 'object') out.by_account = Object.fromEntries(Object.entries(out.by_account as Record<string, unknown>).map(([k, v]) => [idMap.accounts.get(k) ?? k, v]))
       if (drop) { sum.skipped++; continue }
       prepared.push({ src, out, deferred, unresolved })

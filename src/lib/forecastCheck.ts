@@ -4,7 +4,7 @@
 // (forecastActuals), so the page can say how close it was and where it missed. A saved forecast is never changed afterwards.
 // Everything is in cash terms — what reached or left the accounts that count as cash — so the parts add up to the balance.
 import type { Data, ForecastGroup, ForecastSnapshot, Settings, Transaction } from '../app/data/types'
-import { cashCalendar, type CalItem } from './forecast'
+import { cashCalendar, cashAccounts, type CalItem } from './forecast'
 import { countsAsCash } from './accounts'
 import { recActive } from './recurring'
 import { payDates, paycheckOnFile } from './paySchedule'
@@ -27,7 +27,9 @@ export function forecastSnapshot(d: Data, s: Settings): Omit<ForecastSnapshot, '
   if (!cal.items.length && Math.abs(cal.start) < 0.005) return null
   const by: Partial<Record<ForecastGroup, number>> = {}
   for (const x of cal.items) { const g = groupOf(x); by[g] = round2((by[g] || 0) + Math.abs(x.amt)) }
-  return { taken_on: t, through, start_cash: round2(cal.start), expected_in: round2(cal.inTot), expected_out: round2(cal.outTot), expected_end: round2(cal.end), expected_low: round2(cal.low.bal), low_date: cal.low.date, by_source: by, notes: null }
+  // what was on file when this was worked out, by the server's own clock: the newest transaction's timestamp (none yet: this device's time)
+  const stamps = [...d.transactions, ...d.duplicates].map(x => x.created_at || '').filter(Boolean).sort(), observed_at = stamps[stamps.length - 1] || new Date().toISOString()
+  return { cash_accounts: cashAccounts(d, s).map(a => a.id), observed_at, taken_on: t, through, start_cash: round2(cal.start), expected_in: round2(cal.inTot), expected_out: round2(cal.outTot), expected_end: round2(cal.end), expected_low: round2(cal.low.bal), low_date: cal.low.date, by_source: by, notes: null }
 }
 /** This month's forecast still has to be saved (nothing on file running to this month's end). */
 export const needsSnapshot = (d: Pick<Data, 'forecasts'>) => !(d.forecasts || []).some(f => f.through.slice(0, 10) === monthEnd(curMonth()))
@@ -37,12 +39,16 @@ export interface ForecastActuals { in: number; out: number; end: number; by: Rec
  *  anything dated the same day but entered after it was saved. Counted the way the forecast counts cash:
  *   in   income into a cash account, and transfers into cash from an account that is not cash
  *   out  spending from a cash account, and transfers out of cash to an account that is not cash (a card or loan payment, an investment)
- *  A move between two cash accounts changes nothing. What is bought on a card is not cash out until the card is paid. */
+ *  A move between two cash accounts changes nothing. What is bought on a card is not cash out until the card is paid.
+ *  "Cash" is the accounts that counted as cash when the forecast was saved (its start_cash is their total), so marking an account
+ *  differently later does not turn a past transfer into a difference. "Entered after" is judged against what was on file when the
+ *  forecast was worked out (observed_at), not the moment the row reached the database. */
 export function forecastActuals(d: Data, s: Settings, f: ForecastSnapshot): ForecastActuals {
   const acct = new Map([...(d.off?.accounts || []), ...d.accounts].map(a => [a.id, a]))
-  const cash = (id?: string | null) => { const a = id ? acct.get(id) : undefined; return !!a && !a.excluded && countsAsCash(a, s) }
-  const from = f.taken_on.slice(0, 10), to = f.through.slice(0, 10), saved = f.created_at || ''
-  const inWindow = (t: Transaction) => { const dt = t.date.slice(0, 10); return t.status !== 'void' && !t.duplicate_of && dt <= to && (dt > from || (dt === from && !!saved && !!t.created_at && t.created_at > saved)) }
+  const then = Array.isArray(f.cash_accounts) && f.cash_accounts.length ? new Set(f.cash_accounts) : null
+  const cash = (id?: string | null) => { if (then) return !!id && then.has(id); const a = id ? acct.get(id) : undefined; return !!a && !a.excluded && countsAsCash(a, s) }
+  const from = f.taken_on.slice(0, 10), to = f.through.slice(0, 10), saved = f.observed_at || f.created_at || ''
+  const inWindow = (t: Transaction) => { const dt = t.date.slice(0, 10); return t.status !== 'void' && !t.duplicate_of && dt <= to && (dt > from || (dt === from && !!saved && !!t.created_at && Date.parse(t.created_at) > Date.parse(saved))) }
   // which deposits are paychecks: tagged to a pay schedule, or matching one on a pay date (the same test the calendar uses)
   const paychecks = new Set<string>()
   d.paySchedules.forEach(p => payDates(p, addDays(from, -2), addDays(to, 2)).forEach(dd => { const hit = paycheckOnFile(d, p, dd); if (hit) paychecks.add(hit.id) }))

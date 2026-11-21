@@ -191,8 +191,10 @@ export const useStore = create<State>((set, get) => ({
     catch (e) { if (get().repo !== repo) return; if (repo.mode === 'db' && isNetworkError(e) && get().household) { set({ offlineAt: new Date(get().lastRefresh || Date.now()).toISOString() }); return }
       set({ loadError: (e as Error).message }); get().toast('Could not load: ' + (e as Error).message, true) }
   },
-  async insert(coll, row) { const repo = need(get); refuseBad(coll, row as Record<string, unknown>); const r = await repo.insert(coll, row); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
-  async insertMany(coll, rows) { const repo = need(get); for (const row of rows) refuseBad(coll, row as Record<string, unknown>); const r = await repo.insertMany(coll, rows); set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async insert(coll, row) { const repo = need(get); refuseBad(coll, row as Record<string, unknown>); const r = await repo.insert(coll, row); if (get().repo !== repo) return r   /* 0.35.0: another household was opened meanwhile — the row is saved where it belongs, and is not shown in this one */
+    set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
+  async insertMany(coll, rows) { const repo = need(get); for (const row of rows) refuseBad(coll, row as Record<string, unknown>); const r = await repo.insertMany(coll, rows); if (get().repo !== repo) return r
+    set(s => ({ data: { ...s.data, [coll]: [...(s.data[coll] as unknown[]), ...r] } })); if (coll === 'transactions') void get().autoDedupe().catch(() => {}); return r },
   async logPaycheck(row) {
     const ps = get().data.paySchedules.find(p => p.id === row.pay_schedule_id); const date = (row.date || '').slice(0, 10)
     if (!ps || !date) throw new Error('Pick the income source and the date of this paycheck')

@@ -33,5 +33,14 @@ describe('saving this month\'s forecast', () => {
     expect(await useStore.getState().saveForecast()).toBe(false); expect(mine()).toHaveLength(0)
     fail = false; expect(await useStore.getState().saveForecast()).toBe(true); expect(mine()).toHaveLength(1)
   })
+  it('a save that lands after another household was opened is not shown in that other household', async () => {
+    const { repo } = open(); const insert = repo.insert.bind(repo); let release = () => {}
+    repo.insert = (async (...a: Parameters<typeof insert>) => { await new Promise<void>(r => { release = r }); return insert(...a) }) as typeof repo.insert
+    const saving = useStore.getState().saveForecast(); await new Promise(r => setTimeout(r, 5))
+    const other = demoSeed(); const repoB = new MemoryRepo(other); useStore.setState({ repo: repoB, data: structuredClone(other.data) }); const before = useStore.getState().data.forecasts.length
+    release(); expect(await saving).toBe(true)
+    expect(useStore.getState().data.forecasts).toHaveLength(before)                                                  // household B's screen is untouched
+    expect((await repo.loadAll()).data.forecasts.filter(f => f.through === monthEnd('2026-11'))).toHaveLength(1)     // …and A's forecast is saved where it belongs
+  })
   it('nothing is saved in the last days of a month', async () => { setToday('2026-11-28'); open(); expect(await useStore.getState().saveForecast()).toBe(false); setToday('2026-11-10') })
 })
