@@ -31,7 +31,13 @@ const whoIs = auth => { try { const sub = JSON.parse(Buffer.from((auth.split(' '
 const HOUSEHOLD = { id: HH, name: 'Test household', currency: 'USD', settings: {}, created_at: '2026-11-01T00:00:00Z' }
 const NOTE = { id: '00000000-0000-4000-8000-0000000000c1', created_at: '2026-11-13T20:00:00Z', updated_at: '2026-11-13T20:00:00Z', kind: 'bug', rating: 3, message: 'Stand-in note: the budget total looks off', page: '/budget', app_version: '0.29.0', platform: 'web', device: 'Mac · Safari', screen: '1440×900', look: 'graphite light', demo: false, user_id: TESTER.id, email: null, tester: 'church', status: 'new', admin_note: null, issue_url: null, notified_at: null }
 const OPERATOR_CHECK_MS = 2000   // the operator check answers slowly, so the "checking" state can be seen
-const hits = [], asks = []
+const hits = [], asks = [], sorts = []
+// 0.34.0: two categories and two transactions nobody can place — one of them a payment to a person — for Ask AI on Review uncategorized
+const ST = { household_id: HH, created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-02T00:00:00Z' }
+const CATS = [{ ...ST, id: '00000000-0000-4000-8000-0000000000d1', name: 'Gifts', kind: 'expense' }, { ...ST, id: '00000000-0000-4000-8000-0000000000d2', name: 'Side income', kind: 'income' }]
+  .map((c, i) => ({ ...c, ref: null, group: null, priority: 'want', cost_type: 'variable', default_budget: 0, budget_cadence: 'monthly', rollover: false, color: null, icon: null, sort_order: i, archived: false, notes: null }))
+const TXNS = [{ id: '00000000-0000-4000-8000-0000000000e1', payee: 'ZELLE TO J MARTINEZ 4471', amount: 60, kind: 'expense' }, { id: '00000000-0000-4000-8000-0000000000e2', payee: 'QZX HOLDINGS', amount: 310, kind: 'expense' }]
+  .map(t => ({ ...ST, ...t, ref: null, date: '2026-11-10', account_id: null, to_account_id: null, category_id: null, memo: 'private note', tags: [], status: 'cleared', source: 'import', recurring_id: null, pay_schedule_id: null, goal_id: null, email_item_id: null, external_id: 'fx:' + t.id, exclude_from_budget: false, duplicate_of: null }))
 
 async function standIn(route) {
   const req = route.request(), url = new URL(req.url()), p = url.pathname, method = req.method(), who = whoIs(req.headers()['authorization'] || '')
@@ -44,15 +50,18 @@ async function standIn(route) {
   if (p === '/auth/v1/token') { const u = [TESTER, OPERATOR].find(x => x.email === body.email); return u ? json(session(u)) : json({ code: 'invalid_credentials', error_code: 'invalid_credentials', msg: 'Invalid login credentials' }, 400) }
   if (p === '/auth/v1/user') return who ? json(userObj(who)) : json({ code: 'bad_jwt', msg: 'not signed in' }, 401)
   if (p === '/auth/v1/logout') return route.fulfill({ status: 204, headers: cors })
-  // Ask Cresari (0.32.0): the tester has access (20 a day, 16 used); the function answers three questions and refuses the fourth at the limit
+  // Ask Cresari (0.32.0): the tester has access (20 a day, 15 used, then one more for the Ask AI press below); the function answers three questions and refuses the fourth at the limit
+  if (p === '/functions/v1/ask-cresari' && body.task === 'categorize') { sorts.push(body); return json({ picks: [{ item: body.items.findIndex(i => /ZELLE/.test(i.text)), category: 0, sure: false }, { item: 9, category: 0, sure: true }], limit: 20, used: 16 }) }
   if (p === '/functions/v1/ask-cresari') { asks.push(body); return asks.length <= 3 ? json({ answer: 'You spent **$412** on dining out.\n\n1. Set a weekly limit\n2. Review it on Sunday', limit: 20, used: 16 + asks.length }) : json({ error: 'That is your 20 questions for today — more are available tomorrow', limit: 20, used: 20 }, 429) }
   if (p.startsWith('/auth/v1/') || p.startsWith('/functions/v1/')) return json({})
-  if (p === '/rest/v1/rpc/ai_status') return json(who?.id === TESTER.id ? { allowed: true, limit: 20, used: 16 } : { allowed: who?.id === OPERATOR.id, limit: 20, used: 0 })
+  if (p === '/rest/v1/rpc/ai_status') return json(who?.id === TESTER.id ? { allowed: true, limit: 20, used: 15 + sorts.length } : { allowed: who?.id === OPERATOR.id, limit: 20, used: 0 })
   if (p === '/rest/v1/rpc/ai_admin_overview') return who?.id === OPERATOR.id ? json({ access: 'testers', daily_limit: 20, global_daily: 500, model: 'claude-sonnet-5-5', used_24h: 19, used_30d: 140, tokens_30d: 512000, people: [{ user_id: TESTER.id, email: TESTER.email, daily_limit: null, added_at: '2026-11-20T00:00:00Z', used_24h: 19, used_30d: 60 }] }) : json({ code: '42501', message: 'operator only' }, 403)
   if (p === '/rest/v1/rpc/is_app_admin') { if (who?.id === OPERATOR.id) { await new Promise(r => setTimeout(r, OPERATOR_CHECK_MS)); return json(true) } return json(false) }
   if (p === '/rest/v1/rpc/feedback_inbox') return who?.id === OPERATOR.id ? json(body.p_before ? [] : [NOTE]) : json({ code: '42501', message: 'Only the app operator can open the feedback inbox' }, 403)
   if (p === '/rest/v1/rpc/tester_stats') return who?.id === OPERATOR.id ? json([{ tester: 'church', signed_up: 1, active_7d: 1, households: 1, feedback: 1 }]) : json({ code: '42501', message: 'operator only' }, 403)
   if (p.startsWith('/rest/v1/rpc/')) return json(null)
+  if (p === '/rest/v1/categories' && method === 'GET' && who?.id === TESTER.id) return json(CATS)
+  if (p === '/rest/v1/transactions' && method === 'GET' && who?.id === TESTER.id) return json(TXNS)
   if (p === '/rest/v1/household_members' && method === 'GET') return json([{ household_id: HH, user_id: who?.id, role: 'owner', read_only: false, modules: null, households: { name: HOUSEHOLD.name } }])
   if (p === '/rest/v1/households' && method === 'GET') return json(wantsOne ? HOUSEHOLD : [HOUSEHOLD])
   if (method === 'GET' || method === 'HEAD') return wantsOne ? json({ code: 'PGRST116', message: 'no rows' }, 406) : json([])
@@ -77,6 +86,22 @@ try {
   await one.evaluate(() => { location.hash = '#/feedback' })
   await one.waitForFunction(() => location.hash === '#/' || location.hash === '', null, { timeout: 10000 }).catch(() => {})
   ok(await one.evaluate(() => location.hash) !== '#/feedback' && (await one.locator('a[href="#/feedback"]').count()) === 0, 'for the tester, Feedback & testers is not in the menu and its address goes back to the Dashboard')
+
+  // 1a. Ask AI on Review uncategorized (0.34.0): nothing leaves on the first press — the notice lists what would; the second press sends it
+  await one.evaluate(() => { location.hash = '#/transactions?review=1' }); const rv = one.locator('.modal[role=dialog]'); await rv.waitFor({ timeout: 10000 }).catch(() => {})
+  await rv.locator('button', { hasText: 'Ask AI about' }).waitFor({ timeout: 8000 }).catch(() => {})
+  ok(/Ask AI about the 2/.test(await rv.locator('button', { hasText: 'Ask AI about' }).innerText().catch(() => '')) && await rv.locator('.ru-item').count() === 2, 'Review uncategorized offers Ask AI for the two merchants the app could not place')
+  await rv.locator('button', { hasText: 'Ask AI about' }).click(); const notice = await rv.locator('[data-ru=ai-notice]').innerText().catch(() => '')
+  ok(sorts.length === 0 && /Claude, made by Anthropic/.test(notice) && /payments to people/.test(notice) && /\(5 left\)/.test(notice) && /a person's name in one is sent/.test(notice) && /ZELLE TO J MARTINEZ/.test(await rv.locator('[data-ru=ai-sent]').innerText()), 'the first press sends nothing: it names the AI service, says payments to people are included, and lists the descriptions')
+  await rv.locator('button', { hasText: 'Send these' }).click(); await rv.locator('[data-ru=ai-msg]').waitFor({ timeout: 8000 }).catch(() => {})
+  const sb0 = sorts[0] || {}, sent0 = JSON.stringify(sb0)
+  ok(sorts.length === 1 && sb0.household_id === HH && sb0.items?.length === 2 && sb0.items.some(i => i.text === 'ZELLE TO J MARTINEZ 4471' && i.kind === 'expense' && i.amount === 60) && sb0.categories?.length === 2 && !/private note|2026-11-10|0000000000[de]\d|cresari\.test/.test(sent0),
+    'what went: two descriptions (the payment to a person among them) with side and amount, and the category names — no ids, dates, notes or email address')
+  const zel = rv.locator('.ru-item', { hasText: 'ZELLE' }), qzx = rv.locator('.ru-item', { hasText: 'QZX' })
+  ok(/suggested a category for 1 of 2/.test(await rv.locator('[data-ru=ai-msg]').innerText().catch(() => '')) && /AI/.test(await zel.locator('.pill').innerText().catch(() => '')) && /Gifts/.test(await zel.locator('select').evaluate(el => el.options[el.selectedIndex].text)) && /not sure/.test(await zel.innerText()) && /your pick/i.test(await qzx.innerText()) && await qzx.locator('button', { hasText: 'Accept' }).isDisabled() && await rv.locator('button', { hasText: 'Ask AI about' }).count() === 0,
+    'the reply fills in a suggestion marked AI (Gifts, "not sure") and files nothing; a pick for something that was not sent is ignored; the other merchant stays yours and is not offered to the AI again')
+  await one.screenshot({ path: 'e2e/shots/review_ai.png' })
+  await rv.locator('button', { hasText: 'Done' }).click(); await one.waitForTimeout(200)
 
   // 1b. Ask Cresari (0.32.0): open to this tester — agree once, ask, read the answer, and be told plainly at the daily limit
   await one.evaluate(() => { location.hash = '#/' }); await one.locator('[data-testid=ask-btn], [data-testid=ask-icon]').first().waitFor({ timeout: 10000 }).catch(() => {})

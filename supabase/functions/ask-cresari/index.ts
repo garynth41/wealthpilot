@@ -4,9 +4,10 @@
 //   - The key for the AI service is the secret ANTHROPIC_API_KEY. It never reaches the app.
 //   - Nothing about the question or the answer is stored: ai_usage keeps who, when and the token counts.
 //   - Who may ask, the daily limits and the model are settings in app_meta the operator changes from Feedback & testers (migration 0023).
+//   - 0.34.0: with task 'categorize' it suggests categories for merchants the app could not place (core.ts, "AI categorizing").
 // Secrets: ANTHROPIC_API_KEY
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { prepare, buildRequest, readReply, refusal, MAX_BODY_BYTES, type AskBody, readCapped } from './core.ts'
+import { prepare, buildRequest, readReply, refusal, MAX_BODY_BYTES, type AskBody, readCapped, prepareCategorize, buildCategorizeRequest, readPicks, type CategorizeBody } from './core.ts'
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' }
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -24,7 +25,7 @@ Deno.serve(async (req) => {
 
   // size and shape first: nothing oversized or malformed is parsed or scrubbed (this runs before the access check)
   if (Number(req.headers.get('content-length') || 0) > MAX_BODY_BYTES) return json(413, { error: 'That is too much to send at once' })
-  let b: AskBody
+  let b: AskBody & CategorizeBody
   // read in pieces and counted in bytes, so a body that does not state its length is cut off at the limit too
   let raw: string | null
   try { raw = await readCapped(req.body, MAX_BODY_BYTES) } catch { return json(400, { error: 'Bad request' }) }
@@ -32,14 +33,18 @@ Deno.serve(async (req) => {
   try { b = JSON.parse(raw) } catch { return json(400, { error: 'Bad JSON' }) }
   if (!b || typeof b !== 'object' || Array.isArray(b)) return json(400, { error: 'Bad request' })
   if (!b.household_id || typeof b.household_id !== 'string') return json(400, { error: 'household_id required' })
-  const p = prepare(b)
-  if ('error' in p) return json(400, { error: p.error })
+  // 0.34.0: the same door serves Review uncategorized's "Ask AI" — same access check, same daily limit, one press = one question
+  const sorting = b.task === 'categorize'
+  const cz = sorting ? prepareCategorize(b) : null
+  if (cz && 'error' in cz) return json(400, { error: cz.error })
+  const p = sorting ? null : prepare(b)
+  if (p && 'error' in p) return json(400, { error: p.error })
   const key = Deno.env.get('ANTHROPIC_API_KEY')
   if (!key) return json(503, { error: 'Ask Cresari is not set up yet' })
 
   // counted first: a question that cannot be recorded is not sent
   const admin = createClient(url, service, { auth: { persistSession: false } })
-  const { data: r, error: rErr } = await admin.rpc('ai_reserve', { p_user: user.id, p_household: b.household_id, p_detail: p.detail })
+  const { data: r, error: rErr } = await admin.rpc('ai_reserve', { p_user: user.id, p_household: b.household_id, p_detail: sorting ? true : (p as { detail: boolean }).detail })
   if (rErr || !r) return json(500, { error: 'Could not check your access — try again' })
   if (!r.ok) { const no = refusal(String(r.reason), Number(r.limit) || 0); return json(no.status, { error: no.error, limit: r.limit ?? 0, used: r.used ?? 0 }) }
   const giveBack = async () => { try { await admin.rpc('ai_finish', { p_id: r.id, p_ok: false }) } catch { /* it stops counting on its own after ten minutes */ } }
@@ -49,13 +54,19 @@ Deno.serve(async (req) => {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', signal: ctl.signal,
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify(buildRequest(String(r.model), p)),
+      body: JSON.stringify(cz && !('error' in cz) ? buildCategorizeRequest(String(r.model), cz) : buildRequest(String(r.model), p as Exclude<typeof p, { error: string } | null>)),
     })
     if (!res.ok) {
       // the status only — never the question, the data or the service's reply
       console.error('ask-cresari: AI service replied', res.status, 'model', r.model)
       await giveBack()
       return json(502, { error: res.status === 429 || res.status === 529 ? 'The AI service is busy right now — try again in a minute' : 'Ask Cresari could not get an answer just now — try again', limit: r.limit, used: Math.max(0, Number(r.used) - 1) })
+    }
+    if (cz && !('error' in cz)) {
+      // suggestions only: positions in the lists the app sent. None at all is an answer too (nothing fit), and still counts.
+      const got = readPicks(await res.json(), cz)
+      await admin.rpc('ai_finish', { p_id: r.id, p_ok: true, p_in: got.input, p_out: got.output })
+      return json(200, { picks: got.picks, limit: r.limit, used: r.used })
     }
     const out = readReply(await res.json())
     if (!out.text) { await giveBack(); return json(502, { error: 'Ask Cresari came back empty — try asking again', limit: r.limit, used: Math.max(0, Number(r.used) - 1) }) }
