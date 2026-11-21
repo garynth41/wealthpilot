@@ -690,6 +690,7 @@ button.dd-row{cursor:pointer} button.dd-row:hover{background:var(--surface-2)} .
 .ru-name b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .ru-name:hover b{text-decoration:underline} .ru-sub{font-size:12.5px;color:var(--ink-3)}
 .ru-pick{flex:1 1 300px;display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0} .ru-pick .inp{flex:1 1 160px;min-width:0;max-width:280px;width:auto}
 .ru-why{font-size:12.5px;color:var(--ink-3);margin-top:2px} .ru-tx{margin-top:8px}
+.ru-ai{margin:8px 0 2px} .ru-ai .ask-pre{max-height:180px}
 @media (max-width:520px){.ru-pick{justify-content:flex-start} .ru-pick .inp{max-width:none}}
 /* Ask Cresari (0.32.0) */
 .ask-log{display:flex;flex-direction:column;gap:10px;margin:10px 0;max-height:min(52vh,520px);overflow-y:auto;padding:2px}

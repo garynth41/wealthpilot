@@ -107,7 +107,7 @@ save, review, and start the rollout to closed testing. Add testers by email list
 request deletion:* **in the app** and **the web link above**; *can people ask for some data to be deleted without deleting the account?*
 **Yes** (any record can be deleted). Nothing is **shared** (the hosting and email services only process data for the app, which
 Google does not count as sharing). Every type below is **collected**, **not processed ephemerally**, and used for **App functionality**
-(crash logs and diagnostics: **Analytics**, which here means finding and fixing errors). **Ask Cresari (0.32.0)** sends a person's question and a summary of their household's money to Anthropic's Claude service to get the answer — a service provider acting for the app, after the person agrees on the screen; emails and account numbers are left out of the summary and names are removed from the person's own labels where recognized (the question itself is sent after trimming, with email addresses and long numbers removed); the answer to *shared* stays **No**, and the Financial info row below already covers what is sent. If the store form asks whether the app uses generative AI, answer **Yes** (an AI assistant that answers questions about the user's own finances):
+(crash logs and diagnostics: **Analytics**, which here means finding and fixing errors). **Ask Cresari (0.32.0)** sends a person's question and a summary of their household's money to Anthropic's Claude service to get the answer — a service provider acting for the app, after the person agrees on the screen; emails and account numbers are left out of the summary and names are removed from the person's own labels where recognized (the question itself is sent after trimming, with email addresses and long numbers removed); **Ask AI on Review uncategorized (0.34.0)** sends, on a button press and after a notice listing it, the bank descriptions of uncategorized transactions (payments to people included, so a payee's name can be in one), the direction, the amount and the household's category names to the same service; the answer to *shared* stays **No**, and the Financial info row below already covers what is sent. If the store form asks whether the app uses generative AI, answer **Yes** (an AI assistant that answers questions about the user's own finances):
 
 | Category | Type | Required? |
 |---|---|---|
@@ -174,7 +174,7 @@ yourself; open the invitation on the phone. Answer the export-compliance questio
 (HTTPS), which is exempt — the app already declares this.
 
 **B7. The listing** — App Store Connect → your app → the version page (**1.0 Prepare for Submission**). First change the version number
-at the top to **0.33.0**, so it matches the build:
+at the top to **0.34.0**, so it matches the build:
 - Name, subtitle, promotional text, description, keywords: `store/listing/apple/*.txt`
 - What's New: `store/listing/apple/release_notes.txt`
 - Screenshots: **iPhone 6.9″** ← `store/screenshots/iphone-6.9/01…06.png`; **iPhone 6.3″** ← `store/screenshots/iphone-6.3/…`
@@ -199,7 +199,7 @@ exactly these, and for each: used for **App Functionality** only, **linked to th
 
 These match the privacy manifest built into the app (`ios/App/App/PrivacyInfo.xcprivacy`) and the privacy policy.
 
-**Third-party AI (App Review guideline 5.1.2(i)).** Ask Cresari sends data to a third-party AI (Anthropic's Claude). The app names the provider and what is sent, and asks for the person's agreement on the Ask Cresari screen before the first question (`components/AskCresari.tsx`, the *Before you ask* step); the privacy policy lists it. In the review notes, say: *"Ask Cresari is an optional AI assistant. Before first use the app discloses that a summary of the household's finances is sent to Anthropic's Claude and asks for consent. Email addresses and long numbers (card, Social Security and phone formats, and any run of nine or more digits) are removed from everything sent — the summary, the question and earlier turns; shorter numbers a person types into a question are not. Accounts appear by type, and names are removed from the person's own labels where recognized; the question is trimmed and scrubbed the same way before it is sent. It gives general educational guidance, not financial advice."* The review account must be given access (Feedback & testers → Ask Cresari → Give someone access) or the feature will not appear for the reviewer.
+**Third-party AI (App Review guideline 5.1.2(i)).** Ask Cresari sends data to a third-party AI (Anthropic's Claude). The app names the provider and what is sent, and asks for the person's agreement on the Ask Cresari screen before the first question (`components/AskCresari.tsx`, the *Before you ask* step); the privacy policy lists it. *Ask AI* on Review uncategorized (0.34.0, `components/ReviewUncategorized.tsx`) shows its own notice — the provider, what is sent including descriptions of payments to people, and the full list — every time, before anything is sent. In the review notes, say: *"Ask Cresari is an optional AI assistant. Before first use the app discloses that a summary of the household's finances is sent to Anthropic's Claude and asks for consent. Email addresses and long numbers (card, Social Security and phone formats, and any run of nine or more digits) are removed from everything sent — the summary, the question and earlier turns; shorter numbers a person types into a question are not. Accounts appear by type, and names are removed from the person's own labels where recognized; the question is trimmed and scrubbed the same way before it is sent. It gives general educational guidance, not financial advice."* The review account must be given access (Feedback & testers → Ask Cresari → Give someone access) or the feature will not appear for the reviewer.
 
 **B9. Age rating** — answer **None / No** to the content questions (no violence, mature themes, gambling, contests, medical advice or
 unrestricted web browsing; no ads). The only things people write in the app — notes and comments on transactions — are seen only by the
@@ -232,7 +232,7 @@ Enter the email and password only in App Store Connect and Play Console — neve
 ## D. After launch
 
 - **Tell the app a new version exists** (only after it is live in both the App Store and Google Play):
-  `insert into public.app_meta (key, value) values ('latest_native_version', '0.33.0') on conflict (key) do update set value = excluded.value, updated_at = now();` (an insert, so it also works the first time — no migration adds this row) — app users then see "A new version is available".
+  `insert into public.app_meta (key, value) values ('latest_native_version', '0.34.0') on conflict (key) do update set value = excluded.value, updated_at = now();` (an insert, so it also works the first time — no migration adds this row) — app users then see "A new version is available".
   Only for changes an older app would break (such as a database change) also set `min_native_version`, which blocks older apps until
   they update.
 - **Each new version:** raise the version as usual (every release already does), then run **release apps** (`both`). Android lands as a

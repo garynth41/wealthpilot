@@ -130,6 +130,8 @@ for (const W of [1400, 390]) {
     const item = n => dlg.locator('.ru-item', { hasText: n }).first(), chosen = async n => await item(n).locator('select').evaluate(el => el.options[el.selectedIndex].text)
     ok(/Groceries/.test(await chosen('WHOLEFDS')) && /sure/i.test(await item('WHOLEFDS').innerText()) && /Subscriptions/.test(await chosen('NETFLIX')) && /likely/i.test(await item('SAMS CLUB').innerText()) && /likely/i.test(await item('BLUE DOOR').innerText()) && /your pick/i.test(await item('ZELLE').innerText()) && await item('ZELLE').locator('button', { hasText: 'Accept' }).isDisabled(),
       `${W}: known merchants are Sure (Whole Foods → Groceries, Netflix → Subscriptions), a warehouse club and a café are Likely, a payment to a person is left to you`)
+    // 0.34.0: Ask AI — in the offline demo it is explained, never sent; the one merchant nobody could place is what it would cover
+    ok(/Ask AI/.test(await dlg.locator('[data-ru=ai]').innerText()) && /could not place \(1 here\)/.test(await dlg.locator('[data-ru=ai]').innerText()) && await dlg.locator('button', { hasText: 'Ask AI about' }).count() === 0, `${W}: Ask AI is explained in the demo (1 merchant it would cover) and has no send button there`)
     await p.screenshot({ path: `e2e/shots/review_${W}.png` })
     await item('WHOLEFDS').locator('.ru-name').click(); ok(await item('WHOLEFDS').locator('.ru-tx tbody tr').count() === 2, `${W}: tapping a merchant lists its transactions`)
     // a likely one: accept it as suggested
