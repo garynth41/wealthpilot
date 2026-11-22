@@ -6,8 +6,9 @@ import { suggest, learnRule, upsertRule, type PayeeRule, type Suggestion } from 
 import { isSplit } from './splits'
 import { round2 } from './money'
 
-/** A transaction that still needs a category: a purchase or a deposit (never a transfer), not void, not split into lines. */
-export const needsCategory = (d: Pick<Data, 'splits'>, t: Transaction) => !t.category_id && t.kind !== 'transfer' && t.status !== 'void' && !t.duplicate_of && !isSplit(d, t)
+/** A transaction that still needs a category: a purchase or a deposit (never a transfer), not void, not split into lines — and not
+ *  left out of the figures (0.37.0): a row that counts toward nothing has no budget line to go against. */
+export const needsCategory = (d: Pick<Data, 'splits'>, t: Transaction) => !t.category_id && t.kind !== 'transfer' && t.status !== 'void' && !t.duplicate_of && !t.exclude_from_budget && !isSplit(d, t)
 export const uncategorizedAll = (d: Data) => d.transactions.filter(t => needsCategory(d, t))
 
 /** New arrivals: uncategorized rows nobody has touched since they were added (a bank sync, an import, an email). A row someone has

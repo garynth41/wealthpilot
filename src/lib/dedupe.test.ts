@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import functionCopy from '../../supabase/functions/sync-simplefin/dedupe.ts?raw'
 import engineSource from './dedupe.ts?raw'
-import { planDedupe, payeeTokens, payeeSimilarity, alreadyPresent, keeperOrder, origin, transferPairs, checkPairs, nearPairs, lookalikes, checkNo, nearAmount, type DTxn, type DAccount } from './dedupe'
+import { planDedupe, payeeTokens, payeeSimilarity, alreadyPresent, keeperOrder, origin, transferPairs, checkPairs, nearPairs, lookalikes, checkNo, nearAmount, readsAsTransfer, type DTxn, type DAccount } from './dedupe'
 
 const CHK = 'acct-0224', GAV = 'acct-2060', CAT = 'cat-utilities'
 let n = 0
@@ -138,6 +138,68 @@ describe('own-account transfers (0.27.0)', () => {
   it('can be switched off', () => {
     const out = bank({ id: 'o', amount: 500, payee: 'TRANSFER TO SAVINGS' }), inn = sav({ id: 'i', amount: 500, kind: 'income', payee: 'TRANSFER FROM CHECKING' })
     expect(planDedupe([out, inn], ACCTS, { transfers: false }).auto).toEqual([])
+  })
+})
+
+// 0.37.0 — Gary's ledger, Nov 2026: overdraft protection counted as income and as spending; a payment to a law firm paired with money that had
+// come from his son's account (left out of the figures) and so dropped out of his spending.
+describe('what is and is not a transfer between your own accounts (0.37.0)', () => {
+  const GAVA: DAccount = { id: GAV, kind: 'checking', name: 'Gavionne Checking (2060)', institution: 'Huntington' }
+  const HCHK = 'acct-4019', H: DAccount[] = [...ACCTS, { id: HCHK, kind: 'checking', name: 'Gary Checking (4019)', institution: 'Huntington' }]
+  it('overdraft protection is a move from savings to checking: one transfer, not income and a fee', () => {
+    const out = sav({ id: 'o', amount: 127.22, payee: 'OVERDRAFT PROTECTION TO XXXXX0000XXXXXXXX022', date: '2026-10-28', category_id: 'cat-fees' })
+    const inn = bank({ id: 'i', amount: 127.22, kind: 'income', payee: 'OVERDRAFT PROTECTION FROM XXXXXXXXXX0253', date: '2026-10-28', category_id: 'cat-fees' })
+    expect(readsAsTransfer(out.payee)).toBe(true); expect(readsAsTransfer('OVERDRAFT ITEM FEE FOR ACTIVITY OF 11-12')).toBe(false)
+    expect(planDedupe([out, inn], ACCTS).auto).toMatchObject([{ keeper: 'o', dups: ['i'], patch: { kind: 'transfer', to_account_id: CHK } }])
+  })
+  it('round-up savings ("Keep the Change") pairs the same way', () => {
+    const out = bank({ id: 'o', amount: 1.48, payee: 'KEEP THE CHANGE TRANSFER TO ACCT 0253 FOR 11/02/26', date: '2026-11-02' })
+    const inn = sav({ id: 'i', amount: 1.48, kind: 'income', payee: 'KEEPTHECHANGE CREDIT FROM ACCT0224 EFFECTIVE 11/02', date: '2026-11-03' })
+    expect(transferPairs([out, inn], ACCTS)).toHaveLength(1)
+  })
+  it('a payment that names someone else is never the other half of a transfer', () => {
+    const pay = bank({ id: 'o', amount: 100, payee: 'MESSERLI KRAMER DES:ePay ID:XXXXX2041 INDN:Gary Thomas CO ID:XXXXX62041 WEB', date: '2026-11-13' })
+    const inn = bank({ id: 'i', account_id: HCHK, external_id: 'sfin:ACT-9:1', amount: 100, kind: 'income', payee: 'INTERNET TFR FRM CHECKING', date: '2026-11-13' })
+    expect(transferPairs([pay, inn], H)).toEqual([]); expect(planDedupe([pay, inn], H).auto).toEqual([])
+    // …nor is a deposit that names a payer, whatever left another account that day
+    const out = bank({ id: 'o2', amount: 500, payee: 'ONLINE BANKING TRANSFER TO CHK 4019', date: '2026-11-13' })
+    const dep = bank({ id: 'i2', account_id: HCHK, external_id: 'sfin:ACT-9:2', amount: 500, kind: 'income', payee: 'Zelle payment from Dana Whitfield Conf# abc123', date: '2026-11-13' })
+    expect(transferPairs([out, dep], H)).toEqual([])
+  })
+  it('a side that only names a bank, an account or deposit wording still pairs', () => {
+    const out = bank({ id: 'o', amount: 300, payee: 'ONLINE TRANSFER TO ALLY', date: '2026-11-10' })
+    const inn = bank({ id: 'i', account_id: BRK, external_id: 'sfin:ACT-3:7', amount: 300, kind: 'income', payee: 'ACH DEPOSIT BANK OF AMERICA', date: '2026-11-12' })
+    expect(transferPairs([out, inn], ACCTS)).toHaveLength(1)
+    const inn2 = bank({ id: 'i3', account_id: BRK, external_id: 'sfin:ACT-3:8', amount: 300, kind: 'income', payee: 'ELECTRONIC FUNDS DEPOSIT', date: '2026-11-12' })
+    expect(transferPairs([out, inn2], ACCTS)).toHaveLength(1)
+  })
+  it('money sent through a pay app is only the other half of money received through one', () => {
+    // Gary's ledger: $30 sent by Apple Cash from one bank had been paired with $30 that arrived in savings at another by internal transfer
+    const sent = bank({ id: 'o', amount: 30, payee: 'PMNT SENT 0918 APPLE CASH SENT M XXXXX8552 C', date: '2026-09-21' })
+    const inn = sav({ id: 'i', amount: 30, kind: 'income', payee: 'INTERNET TFR FRM CHECKING', date: '2026-09-23' })
+    expect(transferPairs([sent, inn], ACCTS)).toEqual([])
+    // …but your own Zelle from one bank to another still pairs: the receiving row names the account it came from
+    const z = bank({ id: 'zo', account_id: HCHK, external_id: 'sfin:ACT-9:5', amount: 100, payee: 'Zelle Transaction ••0917 H50Pj1YDbPV9', date: '2026-09-16' })
+    const zi = bank({ id: 'zi', amount: 100, kind: 'income', payee: 'Zelle payment from GARY THOMAS for "test"; Conf# abc', date: '2026-09-16' })
+    expect(transferPairs([z, zi], H)).toMatchObject([{ out: 'zo', into: 'zi', to: CHK }])
+    // and a card purchase is never the other half of a transfer in
+    const flex = bank({ id: 'f', account_id: HCHK, external_id: 'sfin:ACT-9:6', amount: 400, payee: 'PURCHASE FLEX* FLEXIBLE FINANCE', date: '2026-09-17' })
+    const in4 = sav({ id: 'i4', amount: 400, kind: 'income', payee: 'INTERNET TFR FRM CHECKING', date: '2026-09-16' })
+    expect(transferPairs([flex, in4], H)).toEqual([])
+  })
+  it('money that came from a left-out account is not paired with a like amount that left a counted one', () => {
+    // both counted rows read as transfers — before, they paired; the row in the left-out account is the likelier source, so nothing is guessed
+    const out = bank({ id: 'o', amount: 100, payee: 'ONLINE BANKING TRANSFER TO CHK 9911', date: '2026-11-13' })
+    const inn = bank({ id: 'i', account_id: HCHK, external_id: 'sfin:ACT-9:1', amount: 100, kind: 'income', payee: 'INTERNET TFR FRM CHECKING', date: '2026-11-13' })
+    const his = bank({ id: 'g', account_id: GAV, external_id: 'sfin:ACT-5:1', amount: 100, payee: 'INTERNET TFR TO CHECKING', date: '2026-11-13' })
+    expect(transferPairs([out, inn], H)).toHaveLength(1)
+    expect(transferPairs([out, inn], H, { rows: [his], accounts: [GAVA] })).toEqual([])
+    expect(planDedupe([out, inn], H, null, { rows: [his], accounts: [GAVA] }).auto).toEqual([])
+    // a left-out row is never itself paired or merged, alone with the counted one either
+    expect(transferPairs([inn], H, { rows: [his], accounts: [GAVA] })).toEqual([])
+    // and one that could not be the source (another amount, or weeks apart) changes nothing
+    expect(transferPairs([out, inn], H, { rows: [{ ...his, amount: 99 }], accounts: [GAVA] })).toHaveLength(1)
+    expect(transferPairs([out, inn], H, { rows: [{ ...his, date: '2026-10-01' }], accounts: [GAVA] })).toHaveLength(1)
   })
 })
 

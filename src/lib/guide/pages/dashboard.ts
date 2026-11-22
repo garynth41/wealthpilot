@@ -149,7 +149,7 @@ export const dashboard: GuidePage = {
       title: 'Spending · last 30 days',
       what: 'Where the last 30 days\' spending went, by category group, biggest first (up to seven groups).',
       fields: [
-        { term: 'Group amounts', text: 'Spending in each category group over the last 30 days: expenses, on a card too, less refunds. Split transactions count each part in its own group; transactions excluded from budget are left out.' },
+        { term: 'Group amounts', text: 'Spending in each category group over the last 30 days: expenses, on a card too, less refunds. Split transactions count each part in its own group; transactions you left out are not counted.' },
         { term: 'Total', text: 'All spending over the 30 days, less refunds.' },
         { term: 'loan payments', text: 'Payments into your mortgage and other loans over the 30 days, shown apart from spending. Card payments are not shown: what you bought with the cards is already in the groups.' },
         { term: 'trends →', text: 'Opens Trends & Analysis for spending over weeks, months and years.' },

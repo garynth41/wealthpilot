@@ -10,10 +10,11 @@ export const income: GuidePage = {
     'When a paycheck lands, click Allocate… beside it under Recent paychecks to see what it has to cover until the next one.',
   ],
   top: [
+    { term: 'May be your own money (bar)', text: 'Shown when some of the income on file looks like money that only moved between accounts — a transfer in from an account you left out or have not connected, or money you sent and got back. It gives the amount. Check it opens Check your money in and out on Transactions, where each one can be left out, joined into one transfer, or kept as income.' },
     { term: 'Take-home per month', text: 'What your active income sources bring in during an average month: each source\'s take-home × paychecks a year ÷ 12, added up. An Irregular source is a one-off — a bonus, a refund — so it is not monthly income: it is left out here (underneath says how many are), and the cash calendar, the runway and the Plan count it once, in its own month. Underneath: how many sources are active and the yearly total.' },
     { term: 'Next paycheck', text: 'The next payday still to come across all active sources in the next 90 days, with the source, its take-home and how many days away it is. A payday whose deposit is already in your transactions — logged, from the bank feed, or a day or two early — is skipped, so on payday it shows the one after. Green when it is three days away or less.' },
     { term: 'Expected · period', text: 'What your active sources should pay during the current budget period: each source\'s take-home × the number of its paydays inside the period. The period follows the budget cadence chosen in Settings.' },
-    { term: 'Received · period', text: 'The total of every income transaction dated in the current budget period (any deposit, not only paychecks; anything excluded from the budget is left out), and what share of Expected it is. Green once it reaches Expected.' },
+    { term: 'Received · period', text: 'The total of every income transaction dated in the current budget period (any deposit, not only paychecks; anything you left out is not counted), and what share of Expected it is. Green once it reaches Expected.' },
     { term: 'Pay cadence', text: 'How often the first active source in the table is paid (labeled "primary source"), and how many other sources there are. Pay-period budgets follow the active source with the largest take-home.' },
   ],
   cards: [
@@ -64,7 +65,7 @@ export const income: GuidePage = {
       title: 'Income received by month',
       what: 'A bar chart of the income you actually received in each of the last six months, against the take-home your schedules expect in an average month.',
       fields: [
-        { term: 'Bars', text: 'The total of every income transaction dated in that calendar month (anything excluded from the budget is left out). The current month is only partly through. Hover a bar for the amount.' },
+        { term: 'Bars', text: 'The total of every income transaction dated in that calendar month (anything you left out is not counted). The current month is only partly through. Hover a bar for the amount.' },
         { term: 'Expected / month', text: 'The dotted line: Take-home per month from the top of the page.' },
       ],
       tips: ['Months with three paychecks (every-2-weeks pay) show above the line: a good month to fund a goal or pay extra on debt.'],

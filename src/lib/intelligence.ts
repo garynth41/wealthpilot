@@ -12,7 +12,8 @@ export function merchantKey(payee?: string | null) {
   let s = (payee || '').toLowerCase().replace(/[*#].*$/, '').replace(/\b(pos|debit|purchase|payment|autopay|ach|online|www\.|\.com)\b/g, ' ').replace(/[^a-z0-9 ]+/g, ' ').replace(/\b\d{2,}\b/g, ' ').replace(/\s+/g, ' ').trim()
   return s || 'unknown'
 }
-const spendTx = (d: Data) => d.transactions.filter(t => t.kind === 'expense' && t.status !== 'void')
+/** Purchases the merchant figures are built from — not void, and not left out of the figures (0.37.0). */
+const spendTx = (d: Data) => d.transactions.filter(t => t.kind === 'expense' && t.status !== 'void' && !t.exclude_from_budget)
 const med = (a: number[]) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2 }
 const mean = (a: number[]) => (a.length ? sum(a) / a.length : 0)
 const sd = (a: number[]) => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(sum(a.map(x => (x - m) ** 2)) / (a.length - 1)) }

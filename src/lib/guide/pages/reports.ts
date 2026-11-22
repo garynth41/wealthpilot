@@ -51,8 +51,8 @@ export const reports: GuidePage = {
       title: 'Summary',
       what: 'The headline numbers for the period: what came in, what went out, what you kept, and your net worth today.',
       fields: [
-        { term: 'Income', text: 'Every income transaction dated in the period, except ones excluded from the budget. Money credited to a card or loan is never income: it is a refund (or, when the same amount left your checking or savings, a payment).' },
-        { term: 'Spending', text: 'Every expense dated in the period, except ones excluded from the budget, less refunds. A purchase on a card is spending the day you make it. Transfers between your own accounts — paying a card included — are not spending.' },
+        { term: 'Income', text: 'Every income transaction dated in the period, except ones you left out. Money credited to a card or loan is never income: it is a refund (or, when the same amount left your checking or savings, a payment).' },
+        { term: 'Spending', text: 'Every expense dated in the period, except ones you left out, less refunds. A purchase on a card is spending the day you make it. Transfers between your own accounts — paying a card included — are not spending.' },
         { term: 'Loan payments', text: 'Payments into mortgages and auto, student, personal and other loans during the period. They are money leaving the household, so they come off what you kept.' },
         { term: 'Card payments', text: 'Payments into credit cards, store cards, lines of credit and buy-now-pay-later accounts. Shown for information only: what you bought with the card is already in Spending, so paying the card is not taken off again.' },
         { term: 'Net (kept)', text: 'Income minus spending minus loan payments — what was left over. The same rule as the Dashboard, Budget, Trends and Spending Intelligence.' },
@@ -96,7 +96,7 @@ export const reports: GuidePage = {
       title: 'Spending by category',
       what: 'What you spent in each category this period, against the period before, with a chart by category and a ring by group.',
       fields: [
-        { term: 'Total spending', text: 'Every expense in the period, except ones excluded from the budget, less refunds (a refund comes off its own category).' },
+        { term: 'Total spending', text: 'Every expense in the period, except ones you left out, less refunds (a refund comes off its own category).' },
         { term: 'Essential / Discretionary', text: 'Spending in categories whose priority is Essential or Discretionary (set in Settings → Categories). Important spending makes up the rest.' },
         { term: 'Categories', text: 'How many categories had spending in either period.' },
         { term: 'Group / Category', text: 'The category and the group it belongs to. Spending with no category shows as Uncategorized.' },
@@ -284,7 +284,7 @@ export const reports: GuidePage = {
       ],
       tips: [
         'The screen shows the first 150 transactions; Excel and CSV include every row.',
-        'Merged duplicates and voided transactions are left out. Transactions excluded from the budget are included here.',
+        'Merged duplicates and voided transactions are left out. Transactions you left out of your figures are included here.',
       ],
     },
   ],

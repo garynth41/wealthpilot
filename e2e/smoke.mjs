@@ -460,6 +460,55 @@ for (const W of [1400, 390]) {
       ok(await count() === n0 && (await groups()).join() === g0.join(), 'the copy is deleted and the groups are as they were')
       await p.screenshot({ path: 'e2e/shots/categories_groups.png' })
     }
+    // 0.37.0: Leave out, and "Check your money in and out" — income and spending that is only money moving are found, and fixed in a press
+    { const before = await p.evaluate(() => localStorage.getItem('wealthpilot.demo'))
+      await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(1200)
+      ok(await p.locator('[data-mc=banner]').count() === 0, 'the sample household has nothing to check: no banner')
+      const tile = async l => (await p.locator('.kpis .kpi', { hasText: l }).first().locator('.v').innerText()).replace(/[^0-9.]/g, '')
+      const inc0 = +(await tile('Income')), sp0 = +(await tile('Spending'))
+      const added = await p.evaluate(() => { const K = 'wealthpilot.demo', j = JSON.parse(localStorage.getItem(K) || 'null'); if (!j) return 0
+        const base = j.data.transactions.find(t => t.kind === 'expense' && t.category_id), old = '2026-01-01T00:00:00.000Z', n = new Date(), day = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+        const acct = name => j.data.accounts.find(a => a.name === name).id, CHK = acct('Huntington Checking'), CHK2 = acct('Chase Total Checking'), SAV = acct('Ally Savings')
+        const mk = (id, kind, payee, amount, account_id, category_id = null) => ({ ...base, id, ref: null, kind, payee, amount, account_id, to_account_id: null, category_id, memo: null, tags: [], date: day, source: 'import', external_id: 'e2e:' + id, exclude_from_budget: false, duplicate_of: null, dedupe_ok: false, created_at: old, updated_at: '2026-01-02T00:00:00.000Z' })
+        const rows = [mk('e2e-m1', 'expense', 'Zelle payment to Pat Lee Conf# a1x9', 200, CHK, base.category_id), mk('e2e-m2', 'income', 'Zelle payment from Pat Lee Conf# b2y8', 200, CHK),
+          mk('e2e-m3', 'income', 'INTERNET TFR FRM CHECKING', 18, CHK),
+          // two like amounts left two accounts the same day: the app will not guess which one reached savings, so they wait to be checked
+          mk('e2e-m4', 'expense', 'ONLINE TRANSFER TO SAVINGS', 77, CHK), mk('e2e-m5', 'expense', 'ONLINE TRANSFER TO SAVINGS', 77, CHK2), mk('e2e-m6', 'income', 'ONLINE TRANSFER FROM CHECKING', 77, SAV)]
+        j.data.transactions.push(...rows); localStorage.setItem(K, JSON.stringify(j)); return rows.length })
+      await p.reload(); await p.waitForTimeout(1200); if (await p.locator('text=Open the offline demo').count()) { await p.click('text=Open the offline demo'); await p.waitForTimeout(1200) }
+      await p.goto('http://localhost:4173/#/transactions'); await p.waitForTimeout(1500)
+      const inc1 = +(await tile('Income')), sp1 = +(await tile('Spending')), ban = await p.locator('[data-mc=banner]').innerText().catch(() => '')
+      ok(added === 6 && Math.abs(inc1 - inc0 - 295) < 0.01 && Math.abs(sp1 - sp0 - 354) < 0.01 && /4 things to check/.test(ban) && /\$295/.test(ban) && /\$354/.test(ban), `money that only moved is counted at first (+$295 income, +$354 spending) and the ledger says so: "${ban.replace(/\s+/g, ' ').slice(0, 90)}…"`)
+      await p.goto('http://localhost:4173/#/'); await p.waitForTimeout(1200); ok(/4 things to check in your income and spending/.test(await p.locator('.card', { hasText: 'Needs attention' }).innerText()), 'the Dashboard lists it under Needs attention')
+      await p.locator('.card', { hasText: 'Needs attention' }).locator('a', { hasText: 'things to check' }).click(); const dlg = p.locator('.modal[role=dialog]'); await dlg.waitFor({ timeout: 6000 })
+      const kindsNow = () => dlg.locator('[data-mc-item]').evaluateAll(els => els.map(e => e.getAttribute('data-mc-item')))
+      ok(/#\/transactions/.test(p.url()) && (await dlg.locator('h2').innerText()) === 'Check your money in and out' && (await kindsNow()).join() === 'roundtrip,pair,move,move', `its link opens the check: ${(await kindsNow()).join(', ')}`)
+      ok(/Sent to Pat Lee and received back/.test(await dlg.locator('[data-mc-item=roundtrip]').innerText()) && /One move from (Huntington Checking|Chase Total Checking) to Ally Savings/.test(await dlg.locator('[data-mc-item=pair]').innerText()), 'each one says what it is: sent to Pat Lee and received back; one move from checking to savings')
+      ok(await dlg.evaluate(e => e.scrollWidth <= e.clientWidth + 1), 'the check fits the screen'); await p.screenshot({ path: 'e2e/shots/money_check.png' })
+      await dlg.locator('[data-mc-item=roundtrip] button', { hasText: 'Leave both out' }).click(); await p.waitForTimeout(900)
+      ok((await kindsNow()).join() === 'pair,move,move', 'Leave both out takes the out-and-back off the list')
+      await dlg.locator('[data-mc-item=pair] button', { hasText: 'Make it one transfer' }).click(); await p.waitForTimeout(1100)
+      ok((await kindsNow()).join() === 'move,move', 'Make it one transfer joins the two rows')
+      await dlg.locator('[data-mc-item=move]', { hasText: 'INTERNET TFR FRM CHECKING' }).locator('button', { hasText: /^Leave out$/ }).click(); await p.waitForTimeout(900)
+      const act = p.locator('.toast button', { hasText: 'Always leave out ones like this' }); const offered = await act.count(); if (offered) { await act.click(); await p.waitForTimeout(900) }
+      await dlg.locator('[data-mc-item=move] button', { hasText: /^Keep$/ }).click(); await p.waitForTimeout(900)
+      ok(offered === 1 && await dlg.locator('[data-mc=clear]').count() === 1, 'Leave out offers "Always leave out ones like this"; Keep settles the last one — nothing left to check')
+      await dlg.locator('button', { hasText: 'Done' }).click(); await p.waitForTimeout(500)
+      const inc2 = +(await tile('Income')), sp2 = +(await tile('Spending'))
+      ok(Math.abs(inc2 - inc0) < 0.01 && Math.abs(sp2 - sp0 - 77) < 0.01 && await p.locator('[data-mc=banner]').count() === 0, `income is back to what was earned, and spending keeps only the $77 that was kept (${inc2.toFixed(2)}, ${sp2.toFixed(2)})`)
+      // the ledger: what is left out is one filter away, dimmed, and one tick from counting again
+      await p.locator('.slicer', { hasText: 'Type' }).locator('button', { hasText: 'Left out' }).click(); await p.waitForTimeout(700)
+      const outRows = p.locator('.tbl-grid tbody tr'); const nOut = await outRows.count()
+      ok(nOut === 3 && await p.locator('.tbl-grid tbody tr.ex-off').count() === 3, `the Left out view lists the ${nOut} rows that were left out, dimmed`)
+      const box = outRows.filter({ has: p.locator('input[value*="Zelle payment from Pat Lee"]') }).locator('input[type=checkbox][aria-label="Leave out"]'); ok(await box.isChecked(), 'each has its Leave out box ticked')
+      await box.click(); await p.waitForTimeout(900); ok(await outRows.count() === 2 && Math.abs(+(await tile('Income')) - 0) < 0.01, 'unticking it counts the row again and it leaves the view')
+      await p.locator('.slicer', { hasText: 'Type' }).locator('button', { hasText: /^All$/ }).click(); await p.waitForTimeout(700)
+      ok(Math.abs(+(await tile('Income')) - inc0 - 200) < 0.01, 'and the Income tile has it back')
+      // a rule was written for the description left out "always": a later row like it arrives left out
+      await p.goto('http://localhost:4173/#/settings?tab=rules'); await p.waitForTimeout(1200)
+      const rule = p.locator('.tbl-grid tbody tr', { has: p.locator('input[value="internet tfr frm checking"]') }); ok(await rule.count() === 1 && await rule.locator('input[type=checkbox][aria-label="Leave out"]').isChecked(), 'Settings → Payee rules shows the rule, with Leave out ticked')
+      await p.evaluate(v => localStorage.setItem('wealthpilot.demo', v), before); await p.reload(); await p.waitForTimeout(1200); if (await p.locator('text=Open the offline demo').count()) { await p.click('text=Open the offline demo'); await p.waitForTimeout(1200) }
+    }
     await p.keyboard.press('g'); await p.keyboard.press('d'); await p.waitForTimeout(500); ok(p.url().endsWith('#/'), 'G then D jumps to the Dashboard')
     ok(/Safe to spend/.test(await p.locator('.kpis').first().textContent()) && /\/day for \d+ day/.test(await p.locator('.kpis').first().textContent()), 'the Dashboard shows Safe to spend with a per-day figure')
     await p.keyboard.press('?'); await p.waitForTimeout(300); ok(/Keyboard shortcuts/.test(await p.locator('.modal').textContent()), '? opens the shortcut list'); await p.keyboard.press('Escape'); await p.waitForTimeout(200)

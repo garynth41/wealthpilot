@@ -16,6 +16,7 @@ import { goalProgress } from '../lib/goals'
 import { nextPaycheck } from '../lib/paySchedule'
 import { isOpenItem } from '../lib/email/apply'
 import { fmtMoney, sum } from '../lib/money'
+import { moneyChecks, checkSummary } from '../lib/moneyCheck'
 import { addDays, diffDays, fmtD, fmtDY, today } from '../lib/dates'
 import { AddTxn } from './Transactions'
 import { linkTo } from '../lib/focus'
@@ -58,6 +59,8 @@ export function Dashboard() {
   if (ps && ps.uncat > 0) attention.push({ c: 'info', t: `${fmtMoney(ps.uncat)} uncategorized this period`, m: 'categorize it so the budget is right', d: 'Uncategorized' })
   // 0.27.0: transactions that may be the same one twice — the engine merges the clear cases itself; these need a person
   { const tw = accountTwins(data); if (tw.length) attention.push({ c: 'info', id: 'twins', t: `${tw.length} account${tw.length === 1 ? ' is' : 's are'} listed more than once`, m: `${tw.slice(0, 3).map(g => g.name).join(', ')}${tw.length > 3 ? '…' : ''} — fold the copies into one so payments land in one place`, d: 'Accounts' }) }
+  // 0.37.0: income or spending that looks like money which only moved between accounts
+  { const mc = checkSummary(moneyChecks(data, settings)); if (mc.n) attention.push({ c: 'info', t: `${mc.n} thing${mc.n === 1 ? '' : 's'} to check in your income and spending`, m: `money that may only have moved between accounts${mc.income > 0 ? ` — ${fmtMoney(mc.income)} counted as income` : ''}${mc.spending > 0 ? `${mc.income > 0 ? ',' : ' —'} ${fmtMoney(mc.spending)} as spending` : ''}`, d: 'Money check' }) }
   if (dupN.review > 0) attention.push({ c: 'info', id: 'dups', t: `${dupN.review} possible duplicate${dupN.review === 1 ? '' : 's'} to check`, m: 'same payee and amount, or nearly — merge or keep both', d: 'Duplicates' })
   data.hardship.filter(h => !['Closed', 'Not needed', 'Declined', 'Enrolled'].includes(h.status) && h.next_followup && h.next_followup <= t).forEach(h => attention.push({ c: 'warn', id: h.id, t: `Call ${h.entity}`, m: `follow-up ${h.next_followup === t ? 'today' : 'was ' + fmtDY(h.next_followup!)}`, d: 'Hardship' }))
   revalueDue(data, t).forEach(r => attention.push({ c: 'info', id: 'asset:' + r.a.id, t: `Update the value of ${r.a.name}`, m: r.asOf ? `last valued ${fmtDY(r.asOf)} (${r.age} days ago)${r.estimate != null ? ` — the guide estimates ${fmtMoney(r.estimate)} now` : ''}` : 'no as-of date on the value yet', d: 'Accounts' }))
@@ -68,7 +71,7 @@ export function Dashboard() {
   const attnTone = hasData ? (['crit', 'warn', 'info'].find(c => attention.some(a => a.c === c)) || 'good') : null
   const last30 = rangeStat(data, addDays(t, -29), t); const grpRows = Object.entries(last30.byGroup).sort((a, b) => b[1] - a[1]).slice(0, 7); const drill = useDrill()
   const desk = typeof document !== 'undefined' && document.documentElement.dataset.style === 'terminal'   // Terminal draws the cash card as bars
-  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Uncategorized: '/transactions?kind=uncat&review=1', Duplicates: '/transactions?dups=1', Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
+  const link: Record<string, string> = { Bills: '/bills', Accounts: '/accounts', Email: '/email', Forecast: '/forecast', Budget: '/budget', Transactions: '/transactions', Review: '/transactions?tag=' + REVIEW_TAG, Uncategorized: '/transactions?kind=uncat&review=1', Duplicates: '/transactions?dups=1', 'Money check': '/transactions?check=1', Hardship: '/hardship', Reconcile: '/reconcile', Debts: '/debts', 'Cash & Account Operations': '/connections' }
   const cards: Record<string, ReactNode> = {
     setup: <SetupCard />,
     paycheck: <PaycheckCard />,
@@ -106,7 +109,7 @@ export function Dashboard() {
 
 type Cal = ReturnType<typeof cashCalendar>; type Cc = ReturnType<typeof C>
 /** Where an attention item leads, as the desk's short tag (0.26.1). */
-const SHORT: Record<string, string> = { Duplicates: 'dupes', Bills: 'bills', Accounts: 'accts', Email: 'email', Forecast: 'cash', Budget: 'budget', Transactions: 'ledger', Uncategorized: 'ledger', Review: 'review', Hardship: 'calls', Reconcile: 'recon', Debts: 'credit', 'Cash & Account Operations': 'sync' }
+const SHORT: Record<string, string> = { 'Money check': 'ledger', Duplicates: 'dupes', Bills: 'bills', Accounts: 'accts', Email: 'email', Forecast: 'cash', Budget: 'budget', Transactions: 'ledger', Uncategorized: 'ledger', Review: 'review', Hardship: 'calls', Reconcile: 'recon', Debts: 'credit', 'Cash & Account Operations': 'sync' }
 /** Terminal's cash card (0.26.1): one bar per day at that day's closing balance — amber, green where a paycheck lands, red at the low point. */
 function cashBarsData(cal: Cal, c: Cc) {
   const days = cal.daily.map(x => x.d); const pay = new Set(cal.items.filter(i => i.src === 'pay' && i.amt > 0).map(i => i.date)); const labels = new Map<string, string[]>()

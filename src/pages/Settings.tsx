@@ -135,7 +135,7 @@ function RulesTab() {
     { k: 'category_id', label: 'Set category', type: 'select', opts: ['', ...catOpts(['expense', 'income']).map(c => c.id)], labels: { '': '—', ...catLabels }, w: 190 },
     { k: 'account_id', label: 'Set account', type: 'select', opts: ['', ...accts.map(a => a.id)], labels: { '': '—', ...acctLabels }, w: 160 },
     { k: 'rename', label: 'Rename payee to', type: 'text', w: 140, placeholder: 'Kroger' },
-    { k: 'exclude_from_budget', label: 'Not in budget', type: 'bool', w: 70 },
+    { k: 'exclude_from_budget', label: 'Leave out', type: 'bool', w: 70 },
     { k: 'tags', label: 'Add tags', type: 'text', w: 130, placeholder: 'tag, tag', sortVal: r => (r.tags || []).join(',') || null },
     { k: 'review', label: 'Flag for review', type: 'bool', w: 70 },
     { k: 'goal_id', label: 'Count toward goal', type: 'select', opts: ['', ...goalOpts.map(g => g.id)], labels: { '': '—', ...Object.fromEntries(goalOpts.map(g => [g.id, g.name])) }, w: 160 },

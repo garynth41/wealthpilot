@@ -19,7 +19,7 @@ export interface HeatCell { date: string; amount: number; week: number; dow: num
 export function spendingHeatmap(d: Data, weeks = 26, asOf = today()): { cells: HeatCell[]; max: number; thresholds: number[]; total: number } {
   const dow0 = (s: string) => (new Date(s + 'T12:00').getDay() + 6) % 7   // Monday = 0
   const end = addDays(asOf, 6 - dow0(asOf)), start = addDays(end, -(weeks * 7) + 1)
-  const by = new Map<string, number>(); for (const t of d.transactions) if (t.kind === 'expense' && t.status !== 'void' && t.date >= start && t.date <= asOf) by.set(t.date, (by.get(t.date) || 0) + t.amount)
+  const by = new Map<string, number>(); for (const t of d.transactions) if (t.kind === 'expense' && t.status !== 'void' && !t.exclude_from_budget && t.date >= start && t.date <= asOf) by.set(t.date, (by.get(t.date) || 0) + t.amount)
   const nz = [...by.values()].filter(v => v > 0).sort((a, b) => a - b); const q = (p: number) => nz.length ? nz[Math.min(nz.length - 1, Math.floor(p * (nz.length - 1)))] : 0
   const thresholds = [q(0.25), q(0.5), q(0.75)]; const cells: HeatCell[] = []
   for (let i = 0; i < weeks * 7; i++) { const date = addDays(start, i); if (date > asOf) break; const amount = round2(by.get(date) || 0); const level = (amount <= 0 ? 0 : amount <= thresholds[0] ? 1 : amount <= thresholds[1] ? 2 : amount <= thresholds[2] ? 3 : 4) as HeatCell['level']; cells.push({ date, amount, week: Math.floor(i / 7), dow: i % 7, level }) }

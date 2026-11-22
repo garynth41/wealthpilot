@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import { useData } from '../app/hooks'
 import { useStore } from '../app/store'
-import type { Account, Transaction } from '../app/data/types'
+import type { Account, OffBooks, Transaction } from '../app/data/types'
 import { Btn, Note, Pill, MHead, MBody, MFoot, useConfirm } from '../components/ui'
 import { planDedupe, keeperOrder, keeperPatch, origin, type DTxn, type DedupeOptions } from '../lib/dedupe'
 import { fmtD } from '../lib/dates'
@@ -13,14 +13,14 @@ import { linkTo } from '../lib/focus'
 const ORIGIN: Record<string, [string, string]> = { bank: ['bank feed', 'good'], file: ['statement file', 'info'], typed: ['typed / email', 'idle'] }
 const srcPill = (t: Transaction) => { const o = origin(t as unknown as DTxn); const [l, c] = ORIGIN[o]; return <Pill cls={c}>{t.source === 'email' ? 'email' : l}</Pill> }
 
-export function duplicateCounts(txns: Transaction[], merged: Transaction[], accounts: Account[] = [], options?: DedupeOptions | null) {
-  const plan = planDedupe(txns as unknown as DTxn[], accounts, options)
+export function duplicateCounts(txns: Transaction[], merged: Transaction[], accounts: Account[] = [], options?: DedupeOptions | null, off?: OffBooks | null) {
+  const plan = planDedupe(txns as unknown as DTxn[], accounts, options, off ? { rows: off.transactions as unknown as DTxn[], accounts: off.accounts } : null)
   return { review: plan.review.length, pendingAuto: plan.auto.reduce((n, g) => n + g.dups.length, 0), merged: merged.length }
 }
 
 export function DuplicatesReview({ onDone }: { onDone: () => void }) {
   const { data, acctLabels, guarded, canEdit, settings } = useData(); const st = useStore.getState; const confirm = useConfirm()
-  const plan = useMemo(() => planDedupe(data.transactions as unknown as DTxn[], data.accounts, settings.dedupe), [data.transactions, data.accounts, settings.dedupe])
+  const plan = useMemo(() => planDedupe(data.transactions as unknown as DTxn[], data.accounts, settings.dedupe, data.off ? { rows: data.off.transactions as unknown as DTxn[], accounts: data.off.accounts } : null), [data.transactions, data.accounts, settings.dedupe, data.off])
   const byId = useMemo(() => new Map([...data.transactions, ...data.duplicates].map(t => [t.id, t])), [data.transactions, data.duplicates])
   const line = (t?: Transaction) => t ? <div style={{ display: 'grid', gridTemplateColumns: '92px 1fr 150px 92px 110px', gap: 8, alignItems: 'center', fontSize: 13 }}>
     <span>{fmtD(t.date)}</span><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.payee || ''}><Link to={linkTo('/transactions', t.id)} onClick={onDone}>{t.payee || <i style={{ color: 'var(--ink-3)' }}>no payee</i>}</Link></span>

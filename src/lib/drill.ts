@@ -55,7 +55,7 @@ export function drillLines(d: Data, f: DrillFilter): DrillLine[] {
   } else if (f.flow === 'budget') {
     lines = categoryLines(d, tx).flatMap(l => { const fl = flowOf(l.txn, acct); return fl === 'income' || fl === 'card' ? [] : fl === 'spend' ? [line(l)] : fl === 'refund' ? [line(l, -1)] : [line(l, 1, FIXED[fl] || 'transfer')] })
   } else if (f.flow === 'purchases') {
-    lines = categoryLines(d, d.transactions.filter(t => t.kind === 'expense' && inRange(t, f.from, f.to))).map(l => line(l))
+    lines = categoryLines(d, d.transactions.filter(t => t.kind === 'expense' && inRange(t, f.from, f.to) && budgetable(t))).map(l => line(l))   // as the merchant charts count: every purchase that is not left out
   } else {
     lines = spendLines(d, tx, acct).map(l => line(l))
   }

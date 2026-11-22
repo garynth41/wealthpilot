@@ -157,7 +157,7 @@ export const settings: GuidePage = {
         { term: 'Applies to', text: 'any, expenses or income.' },
         { term: 'Set category / Set account', text: 'The category and the account to give matching transactions.' },
         { term: 'Rename payee to', text: 'A clean name to show instead, for example Kroger.' },
-        { term: 'Not in budget', text: 'Marks matching transactions as excluded from the budget.' },
+        { term: 'Leave out', text: 'Matching transactions arrive left out of your income and spending. They stay in the ledger, dimmed, and can be counted again there. Transactions → Leave out → Always leave out ones like this writes this for you.' },
         { term: 'Add tags', text: 'Tags to add, separated by commas.' },
         { term: 'Flag for review', text: 'Adds the review tag. Flagged transactions show on the Dashboard and under #review on Transactions.' },
         { term: 'Count toward goal', text: 'Logs a contribution to that savings goal for each matching transaction.' },
