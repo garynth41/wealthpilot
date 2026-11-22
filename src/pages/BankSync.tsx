@@ -59,8 +59,8 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     for (const [sfId, v] of Object.entries(map)) {
       if (!v) continue
       if (v !== NEW) { final[sfId] = v; continue }
-      const d = c.discovered.find(x => x.id === sfId)!; const kind = guessKind(d.name, d.balance)
-      const made = await insert('accounts', { name: nameParts(d.name, d.last4).base || d.name, kind: kind as never, institution: d.org || null, last4: d.last4, balance: balanceFor(d, kind), balance_as_of: today(), status: 'Active', include_in_cash: kind !== 'retirement' })
+      const d = c.discovered.find(x => x.id === sfId)!; const kind = guessKind(d.name, d.balance), np = nameParts(d.name, d.last4)   // the clean name, and the digits the name marks when the bank's list has none
+      const made = await insert('accounts', { name: np.base || d.name, kind: kind as never, institution: d.org || null, last4: d.last4 || np.l4 || null, balance: balanceFor(d, kind), balance_as_of: today(), status: 'Active', include_in_cash: kind !== 'retirement' })
       final[sfId] = made.id
     }
     await repo!.syncSetMap(final); return final

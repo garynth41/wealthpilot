@@ -39,6 +39,17 @@ describe('account names say the last four digits once, at the end, in brackets (
     expect(acctTitle('(0224)', '0224')).toBe('(0224)')
     expect(acctTitle('Joint', 'AB12')).toBe('Joint (AB12)')   // letters in the field: shown as typed, nothing taken out
   })
+  it('leaves a number inside a longer note in brackets alone', () => {
+    expect(acctTitle('Roth IRA (2024 contributions)', null)).toBe('Roth IRA (2024 contributions)')
+    expect(nameParts('Roth IRA (2024 contributions)', null)).toEqual({ base: 'Roth IRA (2024 contributions)', l4: '' })
+    expect(acctTitle('Roth IRA (2024 contributions)', '5555')).toBe('Roth IRA (2024 contributions) (5555)')
+    expect(acctTitle('Roth IRA (2024 contributions)', '2024')).toBe('Roth IRA (2024 contributions) (2024)')   // never left with half a bracket
+    expect(acctTitle('Savings [ 4958 ]', null)).toBe('Savings (4958)')
+  })
+  it('two names that differ only in how they write the same digits are told apart by reference', () => {
+    const two = [A('Visa x1111', '1111', { id: 'v1', ref: 'A-3' }), A('Visa (1111)', '1111', { id: 'v2', ref: 'A-4' }), A('Indigo', '7409')]
+    expect(two.map(a => acctLabel(a, two))).toEqual(['Visa x1111 (A-3)', 'Visa (1111) (A-4)', 'Indigo'])
+  })
   it('acctLabel tidies a name that carries its digits and leaves other names as they are', () => {
     const all = [A('Adv Plus Banking(0224)', '0224'), A('Gary Checking (4019)', '4019'), A('Indigo', '7409'), A('Student loan')]
     expect(all.map(a => acctLabel(a, all))).toEqual(['Adv Plus Banking (0224)', 'Gary Checking (4019)', 'Indigo', 'Student loan'])
