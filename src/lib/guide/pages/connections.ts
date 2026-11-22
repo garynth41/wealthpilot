@@ -35,7 +35,7 @@ export const connections: GuidePage = {
         { term: 'Setup token / Connect', text: 'Shown before a bank is connected. Only an owner can connect.' },
         { term: 'Connected / Needs attention', text: 'Whether the last sync worked, with when it ran (or "Not synced yet").' },
         { term: 'Last sync failed / Note from SimpleFIN', text: 'The message from the last sync. A red "Last sync failed" usually means the bank wants you to sign in again in SimpleFIN. An amber note means the sync still worked.' },
-        { term: 'At the bank / Balance', text: 'Each account SimpleFIN reports (the bank, the account name and its last four digits) and the balance the bank shows.' },
+        { term: 'At the bank / Balance', text: 'Each account SimpleFIN reports and the balance the bank shows: the bank, then the account name with its last four digits once, in brackets at the end, however many times the bank writes them into the name.' },
         { term: 'Goes into', text: 'Where that bank account\'s balance and transactions go. Each of your accounts can be matched to only one bank account. A new account takes its type from the bank\'s account name (checking, savings, card, mortgage, retirement and so on) and starts at the bank\'s balance.' },
         { term: 'Auto-match', text: 'Suggests a match for each bank account from its last four digits, the bank and the name; anything without a match is set to create a new account. Review the choices before saving.' },
         { term: 'Save matching only', text: 'Saves the matches without syncing.' },

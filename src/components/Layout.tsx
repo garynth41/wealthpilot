@@ -10,7 +10,7 @@ import { FeedbackButton } from './Feedback'
 import { AskButton, askVisible, useAiStatus } from './AskCresari'
 import { fmtDY, fmtDT, fmtD, fmtDow, today, addDays, ago } from '../lib/dates'
 import { fm2, fmtMoney } from '../lib/money'
-import { isLiability, balanceOf, debtBal } from '../lib/accounts'
+import { isLiability, balanceOf, debtBal, acctTitle } from '../lib/accounts'
 import { balanceOn } from '../lib/history'
 import { upcoming } from '../lib/recurring'
 import { isOpenItem } from '../lib/email/apply'
@@ -258,7 +258,7 @@ function Ticker() {
     {accts.map(a => { const li = isLiability(a); const bal = li ? debtBal(a, data) : balanceOf(a, data)   // the verified figures every page shows (0.27.1), not the raw book balance
       // the 30-day move compares like with like: the book balance now against the book balance then (balanceOn is book history)
       const prev = li ? null : balanceOn(data, a, since).balance; const d = prev == null ? null : Math.round(((+a.balance || 0) - prev) * 100) / 100
-      return <Link key={a.id} to={linkTo('/accounts', a.id)} className="tk"><span className="tk-n">{a.name}{a.last4 ? ` ··${a.last4}` : ''}</span><b className={li ? 'neg' : ''}>{li ? '−' : ''}{fm2(Math.abs(bal))}</b>
+      return <Link key={a.id} to={linkTo('/accounts', a.id)} className="tk"><span className="tk-n">{acctTitle(a.name, a.last4)}</span><b className={li ? 'neg' : ''}>{li ? '−' : ''}{fm2(Math.abs(bal))}</b>
         {li ? <span className="tk-d">{a.autopay && a.due_date ? `autopay ${fmtD(a.due_date)}` : a.due_date ? `due ${fmtD(a.due_date)}` : ''}</span> : d != null && Math.abs(d) >= 1 ? <span className={`tk-d ${d > 0 ? 'up' : 'down'}`}>{d > 0 ? '▲' : '▼'} {fmtMoney(Math.abs(d))}</span> : null}</Link> })}
     <span className="tk tk-end"><span className={`tk-dot ${sync?.kind === 'sync_failure' ? 'bad' : sync ? 'ok' : ''}`} />sync {sync ? fmtDT(sync.created_at) : 'never'} · v{APP_VERSION}</span>
   </div>

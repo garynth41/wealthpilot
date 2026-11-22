@@ -7,7 +7,7 @@ import { autoMatch, guessKind, balanceFor } from '../lib/simplefin'
 import { today, fmtDY, fmtDT } from '../lib/dates'
 import type { SyncConnection } from '../app/data/types'
 import { fm2 } from '../lib/money'
-import { acctLabel } from '../lib/accounts'
+import { acctLabel, acctTitle, nameParts } from '../lib/accounts'
 import { syncSlot, syncLimitMessage } from '../lib/syncLimit'
 import { isNative } from '../app/native'
 
@@ -59,8 +59,8 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     for (const [sfId, v] of Object.entries(map)) {
       if (!v) continue
       if (v !== NEW) { final[sfId] = v; continue }
-      const d = c.discovered.find(x => x.id === sfId)!; const kind = guessKind(d.name, d.balance)
-      const made = await insert('accounts', { name: d.name.replace(/\s*[(\[]?(?:x+|\*+|\.{2,}|…)\s*\d{4}[)\]]?\s*$/i, '').trim() || d.name, kind: kind as never, institution: d.org || null, last4: d.last4, balance: balanceFor(d, kind), balance_as_of: today(), status: 'Active', include_in_cash: kind !== 'retirement' })
+      const d = c.discovered.find(x => x.id === sfId)!; const kind = guessKind(d.name, d.balance), np = nameParts(d.name, d.last4)   // the clean name, and the digits the name marks when the bank's list has none
+      const made = await insert('accounts', { name: np.base || d.name, kind: kind as never, institution: d.org || null, last4: d.last4 || np.l4 || null, balance: balanceFor(d, kind), balance_as_of: today(), status: 'Active', include_in_cash: kind !== 'retirement' })
       final[sfId] = made.id
     }
     await repo!.syncSetMap(final); return final
@@ -82,7 +82,7 @@ export function BankSyncCard({ onKpi }: { onKpi?: (s: SyncStatus | null) => void
     {c.last_error && <div className={`msg ${c.status === 'error' ? 'crit' : 'warn'}`}>{c.status === 'error' ? <b>Last sync failed: </b> : <b>Note from SimpleFIN (sync still worked): </b>}{c.last_error}{/45 days/i.test(c.last_error) && c.status !== 'error' ? ' — Cresari now asks for at most 44 days at a time, so this note clears on the next sync.' : ''}</div>}
     <div className="tblwrap" style={{ marginTop: 8 }}><table className="tbl"><thead><tr><th>At the bank</th><th className="num">Balance</th><th>Goes into</th></tr></thead><tbody>
       {c.discovered.length === 0 && <tr><td colSpan={3} className="note">No accounts reported by the bank yet — press Sync now once, or check the accounts are linked in SimpleFIN.</td></tr>}
-      {c.discovered.map(d => <tr key={d.id}><td><b>{d.org || '—'}</b> · {d.name}{d.last4 ? <span className="note" style={{ margin: 0, display: 'inline' }}> · …{d.last4}</span> : null}</td><td className="num">{fm2(d.balance)}</td>
+      {c.discovered.map(d => <tr key={d.id}><td><b>{d.org || '—'}</b> · {acctTitle(d.name, d.last4)}</td><td className="num">{fm2(d.balance)}</td>
         <td>{isOwner ? <select className="inp" value={map[d.id] || ''} onChange={e => { setMap({ ...map, [d.id]: e.target.value }); setDirty(true) }}><option value="">— don't import —</option><option value={NEW}>+ Create a new account from this</option>{locals.map(a => <option key={a.id} value={a.id} disabled={used.has(a.id) && map[d.id] !== a.id}>{acctLabel(a, data.accounts)}{a.excluded ? ' (left out of your figures)' : ''}</option>)}</select> : (map[d.id] && locals.find(a => a.id === map[d.id]) ? acctLabel(locals.find(a => a.id === map[d.id])!, data.accounts) + (locals.find(a => a.id === map[d.id])!.excluded ? ' (left out of your figures)' : '') : '—')}</td></tr>)}
     </tbody></table></div>
     {isOwner && c.discovered.length > 0 && <div className="btnrow" style={{ marginTop: 8 }}>

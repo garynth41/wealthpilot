@@ -35,7 +35,7 @@ export const accounts: GuidePage = {
       what: 'Your bank, savings, investment, retirement and cash accounts. You type the starting balance; every transaction you log moves it from there.',
       how: ['Use the + buttons in the card header to add an account, then fill in the new row.', 'Click any cell to edit it. Typing a new Balance also sets As of to today.', 'Use ✕ at the end of a row to delete an account — its transactions stay but lose the account link. To keep the history, set Status to Closed instead.'],
       fields: [
-        { term: 'Account / Type / Institution / Last 4', text: 'How the account is named and shown everywhere. Only the last four digits are ever stored.' },
+        { term: 'Account / Type / Institution / Last 4', text: 'How the account is named and shown everywhere. Only the last four digits are ever stored. Lists show them once, in brackets after the name — "Checking (4410)" — even when the name itself also contains them.' },
         { term: 'Balance', text: 'The account balance today.' },
         { term: 'As of', text: 'The date that balance was true.' },
         { term: 'Counts as cash', text: 'Include this account in cash on hand, safe-to-spend, the runway and the forecast. Usually on for checking, savings and cash; off for investments and retirement.' },

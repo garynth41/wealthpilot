@@ -17,8 +17,39 @@ export const liabilities = (d: Data) => activeAccounts(d).filter(isLiability)
  *  given; without them the bank's figure alone when there is one (no outstanding entries known), else the book balance. Every payoff,
  *  interest, utilization and plan figure uses it, so they agree with the totals. */
 export const debtBal = (a: Account, d?: Pick<Data, 'transactions'>) => Math.max(0, verifiedBalance(a, d ? d.transactions : []))
-/** Label that stays unique when two accounts share a name. */
-export function acctLabel(a: Account, all: Account[]) { const same = all.filter(x => (x.name || '').trim().toLowerCase() === (a.name || '').trim().toLowerCase()); if (same.length < 2) return a.name; if (a.last4 && same.filter(x => x.last4 === a.last4).length === 1) return `${a.name} ··${a.last4}`; return `${a.name} (${a.ref || a.id.slice(0, 4)})` }
+/** Digits a name itself marks as an account number: "(1234)", "x1234", "…1234", "..1234", "••1234", "*1234", "#1234", "ending in 1234".
+ *  A bare number ("Roth IRA 2024") is not taken, and neither is a number inside a longer note in brackets ("Roth IRA (2024
+ *  contributions)"), so a year in a name is never read as an account number. */
+const MARKED = /(?:\bx+|\*+|…|\.{2,}|•+|#|\bending in\s*)\s*(\d{4})(?!\d)|[(\[]\s*(\d{4})\s*[)\]]/i
+/** An account's name and its last four digits, taken apart (0.38.1). Banks and people both write the digits into the name — "Adv Plus
+ *  Banking- 0224 (0224)", "Gary Checking … (4019)", "Total Checking (x4821)" — and the account keeps them in their own field too, so a
+ *  label made of name + digits said them two or three times. `base` is the name with every mention of those digits, and the marks around
+ *  them, taken out; `l4` is the digits: the stored ones, else the ones the name marks. A name that is nothing but the digits keeps itself. */
+export function nameParts(name: string | null | undefined, last4?: string | null): { base: string; l4: string } {
+  const raw = String(name || '').replace(/\s+/g, ' ').trim(), given = String(last4 || '').trim()
+  const mk = raw.match(MARKED); const l4 = given || mk?.[1] || mk?.[2] || ''
+  if (!/^\d{2,}$/.test(l4)) return { base: raw, l4 }   // no digits, or letters in the field: nothing in the name to take out
+  // a mention inside a longer note in brackets — "(2024 contributions)" — has an opening bracket and no closing one next to it: left alone
+  const base = raw.replace(/([\s\-–—·•*#.…(\[]*)(?:\b(?:ending in|x+)\s*)?(\d+)(\s*[)\]]*)/gi, (m, lead: string, digits: string, trail: string) => digits === l4 && /[(\[]/.test(lead) === /[)\]]/.test(trail) ? ' ' : m)
+    .replace(/\s+/g, ' ').replace(/^[\s\-–—·•*#.…,:)\]]+|[\s\-–—·•*#.…,:(\[]+$/g, '')
+  return base ? { base, l4 } : { base: raw, l4: '' }
+}
+/** The one way an account is written where its digits are shown: the name, then the last four once, at the end, in brackets —
+ *  "Adv Plus Banking (0224)". An account with no digits is just its name. */
+export function acctTitle(name: string | null | undefined, last4?: string | null) { const { base, l4 } = nameParts(name, last4); return l4 ? `${base} (${l4})` : base }
+/** Label that stays unique when two accounts share a name. A name that carries its own digits is tidied to "Name (1234)"; a name without
+ *  them is left as it is, and gains its digits only when two accounts share the name. */
+export function acctLabel(a: Account, all: Account[]) {
+  const byRef = `${a.name} (${a.ref || a.id.slice(0, 4)})`, low = (x: string) => x.trim().toLowerCase()
+  const first = (x: Account) => {
+    const { base, l4 } = nameParts(x.name, x.last4); const tidy = l4 && base !== String(x.name || '').replace(/\s+/g, ' ').trim() ? `${base} (${l4})` : x.name
+    const same = all.filter(y => low(y.name || '') === low(x.name || '')); if (same.length < 2) return tidy
+    return x.last4 && same.filter(y => y.last4 === x.last4).length === 1 ? acctTitle(x.name, x.last4) : null
+  }
+  const mine = first(a); if (mine == null) return byRef
+  // two names that differ only in how they write the same digits ("Visa x1111", "Visa (1111)") tidy to one label: told apart by reference
+  return all.some(x => x.id !== a.id && low(first(x) ?? '') === low(mine)) ? byRef : mine
+}
 /** Does this account count toward cash on hand: an active asset account flagged include_in_cash (retirement only when the setting says so). */
 export const countsAsCash = (a: Account, s: Pick<Settings, 'includeRetirementInCash'>) => isActive(a) && isAsset(a) && (a.include_in_cash || (!!s.includeRetirementInCash && a.kind === 'retirement'))
 /** Cash you can spend: active asset accounts flagged include_in_cash (retirement excluded unless the setting says so). */
