@@ -7,7 +7,7 @@ import { Card, KPI, Btn, Pill, Note, Empty, useConfirm, useModal, MHead, MBody, 
 import { Table, type Col } from '../components/Table'
 import { availableBalance, liquidity, goalAllocation } from '../lib/planning'
 import { Link } from 'react-router-dom'
-import { assets, liabilities, isLiability, debtBal, utilization, debtDueState, cashOnHand, netWorth, debtPlanned, balanceOf } from '../lib/accounts'
+import { assets, liabilities, isLiability, debtBal, utilization, debtDueState, cashOnHand, netWorth, debtPlanned, balanceOf, nameParts } from '../lib/accounts'
 import { fmtMoney, fm2, parseNum, sum } from '../lib/money'
 import { addDays, fmtD, fmtDY, today, ago } from '../lib/dates'
 import { post } from '../lib/ledger'
@@ -21,6 +21,9 @@ import { isValuedAsset } from '../lib/assets'
 import { aprAt } from '../lib/debts'
 import { leftOutSummary, offOf } from '../lib/leftOut'
 import { accountTwins, planAccountMerge, type Twins } from '../lib/accountMerge'
+
+/** An account's name with its last four digits once, at the end, in brackets and in a lighter ink (0.38.1). */
+function AcctName({ name, last4 }: { name: string; last4?: string | null }) { const { base, l4 } = nameParts(name, last4); return <><b>{base}</b>{l4 ? <span style={{ color: 'var(--ink-3)' }}> ({l4})</span> : null}</> }
 
 export function AccountsPage() {
   const { data, settings, insert, update, remove, guarded, canEdit, acctLabels, mode, leaveAccountOut, mergeAccounts } = useData(); const confirm = useConfirm(); const { open, close } = useModal()
@@ -66,7 +69,7 @@ export function AccountsPage() {
     <div className="grid g12">
       {twins.length > 0 && <Card span={12} title="Listed more than once" hint="the same account appears several times — fold the copies into one" right={canEdit && twins.length > 1 ? <Btn sm onClick={mergeAll}>Merge all</Btn> : undefined}>
         <div className="tblwrap" data-id="twins"><table className="tbl"><caption className="sr-only">Accounts listed more than once</caption><thead><tr><th>Account</th><th>Type</th><th className="num">Copies</th><th>Copy that is kept</th><th>Moves onto it</th><th className="num">Balance after</th><th></th></tr></thead><tbody>
-          {twins.map(g => { const { bal, moving } = mergeText(g); return <tr key={g.key} className="st-warn"><td><b>{g.name}</b>{g.keeper.last4 ? <span style={{ color: 'var(--ink-3)' }}> ··{g.keeper.last4}</span> : null}</td><td>{ACCOUNT_KIND_LABEL[g.keeper.kind]}</td><td className="num">{g.others.length + 1}</td>
+          {twins.map(g => { const { bal, moving } = mergeText(g); return <tr key={g.key} className="st-warn"><td><AcctName name={g.name} last4={g.keeper.last4} /></td><td>{ACCOUNT_KIND_LABEL[g.keeper.kind]}</td><td className="num">{g.others.length + 1}</td>
             <td>{g.keeper.ref || 'the first one'} · {plural(g.counts[g.keeper.id] || 0, 'transaction')}{g.keeper.bank_balance != null ? ' · bank feed' : ''}</td><td>{moving || 'nothing — the other copies are empty'}</td><td className="num">{fm2(bal)}</td>
             <td>{canEdit && <Btn sm primary onClick={() => void merge(g)} aria-label={`Merge the copies of ${g.name} into one`}>Merge into one</Btn>}</td></tr> })}
         </tbody></table></div>
@@ -74,7 +77,7 @@ export function AccountsPage() {
       </Card>}
       <Card span={12} title="Account balances as last updated" hint="every active account in one place · edit balances in the tables below">
         <Table rows={data.accounts.filter(a => a.status === 'Active').slice().sort((a, b) => (isLiability(a) ? 1 : 0) - (isLiability(b) ? 1 : 0) || a.sort_order - b.sort_order)} name="account-balances" editable={false} search={false} pageSize={50}
-          cols={[{ k: 'institution', label: 'Institution', type: 'ro', fmt: a => a.institution || '—' }, { k: 'name', label: 'Account', type: 'ro', fmt: a => <b>{a.name}{a.last4 ? <span style={{ color: 'var(--ink-3)', fontWeight: 400 }}> ··{a.last4}</span> : null}</b> }, { k: 'kind', label: 'Type', type: 'ro', fmt: a => ACCOUNT_KIND_LABEL[a.kind] },
+          cols={[{ k: 'institution', label: 'Institution', type: 'ro', fmt: a => a.institution || '—' }, { k: 'name', label: 'Account', type: 'ro', fmt: a => <AcctName name={a.name} last4={a.last4} /> }, { k: 'kind', label: 'Type', type: 'ro', fmt: a => ACCOUNT_KIND_LABEL[a.kind] },
             { k: 'balance', label: 'Current balance', type: 'ro', cls: 'num', sortVal: a => (isLiability(a) ? -1 : 1) * balanceOf(a, data), fmt: a => <span style={{ color: isLiability(a) ? 'var(--crit-ink)' : undefined }} title={a.bank_balance != null ? `verified: bank ${fm2(a.bank_balance)} as of ${a.bank_balance_as_of || '—'} ± outstanding entries` : 'book balance (no bank figure yet)'}>{isLiability(a) ? '−' : ''}{fm2(Math.abs(balanceOf(a, data)))}{a.bank_balance != null && <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--good-ink)' }}>✓</span>}</span> },
             { k: '_avail', label: 'Available', type: 'ro', cls: 'num', sortVal: a => availableBalance(a, data) ?? -1, fmt: a => { const v = availableBalance(a, data); return v == null ? '—' : fm2(v) } },
             { k: 'balance_as_of', label: 'Last updated', type: 'ro', sortVal: a => a.balance_as_of || '', fmt: a => a.balance_as_of ? <>{fmtDY(a.balance_as_of)} <span style={{ color: 'var(--ink-3)' }}>· {ago(a.balance_as_of)}</span></> : '—' }]}
@@ -93,7 +96,7 @@ export function AccountsPage() {
         <div className="tblwrap"><table className="tbl"><caption className="sr-only">Accounts left out of your figures</caption><thead><tr><th>In my figures</th><th>Account</th><th>Institution</th><th>Type</th><th className="num">Balance at the bank</th><th className="num">Transactions kept</th><th>Last activity</th></tr></thead><tbody>
           {off.accounts.slice().sort((a, b) => a.name.localeCompare(b.name)).map(a => { const mine = off.transactions.filter(t => t.account_id === a.id || t.to_account_id === a.id); const last = mine.reduce((m, t) => (t.date > m ? t.date : m), '')
             return <tr key={a.id} data-id={'left-out:' + a.id} className="st-idle"><td><input type="checkbox" checked={false} disabled={!canEdit} aria-label={`${a.name} is left out of your figures — tick to count it again`} title="Tick to count this account and everything on it again" onChange={() => void bringBack(a)} /></td>
-              <td><b>{a.name}</b>{a.last4 ? <span style={{ color: 'var(--ink-3)' }}> ··{a.last4}</span> : null}</td><td>{a.institution || '—'}</td><td>{ACCOUNT_KIND_LABEL[a.kind]}</td>
+              <td><AcctName name={a.name} last4={a.last4} /></td><td>{a.institution || '—'}</td><td>{ACCOUNT_KIND_LABEL[a.kind]}</td>
               <td className="num">{isLiability(a) ? '−' : ''}{fm2(Math.abs(+(a.bank_balance ?? a.balance) || 0))}{(a.bank_balance_as_of || a.balance_as_of) ? <span style={{ color: 'var(--ink-3)' }}> · {fmtD((a.bank_balance_as_of || a.balance_as_of)!)}</span> : null}</td><td className="num">{mine.length}</td><td>{last ? fmtDY(last) : '—'}</td></tr> })}
         </tbody></table></div>
         <Note>For an account you can see at the bank that is not your money — a child's account linked to your sign-in, one you hold for someone else. While it is left out, its balance and transactions are not in cash, net worth, the budget, spending, the forecast or any report, and money you move to or from it reads as money out or in on your own account. Tick <b>In my figures</b> to count it again: everything comes back as it was, and transfers with your other accounts are paired up again.</Note>
