@@ -7,6 +7,10 @@ import { amountDueN, billPaymentsN } from './notify'
 export const REC_PER_YEAR: Record<RecurringFreq, number> = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12, every_2_months: 6, quarterly: 4, every_6_months: 2, yearly: 1, irregular: 0 }
 export const recMonthly = (r: Recurring) => (+r.amount || 0) * REC_PER_YEAR[r.frequency] / 12
 export const recActive = (d: Data) => d.recurring.filter(r => r.status === 'Active')
+/** Does a recurring item speak for this card's or loan's payment? An Active one carries it; a Paused one — left out (0.38.0) — says the
+ *  payment is not this household's to count. Either way the account's own planned payment is not added on top; only a Cancelled item, or
+ *  none, leaves the account to speak for itself. */
+export const hasPaymentItem = (d: Pick<Data, 'recurring'>, accountId: string) => d.recurring.some(r => r.liability_account_id === accountId && r.status !== 'Cancelled')
 export const isOutflow = (r: Recurring) => r.kind !== 'income'
 
 /** Due dates of one recurring item within [from, to]. */
