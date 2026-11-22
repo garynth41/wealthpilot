@@ -2,7 +2,7 @@
 // Rules live in household settings (settings.rules). The email engine's remembered payees (settings.finmail.rules) are still honoured as a fallback.
 import type { Data, Settings, Transaction } from '../app/data/types'
 import { merchantKey } from './intelligence'
-import { libraryCategory, merchantIdentity, type Confidence } from './merchants'
+import { libraryCategory, merchantIdentity, isMoveText, type Confidence } from './merchants'
 
 import type { PayeeRule } from '../app/data/types'
 export type { PayeeRule }
@@ -17,7 +17,9 @@ export function ruleMatches(r: PayeeRule, payee?: string | null, kind?: string |
     case 'exact': return p === q || merchantKey(payee) === merchantKey(r.pattern)
     case 'starts': return p.startsWith(q)
     case 'regex': try { return new RegExp(r.pattern, 'i').test(payee || '') } catch { return false }
-    default: return p.includes(q)
+    // …or the rule is the payee's own learned description (0.37.0): a learned pattern is the merchant's name with filler and punctuation
+    // taken out ("zelle to gavionne conf"), which the raw text ("Zelle payment to Gavionne Conf# tcp…") never literally contains
+    default: return p.includes(q) || merchantIdentity(payee).pattern === q
   }
 }
 /** First matching rule wins; longer (more specific) patterns are tried first. */
@@ -43,7 +45,8 @@ export function suggest(d: Data, s: Settings, t: Pick<Transaction, 'payee' | 'ki
     const counts = new Map<string, number>(); for (const x of d.transactions) if (x.category_id && x.kind === t.kind && merchantIdentity(x.payee).key === k) counts.set(x.category_id, (counts.get(x.category_id) || 0) + 1)
     const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]; const all = [...counts.values()].reduce((n, v) => n + v, 0)
     // filed the same way at least twice: confident when that is (nearly) always how it was filed, only likely when it was split between lines
-    if (best && best[1] >= 2) return { category_id: best[0], how: 'history', confidence: best[1] / all >= 0.75 ? 'high' : 'medium' }
+    // …and never confident for money moved between accounts (0.37.0): each such row can be a different thing, so it is shown, not filed
+    if (best && best[1] >= 2) return { category_id: best[0], how: 'history', confidence: best[1] / all >= 0.75 && !isMoveText(t.payee) ? 'high' : 'medium' }
   }
   // the built-in merchant library (0.31.0): the last resort, after everything the household has taught the app
   const lib = t.kind === 'expense' || t.kind === 'income' ? libraryCategory(d.categories, t.payee, t.kind) : null
@@ -83,6 +86,19 @@ export function learnRule(payee: string, patch: { category_id?: string | null; a
   // never a rule for a payment processor alone ("paypal"): it would catch every merchant paid through it
   const k = merchantIdentity(payee).pattern; if (!k || (!patch.category_id && !patch.account_id)) return null
   return { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: k, match: 'contains', category_id: patch.category_id ?? null, account_id: patch.account_id ?? null, kind: kind ?? null, enabled: true, hits: 0, created_at: new Date().toISOString(), source: 'learned' }
+}
+/** "Always leave out ones like this" (0.37.0): the rules with this payee's rule set to leave it out of income and spending — an existing
+ *  rule for the same description keeps its category and gains the flag; otherwise a new one is added. Null when the payee has no
+ *  description a rule could safely match (no payee, or only a payment processor's name). */
+export function leaveOutRules(rules: PayeeRule[], payee: string | null | undefined, kind: 'expense' | 'income', on = true): PayeeRule[] | null {
+  const k = merchantIdentity(payee).pattern; if (!k) return null
+  const i = rules.findIndex(x => x.pattern === k && x.match === 'contains' && (x.kind ?? null) === kind)
+  if (i >= 0) { const next = rules.slice(); next[i] = { ...rules[i], exclude_from_budget: on, enabled: true }; return next }
+  // a rule for this description that covers both sides would be found first and win: it keeps the other side, and this side gets its
+  // own copy — same category and other actions — with the flag
+  const any = rules.findIndex(x => x.pattern === k && x.match === 'contains' && !x.kind && x.enabled)
+  if (any >= 0) { const next = rules.slice(); next[any] = { ...rules[any], kind: kind === 'income' ? 'expense' : 'income' }; next.push({ ...rules[any], id: 'r' + Math.random().toString(36).slice(2, 10), kind, exclude_from_budget: on, enabled: true, hits: 0, created_at: new Date().toISOString() }); return next }
+  return on ? [...rules, { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: k, match: 'contains', category_id: null, account_id: null, exclude_from_budget: true, kind, enabled: true, hits: 0, created_at: new Date().toISOString(), source: 'learned' }] : rules
 }
 /** Upsert: a learned rule for the same pattern + kind replaces the old one instead of piling up. */
 export function upsertRule(rules: PayeeRule[], r: PayeeRule): PayeeRule[] {

@@ -1,7 +1,7 @@
 // 0.31.0 — the built-in merchant library: what it makes of real bank descriptions, and how its answers land on a household's own categories.
 import { describe, it, expect } from 'vitest'
 import { demoSeed, STARTER_CATEGORIES } from '../app/data/demoSeed'
-import { libraryMatch, libraryCategory, resolveCategory, librarySize, plain, merchantIdentity, type Concept } from './merchants'
+import { libraryMatch, libraryCategory, resolveCategory, librarySize, plain, merchantIdentity, isMoveText, type Concept } from './merchants'
 import { suggest, planAutoCategorise } from './rules'
 import { SETTINGS_DEFAULTS, type Category } from '../app/data/types'
 
@@ -40,6 +40,28 @@ describe('bank descriptions', () => {
     expect(libraryMatch('ADP PAYROLL DEP', 'expense')).toBeNull(); expect(libraryMatch('KROGER', 'income')).toBeNull()
   })
   it('matches whole words only', () => { expect(libraryMatch('SHELLEY DESIGN STUDIO')).toBeNull(); expect(libraryMatch('GAPINGVOID LLC')).toBeNull(); expect(plain('POS DEBIT KROGER #12')).toBe(' kroger 12 ') })
+})
+
+// 0.37.0 — Gary's ledger: "INTERNET TFR TO CHECKING" had been filed under Internet, and overdraft-protection pulls under fees.
+describe('money moved between accounts has no merchant', () => {
+  it.each([['INTERNET TFR TO CHECKING', 'expense'], ['INTERNET TFR TO SAVINGS', 'expense'], ['INTERNET TFR FRM CHECKING', 'income'], ['OVERDRAFT PROTECTION TO XXXXX0000XXXXXXXX022', 'expense'],
+    ['OVERDRAFT PROTECTION FROM XXXXXXXXXX0253', 'income'], ['MOBILE BANKING TRANSFER DEPOSIT 1234', 'income'], ['Online Banking transfer to SAV 0253 Confirmation# 88', 'expense'], ['KEEP THE CHANGE TRANSFER TO ACCT 0253', 'expense']] as const)(
+    '%s says nothing', (payee, kind) => { expect(isMoveText(payee)).toBe(true); expect(libraryMatch(payee, kind)).toBeNull(); expect(name(payee, kind)).toBeNull() })
+  it('a fee for one is still a fee, and a real merchant next to transfer wording is still that merchant', () => {
+    expect(isMoveText('OVERDRAFT PROTECTION TRANSFER FEE')).toBe(false); expect(libraryMatch('OVERDRAFT PROTECTION TRANSFER FEE')?.concept).toBe('fees'); expect(libraryMatch('OVERDRAFT ITEM FEE FOR ACTIVITY OF 11-12')?.concept).toBe('fees')
+    expect(libraryMatch('PAYPAL INST XFER NETFLIX')).toMatchObject({ concept: 'subscriptions', confidence: 'high' })
+    expect(isMoveText('COMCAST CABLE INTERNET')).toBe(false); expect(name('COMCAST CABLE INTERNET')).toBe('Internet'); expect(name('Spectrum')).toBe('Internet')
+    expect(libraryMatch('NETJETS SERVICES DES:PAYROLL ID:XXXX INDN:GARY', 'income')).toMatchObject({ concept: 'paycheck', confidence: 'high' })
+  })
+  it('however often such a row was filed one way, the app only suggests it — it is never filed on its own', () => {
+    const internet = cats.find(c => c.name === 'Internet')!; const acct = data.accounts.find(a => a.kind === 'checking')!
+    const past = ['2026-09-08', '2026-10-13', '2026-10-19'].map((date, i) => ({ ...data.transactions[0], id: 'tfr' + i, date, kind: 'expense' as const, amount: 50 + i, payee: 'INTERNET TFR TO CHECKING', category_id: internet.id, account_id: acct.id, to_account_id: null }))
+    const d = { ...data, transactions: [...data.transactions, ...past] }
+    expect(suggest(d, SETTINGS_DEFAULTS, { payee: 'INTERNET TFR TO CHECKING', kind: 'expense' })).toMatchObject({ how: 'history', confidence: 'medium', category_id: internet.id })
+    // an ordinary merchant filed the same way three times is still a confident answer
+    const shop = past.map((t, i) => ({ ...t, id: 'shop' + i, payee: 'QZV HARDWARE 0042' }))
+    expect(suggest({ ...data, transactions: [...data.transactions, ...shop] }, SETTINGS_DEFAULTS, { payee: 'QZV HARDWARE 0042', kind: 'expense' })).toMatchObject({ how: 'history', confidence: 'high' })
+  })
 })
 
 describe('landing on the household\'s own categories', () => {

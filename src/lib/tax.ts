@@ -48,7 +48,7 @@ export function autoItems(d: Data, year: number): TaxItem[] {
   const ints = round2(sum(d.holdings.filter(h => h.yield_pct != null && (h.asset_class === 'bond' || h.asset_class === 'cash')).map(h => holdingValue(h) * (+h.yield_pct! || 0) / 100)))
   if (divs) out.push({ id: 'auto-div', kind: 'dividends', label: 'Dividends (estimated from holdings yields)', amount: divs, source: 'auto' })
   if (ints) out.push({ id: 'auto-int', kind: 'interest', label: 'Interest (estimated from bond / cash yields)', amount: ints, source: 'auto' })
-  const inc = d.transactions.filter(t => t.kind === 'income' && t.status !== 'void' && t.date.startsWith(String(year)) && !t.pay_schedule_id)
+  const inc = d.transactions.filter(t => t.kind === 'income' && t.status !== 'void' && !t.exclude_from_budget && t.date.startsWith(String(year)) && !t.pay_schedule_id)
   const other = round2(sum(inc.filter(t => { const c = d.categories.find(c => c.id === t.category_id); return c && /other income|side/i.test(c.name) }).map(t => t.amount)))
   if (other && !out.some(i => i.kind === '1099')) out.push({ id: 'auto-other', kind: 'other', label: `Other income logged in ${year}`, amount: other, source: 'auto' })
   const rec = d.recurring.filter(r => r.status === 'Active' && r.kind === 'income' && /rent/i.test(r.name + ' ' + (r.payee || '')))

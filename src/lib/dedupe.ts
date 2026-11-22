@@ -211,8 +211,19 @@ const OWN_CASH = new Set(['checking', 'savings'])
 const OWN_ASSET = new Set(['checking', 'savings', 'cash', 'investment', 'retirement', 'other_asset'])
 /** Words that name an account type rather than the account: they appear on most labels, so they say nothing about which account a row means. */
 const GENERIC_ACCT = new Set(['checking', 'savings', 'saving', 'banking', 'bank', 'account', 'acct', 'plus', 'advantage', 'total', 'everyday', 'basic', 'premier', 'preferred', 'rewards', 'money', 'market', 'cash', 'brokerage', 'investment', 'retirement', 'ira', 'roth', 'fund', 'funds', 'share', 'shares'])
-const TRANSFER_RE = /\b(transfer|xfer|tfr|online banking|internet banking|mobile banking|to (?:savings|checking|share|brokerage|investment)|from (?:savings|checking|share|brokerage|investment)|savings deposit|sweep|acct to acct|account to account)\b/i
+/** Bank wording for money moved between a person's own accounts. Overdraft protection and round-up savings ("Keep the Change") are moves too
+ *  (0.37.0): the bank pulls from savings to cover checking, or sweeps the change into savings — neither is income or spending. */
+export const TRANSFER_RE = /\b(transfer|xfer|tfr|online banking|internet banking|mobile banking|to (?:savings|checking|share|brokerage|investment)|from (?:savings|checking|share|brokerage|investment)|savings deposit|sweep|acct to acct|account to account|trnsfr|overdraft protection|od protection|overdraft xfer|keep ?the ?change|round ?up)\b/i
+/** Does this bank text read as money moved between one's own accounts? */
+export const readsAsTransfer = (text?: string | null) => { const s = String(text || ''); return TRANSFER_RE.test(s) && !/\bfees?\b/i.test(s) }   // "OVERDRAFT PROTECTION TRANSFER FEE" is what the bank charged, not money that moved
 export interface PaymentPair { out: string; into: string; to: string; days: number; reason: string }
+/** Rows in accounts left out of the household's figures, with those accounts (0.37.0): never merged or paired, only weighed as the other
+ *  possible end of a transfer. */
+export interface Rivals { rows: DTxn[]; accounts: DAccount[] }
+/** Words a bank adds around a deposit or withdrawal that name nobody. */
+const FILLER = new Set(['deposit', 'withdrawal', 'withdrawl', 'atm', 'cash', 'check', 'funds', 'fund', 'internet', 'electronic', 'external', 'internal', 'instant', 'scheduled', 'savings', 'saving', 'checking', 'chk', 'sav', 'acct', 'account', 'banking', 'bank', 'share', 'brokerage', 'investment', 'tfr', 'xfer', 'frm', 'trnsfr', 'overdraft', 'protection', 'effective', 'memo', 'ppd', 'ccd', 'tel', 'p2p', 'zelle', 'venmo', 'transaction',
+  // banks and brokerages: a side that only names one of these is the other end of a transfer more often than a payee, and the account's own label may not carry it
+  'america', 'boa', 'bofa', 'chase', 'jpmorgan', 'wells', 'fargo', 'citi', 'citibank', 'huntington', 'capital', 'one', 'ally', 'discover', 'usaa', 'pnc', 'truist', 'td', 'schwab', 'fidelity', 'vanguard', 'sofi', 'chime', 'marcus', 'goldman', 'sachs', 'synchrony', 'navy', 'federal', 'union', 'robinhood', 'etrade', 'merrill', 'regions', 'keybank', 'fifth', 'third', 'citizens', 'bmo', 'hsbc', 'santander', 'varo', 'wealthfront', 'betterment', 'acorns', 'national', 'first', 'bancorp', 'fcu', 'cu'])
 /** The two rows of one card or loan payment: money out of the household's own checking or savings (an expense there, from the bank feed or a
  *  statement file) and the same amount to the cent arriving on a card or loan at most MAX_GAP_DAYS earlier or later — a payment into it with
  *  no source account, or a credit on it that does not read as a refund (cardCredit). Each row must be the other's only candidate; when a row
@@ -243,29 +254,60 @@ export function paymentPairs(rows: DTxn[], accounts: DAccount[]): PaymentPair[] 
   }
   return out
 }
+/** Does this row name someone else (0.37.0)? True when its payee carries a word that is not transfer wording, not a word banks put around a
+ *  deposit or withdrawal, and not part of the label or bank of the accounts involved — "MESSERLI KRAMER DES:ePay" does, "ACH DEPOSIT
+ *  HUNTINGTON" and "TO SCHWAB BROKERAGE" do not. A row that reads as a transfer never does. */
+export function namesSomeoneElse(t: Pick<DTxn, 'payee' | 'memo'>, between: Array<DAccount | null | undefined>): boolean {
+  if (readsAsTransfer(`${t.payee || ''} ${t.memo || ''}`)) return false
+  const labels = new Set(between.flatMap(a => (a ? payeeTokens(`${a.name || ''} ${a.institution || ''}`) : [])))
+  return payeeTokens(t.payee).some(w => !/\d/.test(w) && !FILLER.has(w) && !labels.has(w))   // a word with a digit in it is a confirmation code, not a name
+}
+/** Does the row's payee name this account — its label, less the words every account label carries (a shared bank name or "savings"
+ *  alone is no hint)? */
+export function namesAccount(t: Pick<DTxn, 'payee'>, a?: DAccount | null): boolean {
+  const n = a ? payeeTokens(a.name).filter(w => !GENERIC_ACCT.has(w)).join(' ') : ''; return !!n && (payeeSimilarity(t.payee, n) ?? 0) >= 0.5
+}
+/** Could `o` (money out of one account) and `i` (money into another) be the two ends of one transfer, going by their wording alone?
+ *  One side must read as a transfer or name the other account; neither may name a stranger (a row that names the other account — "Zelle
+ *  payment from GARY THOMAS" into Gary Checking — does not); and a pay-app row only goes with a pay-app row. Amounts, dates and "the only
+ *  candidate" are the caller's to check. Used to pair (transferPairs) and to question pairs already made (lib/moneyCheck). */
+export function transferWording(o: Pick<DTxn, 'payee' | 'memo' | 'account_id'>, i: Pick<DTxn, 'payee' | 'memo' | 'account_id'>, acct: (id?: string | null) => DAccount | undefined): boolean {
+  const text = (t: Pick<DTxn, 'payee' | 'memo'>) => `${t.payee || ''} ${t.memo || ''}`; const ao = acct(o.account_id), ai = acct(i.account_id)
+  const stranger = (t: Pick<DTxn, 'payee' | 'memo'>, other?: DAccount) => !namesAccount(t, other) && namesSomeoneElse(t, [ao, ai])
+  return (readsAsTransfer(text(o)) || readsAsTransfer(text(i)) || namesAccount(o, ai) || namesAccount(i, ao)) && !stranger(o, ai) && !stranger(i, ao) && readsAsPayApp(text(o)) === readsAsPayApp(text(i))
+}
+/** Was this sent or received through a pay app (Zelle, Venmo, Cash App, Apple Cash)? Money sent that way does not arrive as a bank's own
+ *  transfer, so a pay-app row is only ever the other half of another pay-app row (0.37.0). */
+export const readsAsPayApp = (text?: string | null) => /\b(zelle|venmo|cash ?app|cashapp|apple cash|square cash)\b/i.test(String(text || ''))
 /** The two bank or statement rows of one transfer between the household's own asset accounts (0.27.0): money out of one (an expense there) and
  *  the same amount to the cent arriving in another (income there) within MAX_GAP_DAYS, where at least one side reads as a transfer
  *  (TRANSFER_RE) or names the other account or its bank — a paycheck landing the day cash was withdrawn is not paired. Each row must be the
  *  other's only candidate. Rows typed by hand or from email, merged, void or marked "not a duplicate" are left alone. The out row is kept
- *  and becomes the transfer; restoring the in row puts it back as the expense it arrived as (unpairPatch). */
-export function transferPairs(rows: DTxn[], accounts: DAccount[]): PaymentPair[] {
+ *  and becomes the transfer; restoring the in row puts it back as the expense it arrived as (unpairPatch).
+ *
+ *  Two things stop a pair (0.37.0). A side that names someone else — a payee that is neither transfer wording nor either account or bank
+ *  ("MESSERLI KRAMER DES:ePay") — is a payment to that someone, however the other side reads. And `rivals`, the rows of accounts left out of
+ *  the household's figures, count as candidates without ever being paired: money that arrived from a left-out account the same day a
+ *  like amount left another counted account has two possible sources, and the engine does not guess. A third: money sent through a pay
+ *  app is only paired with money received through one — "APPLE CASH SENT" is not the other half of "INTERNET TFR FRM CHECKING". */
+export function transferPairs(rows: DTxn[], accounts: DAccount[], rivals?: Rivals | null): PaymentPair[] {
+  const offAccts = rivals?.accounts || [], offIds = new Set(offAccts.map(a => a.id)); accounts = [...accounts, ...offAccts.filter(a => !accounts.some(x => x.id === a.id))]
   const kindOf = new Map(accounts.map(a => [a.id, a.kind]))
-  // the other account's NAME, less the words every account label carries — a shared bank name or "savings" alone is no hint
-  const nameWords = new Map(accounts.map(a => [a.id, payeeTokens(a.name).filter(w => !GENERIC_ACCT.has(w)).join(' ')]))
   const ok = (t: DTxn) => !t.duplicate_of && t.status !== 'void' && !t.dedupe_ok && Number(t.amount) > 0 && origin(t) !== 'typed'
-  const outs = rows.filter(t => ok(t) && t.kind === 'expense' && !!t.account_id && OWN_ASSET.has(kindOf.get(t.account_id) || ''))
-  const ins = rows.filter(t => ok(t) && t.kind === 'income' && !!t.account_id && OWN_ASSET.has(kindOf.get(t.account_id) || ''))
+  const seen = new Set(rows.map(t => t.id)); const all = [...rows, ...(rivals?.rows || []).filter(t => !seen.has(t.id) && !!t.account_id && offIds.has(t.account_id))]
+  const outs = all.filter(t => ok(t) && t.kind === 'expense' && !!t.account_id && OWN_ASSET.has(kindOf.get(t.account_id) || ''))
+  const ins = all.filter(t => ok(t) && t.kind === 'income' && !!t.account_id && OWN_ASSET.has(kindOf.get(t.account_id) || ''))
   const cents = (t: DTxn) => Math.round(Number(t.amount) * 100)
-  const text = (t: DTxn) => `${t.payee || ''} ${t.memo || ''}`
-  const names = (t: DTxn, other: DTxn) => { const n = nameWords.get(other.account_id!); return !!n && (payeeSimilarity(t.payee, n) ?? 0) >= 0.5 }
-  const hint = (o: DTxn, i: DTxn) => TRANSFER_RE.test(text(o)) || TRANSFER_RE.test(text(i)) || names(o, i) || names(i, o)   // one shared word with the other account's name was enough before — a bank name both labels carry is not
-  const outsOf = new Map<string, string[]>(), insOf = new Map<string, string[]>(); const byId = new Map(rows.map(t => [t.id, t]))
+  const acctOf = new Map(accounts.map(a => [a.id, a]))
+  const hint = (o: DTxn, i: DTxn) => transferWording(o, i, id => (id ? acctOf.get(id) : undefined))
+  const outsOf = new Map<string, string[]>(), insOf = new Map<string, string[]>(); const byId = new Map(all.map(t => [t.id, t]))
   const outsByCents = new Map<number, DTxn[]>(); for (const o of outs) { const k = cents(o); const b = outsByCents.get(k); if (b) b.push(o); else outsByCents.set(k, [o]) }
   for (const i of ins) for (const o of outsByCents.get(cents(i)) || []) if (o.account_id !== i.account_id && dayGap(o.date, i.date) <= MAX_GAP_DAYS && hint(o, i)) { outsOf.set(i.id, [...(outsOf.get(i.id) || []), o.id]); insOf.set(o.id, [...(insOf.get(o.id) || []), i.id]) }
   const out: PaymentPair[] = []
   for (const i of ins) {
     const os = outsOf.get(i.id) || []; if (os.length !== 1) continue
     const is = insOf.get(os[0]) || []; if (is.length !== 1 || is[0] !== i.id) continue
+    if (offIds.has(i.account_id!) || offIds.has(byId.get(os[0])!.account_id!)) continue   // one side sits in a left-out account: a candidate, never a pair
     const days = dayGap(byId.get(os[0])!.date, i.date)
     out.push({ out: os[0], into: i.id, to: i.account_id!, days, reason: `transfer between your own accounts — left one and arrived in the other ${days === 0 ? 'the same day' : `${days} day${days === 1 ? '' : 's'} apart`}` })
   }
@@ -282,7 +324,7 @@ export function unpairPatch(keeper: DTxn, restored: DTxn): Partial<DTxn> | null 
 /** Find duplicates among live rows (not void, not already merged, not marked "not a duplicate"). Merges are applied pass by pass, so a pile-up
  *  (an email filed twice plus the bank line) collapses onto the bank row in one plan. With the household's accounts (0.25.1), the two rows of
  *  a card or loan payment become one transfer first (paymentPairs), and the kept row's patch turns it into that transfer. */
-export function planDedupe(rows: DTxn[], accounts: DAccount[] = [], options?: DedupeOptions | null): DedupePlan {
+export function planDedupe(rows: DTxn[], accounts: DAccount[] = [], options?: DedupeOptions | null, rivals?: Rivals | null): DedupePlan {
   const opts = dedupeOptions(options)
   const orig = new Map(rows.map(t => [t.id, t])); let work = rows.map(t => ({ ...t }))
   const into = new Map<string, string>(), why = new Map<string, DupPair[]>(), paid = new Map<string, Partial<DTxn>>(); let review: DupPair[] = []
@@ -291,7 +333,7 @@ export function planDedupe(rows: DTxn[], accounts: DAccount[] = [], options?: De
     if (r.auto.length) { for (const g of r.auto) for (const d of g.dups) { into.set(d, g.keeper); why.set(d, g.pairs) } }
     else {
       // pairing the two rows of one money movement is a merge too, so it waits for the household's setting like any other automatic merge
-      const ps = accounts.length && opts.auto !== 'off' ? [...paymentPairs(work, accounts), ...(opts.transfers ? transferPairs(work, accounts) : [])] : []; if (!ps.length) break
+      const ps = accounts.length && opts.auto !== 'off' ? [...paymentPairs(work, accounts), ...(opts.transfers ? transferPairs(work, accounts, rivals) : [])] : []; if (!ps.length) break
       for (const p of ps) { into.set(p.into, p.out); why.set(p.into, [{ a: p.out, b: p.into, confidence: 'likely', reason: p.reason, days: p.days, sim: null }]); paid.set(p.out, { kind: 'transfer', to_account_id: p.to }) }
     }
     work = work.map(t => { const x = paid.get(t.id); const w = x && t.kind === 'expense' ? { ...t, ...x } : t; return into.has(t.id) && !w.duplicate_of ? { ...w, duplicate_of: into.get(t.id)! } : w })

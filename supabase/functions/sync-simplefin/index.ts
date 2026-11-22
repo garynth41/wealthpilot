@@ -67,7 +67,9 @@ async function dedupeHousehold(hh: string, dryRun = false): Promise<{ merged: nu
   // the household's choices (0.27.0): what merges on its own, whether transfers, checks and near-matches are looked for
   const { data: hhRow, error: he } = await admin.from('households').select('settings').eq('id', hh).maybeSingle()
   if (he) throw new Error('Reading household settings for de-duplication failed: ' + he.message)
-  const plan = planDedupe(mine, own, ((hhRow?.settings as { dedupe?: DedupeOptions } | null)?.dedupe) || null); let merged = 0
+  // …but they are weighed as the other possible end of a transfer (0.37.0): money that came from a left-out account is not paired with a like amount that left a counted one
+  const offAccts = ((accts || []) as Array<DAccount & { excluded?: boolean }>).filter(a => a.excluded)
+  const plan = planDedupe(mine, own, ((hhRow?.settings as { dedupe?: DedupeOptions } | null)?.dedupe) || null, off.size ? { rows: rows.filter(offRow), accounts: offAccts } : null); let merged = 0
   if (dryRun) {
     const byId = new Map(rows.map(t => [t.id, t])); const brief = (id: string): Brief => { const t = byId.get(id)!; return { date: t.date, amount: t.amount, kind: t.kind, payee: t.payee ?? null, source: t.external_id?.startsWith('sfin:') ? 'bank' : t.source ?? null, account_id: t.account_id ?? t.to_account_id ?? null } }
     return { merged: plan.auto.reduce((n, g) => n + g.dups.length, 0), review: plan.review.length, preview: { auto: plan.auto.map(g => ({ keep: brief(g.keeper), merge: g.dups.map(brief), confidence: g.confidence, reason: g.reason, patch: g.patch })), review: plan.review.slice(0, 60).map(p => ({ a: brief(p.a), b: brief(p.b), reason: p.reason })) } }

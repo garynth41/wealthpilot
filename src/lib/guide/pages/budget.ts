@@ -40,7 +40,7 @@ export const budget: GuidePage = {
         { term: 'Income source', text: 'The income category, with any money rolled over from the last period.' },
         { term: 'Priority · cost type', text: 'The grey text: the category\'s priority and cost type, set in Settings → Categories.' },
         { term: 'Expected', text: 'What you plan to receive in this period. Click to type it, unless the period is closed.' },
-        { term: 'Received', text: 'Income transactions in this category dated inside the period. Void and excluded ones do not count.' },
+        { term: 'Received', text: 'Income transactions in this category dated inside the period. Void ones and ones you left out do not count.' },
         { term: 'Difference', text: 'Received minus expected, with + when more came in than planned.' },
         { term: 'Used', text: 'Received as a share of expected, with a bar: green once it is all in, amber while part of it is.' },
         { term: 'Log', text: 'Opens Add transaction set to income in this category, dated today (or the period\'s last day when you are looking at another period).' },

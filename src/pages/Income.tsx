@@ -7,6 +7,8 @@ import { Table, type Col } from '../components/Table'
 import { payDates, nextPayDate, lastPayDate, monthlyIncome, monthlyEquivalent, paycheckOnFile, nextPaycheck } from '../lib/paySchedule'
 import { addDays, fmtD, fmtDY, today, diffDays, monthStart, monthEnd, curMonth, mAdd, mShort } from '../lib/dates'
 import { fmtMoney, fm2, sum } from '../lib/money'
+import { Link } from 'react-router-dom'
+import { moneyChecks, checkSummary } from '../lib/moneyCheck'
 import { spanFor } from '../lib/periods'
 import { rangeStat } from '../lib/budget'
 import { Chart, C } from '../components/Chart'
@@ -32,7 +34,9 @@ export function IncomePage() {
     { k: 'deposit_account_id', label: 'Deposited to', type: 'select', opts: ['', ...accts.map(a => a.id)], labels: { '': '—', ...acctLabels }, w: 150 }, { k: 'category_id', label: 'Income category', type: 'select', opts: ['', ...catOpts('income').map(c => c.id)], labels: { '': '—', ...catLabels }, w: 150 },
     { k: 'starts_on', label: 'Starts', type: 'date' }, { k: 'ends_on', label: 'Ends', type: 'date' }, { k: 'status', label: 'Status', type: 'select', opts: ['Active', 'Paused', 'Ended'], w: 95 }, { k: 'notes', label: 'Notes', type: 'text', w: 160 }, { k: 'ref', label: 'ID', type: 'ro', cls: 'id' }]
   const c = C()
+  const mc = checkSummary(moneyChecks(data, settings))
   return <>
+    {mc.income > 0 && <div className="banner" style={{ marginBottom: 12 }} data-mc="income-banner"><b>{fmtMoney(mc.income)}</b> of the income on file may be your own money moving between accounts, not money earned. <Link to="/transactions?check=1">Check it</Link></div>}
     <div className="kpis" style={{ marginBottom: 16 }}>
       <KPI l="Take-home per month" v={fmtMoney(monthly)} cls="good" s={`${act.length} active source${act.length === 1 ? '' : 's'} · ${fmtMoney(monthly * 12)}/yr${oneOffs ? ` · ${oneOffs} one-off${oneOffs === 1 ? '' : 's'} not included` : ''}`} />
       <KPI l="Next paycheck" v={nextPay ? fmtD(nextPay.d) : '—'} cls={nextPay ? (diffDays(nextPay.d, t) <= 3 ? 'good' : 'info') : 'idle'} s={nextPay ? `${nextPay.p.name} · ${fmtMoney(nextPay.p.net_amount)} · in ${diffDays(nextPay.d, t)} days` : 'add a pay schedule'} />

@@ -135,7 +135,7 @@ function RulesTab() {
     { k: 'category_id', label: 'Set category', type: 'select', opts: ['', ...catOpts(['expense', 'income']).map(c => c.id)], labels: { '': '—', ...catLabels }, w: 190 },
     { k: 'account_id', label: 'Set account', type: 'select', opts: ['', ...accts.map(a => a.id)], labels: { '': '—', ...acctLabels }, w: 160 },
     { k: 'rename', label: 'Rename payee to', type: 'text', w: 140, placeholder: 'Kroger' },
-    { k: 'exclude_from_budget', label: 'Not in budget', type: 'bool', w: 70 },
+    { k: 'exclude_from_budget', label: 'Leave out', type: 'bool', w: 70 },
     { k: 'tags', label: 'Add tags', type: 'text', w: 130, placeholder: 'tag, tag', sortVal: r => (r.tags || []).join(',') || null },
     { k: 'review', label: 'Flag for review', type: 'bool', w: 70 },
     { k: 'goal_id', label: 'Count toward goal', type: 'select', opts: ['', ...goalOpts.map(g => g.id)], labels: { '': '—', ...Object.fromEntries(goalOpts.map(g => [g.id, g.name])) }, w: 160 },
@@ -503,9 +503,9 @@ function Devices({ onSignOutOthers, onSignOutAll }: { onSignOutOthers: () => voi
 function DedupeCard() {
   const { data, settings, canEdit, guarded } = useData(); const st = useStore.getState
   const o = dedupeOptions(settings.dedupe); const [last, setLast] = useState<string | null>(null)
-  const counts = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe])
+  const counts = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe, data.off), [data.transactions, data.duplicates, data.accounts, settings.dedupe, data.off])
   const save = (patch: Partial<typeof o>) => guarded(() => st().saveSettings({ dedupe: { ...o, ...patch } }), 'Saved')
-  const run = () => guarded(async () => { const n = await st().autoDedupe(true); const s = st(); const left = duplicateCounts(s.data.transactions, s.data.duplicates, s.data.accounts, s.settings().dedupe).review; setLast(`${n} merged just now · ${left} left to review`) })
+  const run = () => guarded(async () => { const n = await st().autoDedupe(true); const s = st(); const left = duplicateCounts(s.data.transactions, s.data.duplicates, s.data.accounts, s.settings().dedupe, s.data.off).review; setLast(`${n} merged just now · ${left} left to review`) })
   return <Card span={6} title="Duplicates" hint="one copy of every transaction, whichever way it arrived">
     <Field label="Merge on their own" hint="the bank's copy is kept and inherits the category, bill or goal from the copy it absorbs"><select className="inp" value={o.auto} onChange={e => save({ auto: e.target.value as typeof o.auto })} disabled={!canEdit} aria-label="Merge on their own">
       <option value="likely">Certain and likely matches (recommended)</option><option value="certain">Certain matches only — same day, amount and payee</option><option value="off">Nothing — show every match for review</option></select></Field>

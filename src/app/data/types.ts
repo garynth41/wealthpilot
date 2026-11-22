@@ -200,6 +200,8 @@ export interface Settings {
   autoCategorize?: boolean          // 0.31.0: file new transactions the app is sure of as they arrive (default true)
   dedupe?: { auto?: 'likely' | 'certain' | 'off'; transfers?: boolean; checks?: boolean; near?: boolean }   // 0.27.0: what the duplicate engine may do on its own (lib/dedupe.ts DedupeOptions)
   savedViews?: SavedView[]          // Transactions filter presets (0.19.0)
+  /** 0.37.0: descriptions the household said are fine as they are counted — "Check your money in and out" (lib/moneyCheck.ts) stops asking about them */
+  checkOk?: string[]
   notify?: NotifyPrefs              // alert channels and thresholds (0.19.0, see lib/notify.ts)
   plan?: AppliedPlan                // the Plan view's applied allocation (0.20.0) — Debts, Goals and Retirement read it
   budgetMode?: 'standard' | 'zero' | 'envelope'   // 0.22.0: zero-based (assign every dollar of income) or envelope (every line rolls over, overspending is covered from another line)
@@ -211,7 +213,7 @@ export interface Settings {
 /** What 'Apply this plan' wrote (0.20.0), so other pages agree with the Plan view and a re-apply replaces rather than adds. */
 export interface AppliedPlan { scenarioId?: string | null; name?: string | null; assumptions: Record<string, unknown>; appliedAt: string; debtExtra: number; goalExtra: Record<string, number>; retireExtra: number; strategy?: 'avalanche' | 'snowball' }
 /** A Transactions filter preset pinned above the ledger. */
-export interface SavedView { id: string; name: string; range: 'period' | '30' | 'month' | '90' | 'all'; kind: 'all' | 'expense' | 'income' | 'transfer' | 'uncat'; account_id?: string | null; tag?: string | null; q?: string | null }
+export interface SavedView { id: string; name: string; range: 'period' | '30' | 'month' | '90' | 'all'; kind: 'all' | 'expense' | 'income' | 'transfer' | 'uncat' | 'out'; account_id?: string | null; tag?: string | null; q?: string | null }
 export interface NotifyPrefs { push?: boolean; email?: boolean; email_to?: string | null; bills?: boolean; low_cash?: boolean; large?: number | null; paycheck?: boolean; sync?: boolean; digest?: boolean; quiet_from?: number; quiet_to?: number
   /** 0.21.0: subscription or bill price went up; a new charge repeating three months running; an account not reconciled for 35 days */
   price_rise?: boolean; new_recurring?: boolean; reconcile?: boolean; revalue?: boolean   // 0.24.0: a property or vehicle value a quarter old

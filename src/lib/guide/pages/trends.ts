@@ -22,9 +22,9 @@ export const trends: GuidePage = {
       how: ['Click Week, Month or Year at the top right of the card.', 'Hover a bar or point for its amount.', 'Click ⤢ to open the chart full size, where you can zoom and save a picture.'],
       fields: [
         { term: 'Week / Month / Year', text: 'Week shows the last 26 weeks, Monday to Sunday ("Wk of" the Monday). Month shows the last 24 months. Year shows every year with transactions, the current one marked (YTD).' },
-        { term: 'Income', text: 'Green bars: income transactions, except ones excluded from the budget. Money credited to a card or loan is never income.' },
+        { term: 'Income', text: 'Green bars: income transactions, except ones you left out. Money credited to a card or loan is never income.' },
         { term: 'Planned spending', text: 'Grey bars, Month view only: the spending plan in that month\'s budget, rollover included. It appears only for months you budgeted by calendar month.' },
-        { term: 'Spending', text: 'Expenses — on a card too, the day you buy — less refunds, except ones excluded from the budget. In Month view the bar turns red when it is above the plan.' },
+        { term: 'Spending', text: 'Expenses — on a card too, the day you buy — less refunds, except ones you left out. In Month view the bar turns red when it is above the plan.' },
         { term: 'Loan payments', text: 'Payments into mortgages and auto, student, personal and other loans: money leaving the household.' },
         { term: 'Net', text: 'The line: income minus spending minus loan payments.' },
         { term: '4-week avg spending', text: 'Week view only: a dotted line of spending averaged over the latest four weeks, which smooths out one-off weeks.' },
@@ -76,13 +76,13 @@ export const trends: GuidePage = {
         { term: 'less … more', text: 'The four shades for days with spending, split so each holds about a quarter of your spending days.' },
         { term: 'Note under the map', text: 'Total spending over the 26 weeks, the busiest day\'s total, and the amounts where the shades change.' },
       ],
-      tips: ['Rows run Monday to Sunday; the month names across the top mark where each month begins.', 'This counts every expense, including ones excluded from the budget.'],
+      tips: ['Rows run Monday to Sunday; the month names across the top mark where each month begins.', 'This counts every expense except ones you left out.'],
     },
     {
       title: 'Spending by day of week',
       what: 'Total spending on each day of the week over the last 90 days.',
       fields: [{ term: 'Bars', text: 'Sunday to Saturday. Hover a bar for its total.' }],
-      tips: ['Weekend-heavy spending usually means dining and shopping; weekday peaks are bills and fuel.', 'This counts every expense, including ones excluded from the budget.'],
+      tips: ['Weekend-heavy spending usually means dining and shopping; weekday peaks are bills and fuel.', 'Expenses you left out are not counted.'],
     },
     {
       title: 'Net worth',

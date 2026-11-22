@@ -4,6 +4,7 @@
 // where it is only a likely one. Each answer is a CONCEPT ("groceries", "fuel"), which is then matched to the household's own category
 // by name — households rename and add categories, so the library never stores a category id.
 // Pure functions; the suggestion engine (lib/rules suggest) calls libraryCategory as its last resort, after the household's own rules and history.
+import { readsAsTransfer } from './dedupe'
 import type { Category } from '../app/data/types'
 import { merchantKey } from './intelligence'
 
@@ -125,11 +126,17 @@ function best(tier: Tier, text: string, income: boolean): { concept: Concept; ma
   }
   return out && { concept: out.concept, matched: out.matched }
 }
+/** Bank wording for money moved between a person's own accounts — a transfer, an overdraft-protection pull, a round-up sweep — and not the
+ *  fee a bank may charge for one. Such a row has no merchant to recognise. */
+export const isMoveText = (payee?: string | null) => readsAsTransfer(payee)
 /** What the library makes of a payee. `kind` picks the side: money out is matched against spending concepts, money in against income ones. */
 export function libraryMatch(payee: string | null | undefined, kind: 'expense' | 'income' = 'expense'): LibraryMatch | null {
   const text = plain(payee); if (text.trim().length < 2) return null
   const income = kind === 'income'
   const b = best(T_BRANDS, text, income), x = best(T_MIXED, text, income), w = best(T_WORDS, text, income)
+  // money moved between accounts (0.37.0) has no merchant: "INTERNET TFR TO CHECKING" is not an internet bill and "OVERDRAFT PROTECTION FROM
+  // 0253" is not a fee. Only a real merchant named in full survives next to transfer wording ("PAYPAL INST XFER NETFLIX").
+  if (isMoveText(payee)) return b && b.matched.length > 2 && !LOOSE.has(b.matched) && b.concept !== 'fees' ? { ...b, confidence: 'high' } : null
   // a named merchant wins over a mixed one unless the mixed name is the longer, more specific match ("walmart" inside "walmart pharmacy" loses)
   if (b && (!x || b.matched.length >= x.matched.length)) {
     // a name that is also an everyday word ("express", "salon", "delta") or is only two letters ("bp", "qt") is only a likely answer —
