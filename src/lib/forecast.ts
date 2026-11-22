@@ -4,7 +4,7 @@ import { addDays, addMonthsClamp, diffDays, parse, today, monthStart, monthEnd, 
 import { sum } from './money'
 import { cashOnHand, liabilities, debtPlanned, debtBal, debtDueState, acctLabel, netWorth, countsAsCash, assets, balanceOf } from './accounts'
 import { payDates, monthlyIncome, paycheckOnFile, oneOffPay } from './paySchedule'
-import { upcoming, recMonthly, recActive, isOutflow } from './recurring'
+import { upcoming, recMonthly, recActive, isOutflow, hasPaymentItem } from './recurring'
 import { rangeStat, monthlyDebt, monthlyCardPayments } from './budget'
 import { payoffProjection, assumedPay, aprAt } from './debts'
 import { estimatedTaxDue } from './tax'
@@ -25,9 +25,9 @@ export function cashEffect(d: Data, s: Settings, r: Recurring): -1 | 0 | 1 {
  *  [from, to], monthly from the account's due date — overdue when the current due date has passed unpaid. The cash calendar and the Bills
  *  page both use these, so "due" agrees everywhere with the Debts page. */
 export function accountPaymentsDue(d: Data, from: string, to: string): Array<{ a: Account; date: string; amount: number; overdue: boolean }> {
-  const t = today(), rec = recActive(d), out: Array<{ a: Account; date: string; amount: number; overdue: boolean }> = []
+  const t = today(), out: Array<{ a: Account; date: string; amount: number; overdue: boolean }> = []
   for (const a of liabilities(d)) {
-    if (rec.some(r => r.liability_account_id === a.id)) continue
+    if (hasPaymentItem(d, a.id)) continue   // a bill carries this payment — or was left out, and then the account does not bring it back
     const pay = debtPlanned(a); if (!(pay > 0) || !a.due_date) continue
     const due = a.due_date.slice(0, 10), day = parse(due).getDate(), settled = debtDueState(a, d).cls === 'good'   // paid, or nothing due
     for (let k = 0; k < 120; k++) {
@@ -107,7 +107,7 @@ export function overdueOwed(d: Data, s?: Settings): CalItem[] {
     if (u.status === 'paid' || u.status === 'skipped' || !isOutflow(u.r) || !(u.amount > 0) || (s && cashEffect(d, s, u.r) === 0)) continue
     out.push({ date: u.date, label: `${u.r.name} (overdue)`, amt: -u.amount, kind: 'out', src: u.r.kind === 'subscription' ? 'sub' : u.r.kind === 'debt_payment' ? 'debt' : 'bill', id: u.r.id })
   }
-  liabilities(d).forEach(a => { if (recActive(d).some(r => r.liability_account_id === a.id)) return; const pay = debtPlanned(a); if (!(pay > 0) || !a.due_date || debtDueState(a, d).cls !== 'crit') return
+  liabilities(d).forEach(a => { if (hasPaymentItem(d, a.id)) return; const pay = debtPlanned(a); if (!(pay > 0) || !a.due_date || debtDueState(a, d).cls !== 'crit') return
     out.push({ date: a.due_date.slice(0, 10), label: `${acctLabel(a, d.accounts)} payment (overdue)`, amt: -pay, kind: 'out', src: 'debt', id: a.id }) })
   return out.sort((a, b) => a.date.localeCompare(b.date))
 }

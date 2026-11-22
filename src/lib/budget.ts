@@ -7,7 +7,7 @@ import { elapsed, daysIn } from './periods'
 import { expectedIncome } from './paySchedule'
 import { liabilities, debtPlanned, debtPaidInRange } from './accounts'
 import { categoryLines } from './splits'
-import { monthlyCommitments, recActive } from './recurring'
+import { monthlyCommitments, hasPaymentItem } from './recurring'
 
 export const inRange = (t: Transaction, from: string, to: string) => t.date >= from && t.date <= to && t.status !== 'void'
 export const budgetable = (t: Transaction) => !t.exclude_from_budget
@@ -189,8 +189,8 @@ export function monthlyCardPayments(d: Data, m = curMonth()) { return sum(liabil
  *  payment items, plus every card or loan that has no recurring payment item but a planned (or minimum) payment — the same monthly debt
  *  figure the Debts and Accounts pages show. */
 export function commitments(d: Data) {
-  const c = monthlyCommitments(d); const rec = recActive(d)
-  const extra = round2(sum(liabilities(d).filter(a => !rec.some(r => r.liability_account_id === a.id)).map(debtPlanned)))
+  const c = monthlyCommitments(d)
+  const extra = round2(sum(liabilities(d).filter(a => !hasPaymentItem(d, a.id)).map(debtPlanned)))   // a left-out bill for the account keeps its payment out here too (0.38.0)
   return { ...c, debt: round2(c.debt + extra), total: round2(c.total + extra), accountPayments: extra }
 }
 

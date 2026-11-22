@@ -509,6 +509,20 @@ for (const W of [1400, 390]) {
       const rule = p.locator('.tbl-grid tbody tr', { has: p.locator('input[value="internet tfr frm checking"]') }); ok(await rule.count() === 1 && await rule.locator('input[type=checkbox][aria-label="Leave out"]').isChecked(), 'Settings → Payee rules shows the rule, with Leave out ticked')
       await p.evaluate(v => localStorage.setItem('wealthpilot.demo', v), before); await p.reload(); await p.waitForTimeout(1200); if (await p.locator('text=Open the offline demo').count()) { await p.click('text=Open the offline demo'); await p.waitForTimeout(1200) }
     }
+    // 0.38.0: Leave out on a bill — someone else pays it: it stays on the list and drops out of what is due and what is counted
+    { await p.goto('http://localhost:4173/#/bills'); await p.waitForTimeout(1300)
+      const card = p.locator('.card', { hasText: 'Recurring items' }); const of = async () => +((await p.locator('.kpis .kpi', { hasText: 'On autopay' }).locator('.v').innerText()).match(/of (\d+)/) || [])[1]
+      const row = card.locator('.tbl-grid tbody tr', { has: p.locator('select[aria-label="Status"]') }).filter({ has: p.locator('input[aria-label="Name"]') }).first()
+      const name = await row.locator('input[aria-label="Name"]').inputValue(); const box = row.locator('input[type=checkbox][aria-label="Leave out"]'); const n0 = await of()
+      const st = () => p.evaluate(n => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.recurring.find(r => r.name === n)?.status, name)
+      ok(!(await box.isChecked()) && await st() === 'Active', `Bills: ${name} counts to begin with`)
+      await box.click(); await p.waitForTimeout(900)
+      const same = card.locator('.tbl-grid tbody tr', { has: p.locator(`input[aria-label="Name"][value="${name}"]`) }).first()
+      ok(await st() === 'Paused' && await of() === n0 - 1 && await same.locator('input[type=checkbox][aria-label="Leave out"]').isChecked() && /ex-off/.test(await same.getAttribute('class') || ''), `ticking Leave out keeps ${name} on the list, dimmed, and takes it out of the count (${n0} → ${n0 - 1} active)`)
+      await same.locator('input[type=checkbox][aria-label="Leave out"]').click(); await p.waitForTimeout(900)
+      ok(await st() === 'Active' && await of() === n0, 'unticking it counts the bill again')
+      await p.evaluate(() => document.activeElement?.blur?.())   // the box keeps the focus, and the keyboard shortcuts below do not fire from inside a field
+    }
     await p.keyboard.press('g'); await p.keyboard.press('d'); await p.waitForTimeout(500); ok(p.url().endsWith('#/'), 'G then D jumps to the Dashboard')
     ok(/Safe to spend/.test(await p.locator('.kpis').first().textContent()) && /\/day for \d+ day/.test(await p.locator('.kpis').first().textContent()), 'the Dashboard shows Safe to spend with a per-day figure')
     await p.keyboard.press('?'); await p.waitForTimeout(300); ok(/Keyboard shortcuts/.test(await p.locator('.modal').textContent()), '? opens the shortcut list'); await p.keyboard.press('Escape'); await p.waitForTimeout(200)
