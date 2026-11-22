@@ -9,7 +9,7 @@ beforeAll(() => setToday('2026-11-21')); afterAll(() => setToday(null))
 const A = (id: string, name: string, kind: Account['kind'] = 'checking', excluded = false) => ({ id, name, kind, institution: 'Bank', status: 'Active', balance: 0, excluded, household_id: 'h' }) as unknown as Account
 const BOA = A('boa', 'Adv Plus Banking(0224)'), SAV = A('sav', 'Advantage Savings(0253)', 'savings'), HUN = A('hun', 'Gary Checking (4019)'), CARD = A('card', 'Ollo', 'credit_card'), SON = A('son', 'Gavionne Checking (2060)', 'checking', true)
 let n = 0
-const T = (p: Partial<Transaction>): Transaction => ({ id: `t${++n}`, household_id: 'h', date: '2026-11-02', kind: 'expense', amount: 100, account_id: 'boa', to_account_id: null, category_id: null, payee: '', tags: [], status: 'cleared', source: 'import', exclude_from_budget: false, ...p }) as Transaction
+const T = (p: Partial<Transaction>): Transaction => { const id = p.id || `t${++n}`; return { household_id: 'h', date: '2026-11-02', kind: 'expense', amount: 100, account_id: 'boa', to_account_id: null, category_id: null, payee: '', tags: [], status: 'cleared', source: 'import', external_id: p.source === 'manual' ? null : 'sfin:ACT:' + id, exclude_from_budget: false, ...p, id } as Transaction }
 const book = (rows: Transaction[], off: Transaction[] = [], dups: Transaction[] = []): Data => ({ ...emptyData(), accounts: [BOA, SAV, HUN, CARD], transactions: rows, duplicates: dups, off: { accounts: [SON], transactions: off, duplicates: [], recurring: [], paySchedules: [], statements: [], balances: [], holdings: [], reconciliations: [], goals: [], emailItems: [], hardship: [] } })
 const name = (id?: string | null) => [BOA, SAV, HUN, CARD, SON].find(a => a.id === id)?.name || '—'
 const kinds = (d: Data, s = {}) => moneyChecks(d, s).map(i => i.kind)
@@ -58,6 +58,13 @@ describe('what is found', () => {
     const items = moneyChecks(book(rows)); expect(items.map(i => i.kind)).toEqual(['pair', 'move']); expect(items[0].rows.map(r => r.id)).toEqual(['o1', 'i1'])
     expect(checkTitle(items[0], name)).toBe('One move from Gary Checking (4019) to Advantage Savings(0253)'); expect(checkWhy(items[1], name)).toMatch(/counts as income/)
   })
+  it('"Make it one transfer" is offered only for rows the engine itself would read as one', () => {
+    // a pay-app payment that happens to say "transfer", and a bank's own transfer in: two different things
+    const rows = [T({ id: 'o', amount: 90, payee: 'APPLE CASH TRANSFER TO DANA WHITFIELD', date: '2026-11-10' }), T({ id: 'i', kind: 'income', amount: 90, account_id: 'sav', payee: 'INTERNET TFR FRM CHECKING', date: '2026-11-10' })]
+    expect(kinds(book(rows))).not.toContain('pair')
+    // a fee is not a transfer
+    expect(kinds(book([T({ amount: 12, payee: 'OVERDRAFT PROTECTION TRANSFER FEE', date: '2026-11-10', category_id: 'fees' })]))).toEqual([])
+  })
   it('a transfer that reads as a payment to someone else', () => {
     const keeper = T({ id: 'k', kind: 'transfer', amount: 100, account_id: 'boa', to_account_id: 'hun', payee: 'MESSERLI KRAMER DES:ePay ID:XXXXX2041 INDN:Gary Thomas', date: '2026-11-13' })
     const dup = T({ id: 'd', kind: 'income', amount: 100, account_id: 'hun', payee: 'INTERNET TFR FRM CHECKING', date: '2026-11-13', duplicate_of: 'k' })
@@ -69,6 +76,12 @@ describe('what is found', () => {
     // your own Zelle from one bank to another, paired, is fine: both rows are pay-app rows and neither names a stranger
     const own = T({ id: 'k5', kind: 'transfer', amount: 100, account_id: 'hun', to_account_id: 'boa', payee: 'Zelle Transaction ••0917 H50Pj1YDbPV9', date: '2026-09-16' }), d5 = T({ id: 'd5', kind: 'income', amount: 100, account_id: 'boa', payee: 'Zelle payment from GARY THOMAS for "test"; Conf# abc', date: '2026-09-16', duplicate_of: 'k5' })
     expect(moneyChecks(book([own], [], [d5]), {}, { since: '2026-09-01' })).toEqual([])
+    // a row that names the account it went to is not naming a stranger: "to GARY THOMAS" into Gary Checking, as the engine itself pairs it
+    const mine = T({ id: 'k6', kind: 'transfer', amount: 200, account_id: 'boa', to_account_id: 'hun', payee: 'Zelle payment to GARY THOMAS Conf# x88', date: '2026-11-02' }), d6 = T({ id: 'd6', kind: 'income', amount: 200, account_id: 'hun', payee: 'Zelle Transaction ••1102 H50Pj1YDbPV9', date: '2026-11-02', duplicate_of: 'k6' })
+    expect(moneyChecks(book([mine], [], [d6]))).toEqual([])
+    // a transfer someone typed, with the bank's deposit merged into it, is theirs
+    const typed = T({ id: 'k7', kind: 'transfer', amount: 150, account_id: 'boa', to_account_id: 'sav', payee: 'Rainy Day Fund', source: 'manual', date: '2026-11-15' }), d7 = T({ id: 'd7', kind: 'income', amount: 150, account_id: 'sav', payee: 'ONLINE TRANSFER FROM CHK', date: '2026-11-15', duplicate_of: 'k7' })
+    expect(moneyChecks(book([typed], [], [d7]))).toEqual([])
     // an ordinary paired transfer is not questioned
     const fine = T({ id: 'k2', kind: 'transfer', amount: 596, account_id: 'boa', to_account_id: 'sav', payee: 'Online Banking transfer to SAV 0253 Confirmation# 1', date: '2026-11-16' })
     expect(kinds(book([fine], [], [T({ id: 'd2', kind: 'income', amount: 596, account_id: 'sav', payee: 'Online Banking transfer from CHK 0224', date: '2026-11-16', duplicate_of: 'k2' })]))).toEqual([])

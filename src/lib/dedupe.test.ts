@@ -173,6 +173,14 @@ describe('what is and is not a transfer between your own accounts (0.37.0)', () 
     const inn2 = bank({ id: 'i3', account_id: BRK, external_id: 'sfin:ACT-3:8', amount: 300, kind: 'income', payee: 'ELECTRONIC FUNDS DEPOSIT', date: '2026-11-12' })
     expect(transferPairs([out, inn2], ACCTS)).toHaveLength(1)
   })
+  it('the fee a bank charges for a transfer is not a transfer', () => {
+    expect(readsAsTransfer('OVERDRAFT PROTECTION TRANSFER FEE')).toBe(false); expect(readsAsTransfer('WIRE TRANSFER FEE')).toBe(false); expect(readsAsTransfer('OVERDRAFT PROTECTION FROM XXXXXXXXXX0253')).toBe(true)
+    const fee = bank({ id: 'o', amount: 12, payee: 'OVERDRAFT PROTECTION FEE', date: '2026-11-13' })
+    expect(transferPairs([fee, sav({ id: 'i', amount: 12, kind: 'income', payee: 'ACH DEPOSIT', date: '2026-11-13' })], ACCTS)).toEqual([])
+    // …even when a like amount arrived by transfer the same day: the fee row names what it is
+    expect(transferPairs([fee, sav({ id: 'i2', amount: 12, kind: 'income', payee: 'TRANSFER FROM CHECKING', date: '2026-11-13' })], ACCTS)).toEqual([])
+    expect(planDedupe([fee, sav({ id: 'i3', amount: 12, kind: 'income', payee: 'TRANSFER FROM CHECKING', date: '2026-11-13' })], ACCTS).auto).toEqual([])
+  })
   it('money sent through a pay app is only the other half of money received through one', () => {
     // Gary's ledger: $30 sent by Apple Cash from one bank had been paired with $30 that arrived in savings at another by internal transfer
     const sent = bank({ id: 'o', amount: 30, payee: 'PMNT SENT 0918 APPLE CASH SENT M XXXXX8552 C', date: '2026-09-21' })

@@ -17,7 +17,9 @@ export function ruleMatches(r: PayeeRule, payee?: string | null, kind?: string |
     case 'exact': return p === q || merchantKey(payee) === merchantKey(r.pattern)
     case 'starts': return p.startsWith(q)
     case 'regex': try { return new RegExp(r.pattern, 'i').test(payee || '') } catch { return false }
-    default: return p.includes(q)
+    // …or the rule is the payee's own learned description (0.37.0): a learned pattern is the merchant's name with filler and punctuation
+    // taken out ("zelle to gavionne conf"), which the raw text ("Zelle payment to Gavionne Conf# tcp…") never literally contains
+    default: return p.includes(q) || merchantIdentity(payee).pattern === q
   }
 }
 /** First matching rule wins; longer (more specific) patterns are tried first. */
@@ -92,6 +94,10 @@ export function leaveOutRules(rules: PayeeRule[], payee: string | null | undefin
   const k = merchantIdentity(payee).pattern; if (!k) return null
   const i = rules.findIndex(x => x.pattern === k && x.match === 'contains' && (x.kind ?? null) === kind)
   if (i >= 0) { const next = rules.slice(); next[i] = { ...rules[i], exclude_from_budget: on, enabled: true }; return next }
+  // a rule for this description that covers both sides would be found first and win: it keeps the other side, and this side gets its
+  // own copy — same category and other actions — with the flag
+  const any = rules.findIndex(x => x.pattern === k && x.match === 'contains' && !x.kind && x.enabled)
+  if (any >= 0) { const next = rules.slice(); next[any] = { ...rules[any], kind: kind === 'income' ? 'expense' : 'income' }; next.push({ ...rules[any], id: 'r' + Math.random().toString(36).slice(2, 10), kind, exclude_from_budget: on, enabled: true, hits: 0, created_at: new Date().toISOString() }); return next }
   return on ? [...rules, { id: 'r' + Math.random().toString(36).slice(2, 10), pattern: k, match: 'contains', category_id: null, account_id: null, exclude_from_budget: true, kind, enabled: true, hits: 0, created_at: new Date().toISOString(), source: 'learned' }] : rules
 }
 /** Upsert: a learned rule for the same pattern + kind replaces the old one instead of piling up. */

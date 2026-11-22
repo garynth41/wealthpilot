@@ -44,7 +44,7 @@ export function TransactionsPage() {
   const acctUpd = (id: string, p: Partial<Account>) => update('accounts', id, p)
   const pushUndo = useStore.getState().pushUndo
   const sp = spanFor(data, settings); const t = today()
-  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
+  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe, data.off), [data.transactions, data.duplicates, data.accounts, settings.dedupe, data.off]); const openDups = () => open(<DuplicatesReview onDone={close} />, { wide: true })
   const from = range === 'period' ? sp.start : range === '30' ? addDays(t, -29) : range === 'month' ? monthStart(curMonth()) : range === '90' ? addDays(t, -89) : '0000'
   const to = range === 'period' ? sp.end : '9999'
   const ids = useMemo(() => { const raw = params.get('ids') || ''; if (raw === '@set' || raw.startsWith('@set.')) { try { const v: unknown = JSON.parse(sessionStorage.getItem(LEDGER_SET + raw.slice(4)) || '[]'); return new Set(Array.isArray(v) ? v.map(String) : []) } catch { return new Set<string>() } } return new Set(raw.split(',').filter(Boolean)) }, [params])
@@ -54,7 +54,7 @@ export function TransactionsPage() {
   const idsKey = params.get('ids') || ''; useEffect(() => { if (idsKey) { setKind('all'); setAcct(''); setTag('') } }, [idsKey])
   const fromSearch = params.get('from') === 'search' ? (params.get('q') || '') : null
   useEffect(() => { if (focusId && !rows.some(r => r.id === focusId) && data.transactions.some(t => t.id === focusId)) { setRange('all'); setKind('all'); setAcct(''); setTag('') } }, [focusId, rows, data.transactions])   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const tg = params.get('tag'); if (tg) { setTag(tg); setRange('all') } if (params.get('kind') === 'uncat') setKind('uncat'); if (params.get('kind') === 'out') { setKind('out'); setRange('all') } }, [params])
+  useEffect(() => { const tg = params.get('tag'); if (tg) { setTag(tg); setRange('all') } if (params.get('kind') === 'uncat') setKind('uncat'); if (params.get('kind') === 'out') { setKind('out'); setRange('all'); setAcct(''); setTag('') } }, [params])   // "See what is left out" means all of it: every date, account and tag
   const wantDups = params.get('dups') === '1'
   // Review uncategorized (0.31.0): the screen opens from the Uncategorized tile, and from links that carry ?review=1 (Dashboard, Budget)
   const review = useReview(); const wantReview = params.get('review') === '1'
@@ -84,8 +84,9 @@ export function TransactionsPage() {
     await applyPatch(row, { [k]: val } as Partial<Transaction>)
     // the Leave out box (0.37.0): say what it did, and offer to do the same for every later row from the same payee
     if (k === 'exclude_from_budget') { const st = useStore.getState(), on = !!val, sideKind = row.kind === 'income' ? 'income' as const : 'expense' as const
-      const next = on && row.kind !== 'transfer' ? leaveOutRules(st.settings().rules || [], row.payee, sideKind) : null
-      st.toast(on ? `Left out — ${row.kind === 'income' ? 'not counted as income' : row.kind === 'expense' ? 'not counted as spending' : 'not counted in the budget'}` : 'Counted again', false, next ? { label: 'Always leave out ones like this', run: () => { void st.guarded(() => st.saveSettings({ rules: next }), `Every new “${row.payee}” will be left out — change it in Settings → Payee rules`) } } : { label: 'Undo', run: () => { void st.guarded(() => st.undoLast(), 'Undone') } }); return }
+      // the rule is worked out when the offer is taken, from the rules as they are then
+      const can = on && row.kind !== 'transfer' && !!leaveOutRules([], row.payee, sideKind)
+      st.toast(on ? `Left out — ${row.kind === 'income' ? 'not counted as income' : row.kind === 'expense' ? 'not counted as spending' : 'not counted in the budget'}` : 'Counted again', false, can ? { label: 'Always leave out ones like this', run: () => { void st.guarded(async () => { const s2 = useStore.getState(); const next = leaveOutRules(s2.settings().rules || [], row.payee, sideKind); if (next) await s2.saveSettings({ rules: next }) }, `Every new “${row.payee}” will be left out — change it in Settings → Payee rules`) } } : { label: 'Undo', run: () => { void st.guarded(() => st.undoLast(), 'Undone') } }); return }
     if (k === 'category_id' && v && row.payee && settings.learnRules !== false && row.kind !== 'transfer') { const r = learnRule(row.payee, { category_id: v as string }, row.kind as 'expense' | 'income'); if (r) await saveSettings({ rules: upsertRule(settings.rules || [], r) }) }
     // "apply this to earlier ones too" (0.21.0): one tap re-files the same merchant's other rows from the last 12 months, as one undo step
     const st = useStore.getState(); const earlier = (k === 'category_id' || k === 'payee') && val ? similarEarlier(st.data, row, k, row.payee, val) : []

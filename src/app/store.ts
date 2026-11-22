@@ -210,8 +210,14 @@ export const useStore = create<State>((set, get) => ({
   },
   async mergeDuplicates(keeper, dups, patch) {
     const repo = need(get)
-    if (patch && Object.keys(patch).length) { const k = await repo.update('transactions', keeper, patch); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) }
-    for (const id of dups) { const d = await repo.update('transactions', id, { duplicate_of: keeper }); set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) }
+    // 0.37.0: both halves or neither. If hiding a copy fails after the kept row was changed (an expense made a transfer), the kept row is
+    // put back, so the two rows are again the two counted rows they were and the merge can simply be tried again.
+    const was = get().data.transactions.find(t => t.id === keeper); const back: Record<string, unknown> = {}; if (was && patch) for (const k of Object.keys(patch)) back[k] = (was as unknown as Record<string, unknown>)[k] ?? null
+    const patched = !!patch && Object.keys(patch).length > 0
+    if (patched) { const k = await repo.update('transactions', keeper, patch!); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) }
+    let done = 0
+    try { for (const id of dups) { const d = await repo.update('transactions', id, { duplicate_of: keeper }); done++; set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) } }
+    catch (e) { if (patched && was && !done) { try { const k = await repo.update('transactions', keeper, back as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) } catch { /* the next load shows what the server holds */ } } throw e }
   },
   async restoreDuplicate(id) {
     const repo = need(get); const dup = get().data.duplicates.find(t => t.id === id); const keeper = dup?.duplicate_of ? get().data.transactions.find(t => t.id === dup.duplicate_of) : undefined

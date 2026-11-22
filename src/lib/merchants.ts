@@ -128,7 +128,7 @@ function best(tier: Tier, text: string, income: boolean): { concept: Concept; ma
 }
 /** Bank wording for money moved between a person's own accounts — a transfer, an overdraft-protection pull, a round-up sweep — and not the
  *  fee a bank may charge for one. Such a row has no merchant to recognise. */
-export const isMoveText = (payee?: string | null) => readsAsTransfer(payee) && !/\bfees?\b/i.test(String(payee || ''))
+export const isMoveText = (payee?: string | null) => readsAsTransfer(payee)
 /** What the library makes of a payee. `kind` picks the side: money out is matched against spending concepts, money in against income ones. */
 export function libraryMatch(payee: string | null | undefined, kind: 'expense' | 'income' = 'expense'): LibraryMatch | null {
   const text = plain(payee); if (text.trim().length < 2) return null

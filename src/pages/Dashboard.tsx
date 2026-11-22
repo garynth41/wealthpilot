@@ -45,7 +45,7 @@ export function Dashboard() {
   const nextPay = nextPaycheck(data, t, 60)   // a payday whose deposit is already on file is not "next" (0.25.1)
   const goals = data.goals.filter(g => g.status === 'Active').map(g => ({ g, p: goalProgress(data, g) })).sort((a, b) => a.g.priority - b.g.priority).slice(0, 4)
   // every item links to the page that fixes it and (0.26.0) highlights the exact record there: `id` is the data-id anchor on that page
-  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe), [data.transactions, data.duplicates, data.accounts, settings.dedupe])
+  const dupN = useMemo(() => duplicateCounts(data.transactions, data.duplicates, data.accounts, settings.dedupe, data.off), [data.transactions, data.duplicates, data.accounts, settings.dedupe, data.off])
   const attention: Array<{ c: string; t: string; m: string; d?: string; id?: string }> = []
   over.forEach(u => attention.push({ c: 'crit', id: 'due:' + u.r.id, t: `${u.r.name} is overdue`, m: `${fmtMoney(u.amount)} was due ${fmtDY(u.date)}`, d: 'Bills' }))
   { const fail = data.audit.find(e => e.kind === 'sync' || e.kind === 'sync_failure'); if (fail && fail.kind === 'sync_failure') attention.push({ c: 'crit', id: 'bank-sync', t: 'Bank sync failed', m: fail.summary.replace(/^Bank sync failed: /, '') + ' — balances kept from the last good sync', d: 'Cash & Account Operations' }) }

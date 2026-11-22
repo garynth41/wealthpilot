@@ -10,7 +10,7 @@
 // off the list. A description the household said is always fine (settings.checkOk) is never listed.
 import type { Account, Data, Settings, Transaction } from '../app/data/types'
 import { LIABILITY_KINDS } from '../app/data/types'
-import { MAX_GAP_DAYS, namesSomeoneElse, payeeTokens, readsAsPayApp, type DTxn } from './dedupe'
+import { MAX_GAP_DAYS, namesSomeoneElse, origin, payeeTokens, readsAsPayApp, transferWording, type DTxn } from './dedupe'
 import { isMoveText, merchantIdentity } from './merchants'
 import { isSplit } from './splits'
 import { addDays, diffDays, today } from './dates'
@@ -64,8 +64,9 @@ export function moneyChecks(d: Data, s: Pick<Settings, 'checkOk'> = {}, opts: { 
   for (const k of d.transactions) {
     if (k.kind !== 'transfer' || k.status === 'void' || k.dedupe_ok || k.date < since || !k.account_id || !k.to_account_id || !asset(k.account_id) || !asset(k.to_account_id)) continue
     const dup = d.duplicates.find(x => x.duplicate_of === k.id && x.kind === 'income' && x.account_id === k.to_account_id); if (!dup) continue
-    // it names someone else, or it went through a pay app while the row it was joined to is a bank's own transfer
-    if (namesSomeoneElse(k as unknown as DTxn, [acct.get(k.account_id), acct.get(k.to_account_id)]) || readsAsPayApp(k.payee) !== readsAsPayApp(dup.payee)) items.push({ id: 'mis:' + k.id, kind: 'mispaired', date: k.date, rows: [k], dup, income: 0, spending: 0, pattern: checkPattern(k.payee) })
+    // by the same reading the engine pairs with: it names a stranger, or it went through a pay app while the row it was joined to is a
+    // bank's own transfer. A transfer someone typed, with the bank's deposit merged into it, is theirs and is not questioned.
+    if (origin(k as unknown as DTxn) !== 'typed' && !transferWording(k as unknown as DTxn, dup as unknown as DTxn, id => (id ? acct.get(id) : undefined))) items.push({ id: 'mis:' + k.id, kind: 'mispaired', date: k.date, rows: [k], dup, income: 0, spending: 0, pattern: checkPattern(k.payee) })
   }
 
   // the rows that count as income or spending and have not been looked at
@@ -98,7 +99,7 @@ export function moneyChecks(d: Data, s: Pick<Settings, 'checkOk'> = {}, opts: { 
     take(e, i); items.push({ id: `round:${e.id}:${i.id}`, kind: 'roundtrip', date: i.date > e.date ? i.date : e.date, rows: [e, i], ...sums([e, i]), pattern: '' }) }
   // two counted rows that read as one transfer: the engine pairs these on its own unless more than one row could be the other half
   for (const i of ins) { if (used.has(i.id) || offOf.has(i.id) || !isMoveText(i.payee)) continue
-    const e = nearest(i, outs, t => t.account_id !== i.account_id && !offOf.has(t.id) && isMoveText(t.payee), MAX_GAP_DAYS); if (!e) continue
+    const e = nearest(i, outs, t => t.account_id !== i.account_id && !offOf.has(t.id) && transferWording(t as unknown as DTxn, i as unknown as DTxn, id => (id ? acct.get(id) : undefined)), MAX_GAP_DAYS); if (!e) continue   // the same wording test the engine pairs with
     take(e, i); items.push({ id: `pair:${e.id}:${i.id}`, kind: 'pair', date: i.date > e.date ? i.date : e.date, rows: [e, i], ...sums([e, i]), pattern: '' }) }
   // what is left, one row at a time, gathered by description: money to or from a left-out account, and transfers with no other side
   const groups = new Map<string, CheckItem>()

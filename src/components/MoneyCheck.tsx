@@ -34,14 +34,18 @@ export function MoneyCheck() {
   const many = (n: number, one: string, more: string) => (n === 1 ? one : more)
   /** Leave the rows out; for a group of one description, offer to leave out every later one too. */
   const leaveOut = (i: CheckItem, rows = i.rows) => run(() => st().bulkUpdate('transactions', ids(rows), { exclude_from_budget: true }), `${many(rows.length, 'Left out', `${rows.length} left out`)} — not counted as income or spending`, () => {
-    const one = rows[0]; const next = i.pattern && one.kind !== 'transfer' ? leaveOutRules(st().settings().rules || [], one.payee, one.kind === 'income' ? 'income' : 'expense') : null
-    return next ? { label: 'Always leave out ones like this', run: () => { void st().guarded(() => st().saveSettings({ rules: next }), `Every new “${one.payee}” will be left out — change it in Settings → Payee rules`) } } : null
+    // the rule is worked out when the offer is taken, from the rules as they are then — another offer may have been taken in between
+    const one = rows[0], side = one.kind === 'income' ? 'income' as const : 'expense' as const; const can = !!i.pattern && one.kind !== 'transfer' && !!leaveOutRules([], one.payee, side)
+    return can ? { label: 'Always leave out ones like this', run: () => { void st().guarded(async () => { const next = leaveOutRules(st().settings().rules || [], one.payee, side); if (next) await st().saveSettings({ rules: next }) }, `Every new “${one.payee}” will be left out — change it in Settings → Payee rules`) } } : null
   })
   /** Count them as they are, and do not ask about these rows again; for a group, offer to stop asking about the description altogether. */
   const keep = (i: CheckItem, rows = i.rows) => run(() => st().bulkUpdate('transactions', ids(rows), { dedupe_ok: true }), many(rows.length, 'Kept as it is counted', `${rows.length} kept as they are counted`), () =>
     i.pattern ? { label: 'Do not ask about these again', run: () => { void st().guarded(() => st().saveSettings({ checkOk: [...new Set([...(st().settings().checkOk || []), i.pattern])] }), 'Rows like these will not be listed here again') } } : null)
-  const pair = (i: CheckItem) => { const [out, into] = i.rows; run(() => st().mergeDuplicates(out.id, [into.id], { kind: 'transfer', to_account_id: into.account_id }), `Now one transfer from ${acctName(out.account_id)} to ${acctName(into.account_id)} — undo it in Transactions → Duplicates`) }
-  const unpair = (i: CheckItem) => run(() => st().restoreDuplicate(i.dup!.id), `${i.rows[0].payee || 'It'} counts as a payment again`)
+  // both leave an undo step (Ctrl Z): a made transfer comes apart into the two rows it was, listed here again; an undone pairing is joined again
+  const pair = (i: CheckItem) => { const [out, into] = i.rows; run(async () => { await st().mergeDuplicates(out.id, [into.id], { kind: 'transfer', to_account_id: into.account_id })
+    st().pushUndo({ label: 'make one transfer', run: async () => { await st().restoreDuplicate(into.id); await st().bulkUpdate('transactions', [out.id], { kind: 'expense', to_account_id: null, dedupe_ok: !!out.dedupe_ok }); await st().bulkUpdate('transactions', [into.id], { dedupe_ok: !!into.dedupe_ok }) } }) }, `Now one transfer from ${acctName(out.account_id)} to ${acctName(into.account_id)}`) }
+  const unpair = (i: CheckItem) => { const k = i.rows[0], dup = i.dup!; run(async () => { await st().restoreDuplicate(dup.id)
+    st().pushUndo({ label: 'undo a pairing', run: async () => { await st().mergeDuplicates(k.id, [dup.id], { kind: 'transfer', to_account_id: k.to_account_id, dedupe_ok: !!k.dedupe_ok }) } }) }, `${k.payee || 'It'} counts as a payment again`) }
   const line = (t: Transaction, i: CheckItem, own: boolean) => <tr key={t.id} data-mc-row={t.id}><td style={{ whiteSpace: 'nowrap' }}>{fmtD(t.date)}</td><td>{t.payee || 'No payee'}<div className="note" style={{ margin: 0 }}>{acctName(t.account_id)}{t.kind === 'transfer' ? ` → ${acctName(t.to_account_id)}` : ''} · {t.kind === 'transfer' ? 'recorded as a transfer' : t.kind === 'income' ? `counted as income${cat(t.category_id) ? `, ${cat(t.category_id)!.name}` : ''}` : `counted as spending${cat(t.category_id) ? `, ${cat(t.category_id)!.name}` : ''}`}</div></td><td className="num">{t.kind === 'income' ? '+' : t.kind === 'expense' ? '−' : ''}{fm2(t.amount)}</td>
     {own && canEdit && <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}><Btn sm disabled={busy} onClick={() => leaveOut(i, [t])}>Leave out</Btn> <Btn sm disabled={busy} onClick={() => keep(i, [t])}>Keep</Btn></td>}</tr>
   return <>
@@ -49,7 +53,7 @@ export function MoneyCheck() {
     <MBody>
       {items.length === 0 ? <div className="empty" data-mc="clear"><p><b>Nothing to check.</b></p><p>No income or spending in the last six months looks like money that only moved between accounts.</p></div> : <>
         <div className="banner info" style={{ marginBottom: 10 }} data-mc="summary">{sum.n} thing{sum.n === 1 ? '' : 's'} to look at. If all of it only moved between accounts, your income is overstated by <b>{fmtMoney(sum.income)}</b> and your spending by <b>{fmtMoney(sum.spending)}</b> over the last six months.</div>
-        <Note><b>Leave out</b> keeps the row in the ledger but counts it as neither income nor spending. <b>Keep</b> counts it as it is and stops asking. Account balances never change, and every press can be undone.</Note>
+        <Note><b>Leave out</b> keeps the row in the ledger but counts it as neither income nor spending. <b>Keep</b> counts it as it is and stops asking. Account balances never change. Ctrl Z undoes the last press.</Note>
         <ul className="ru-list" data-mc="list">{items.slice(0, SHOWN).map(i => { const [pc, pl] = PILL[i.kind]; const group = i.rows.length > 1 && (i.kind === 'from_off' || i.kind === 'to_off' || i.kind === 'move'); const two = i.kind === 'pair' || i.kind === 'passthrough' || i.kind === 'roundtrip'; const amount = two || i.kind === 'mispaired' ? i.rows[0].amount : i.income + i.spending
           return <li key={i.id} className="ru-item" data-mc-item={i.kind}>
             <div className="ru-row">
