@@ -2,6 +2,7 @@
 // (Settings.payStubs); the Tax page, the contribution limits and the retirement planner read it. Engine: lib/paycheck.ts.
 import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
+import { useStore } from '../app/store'
 import type { PaySchedule, PayStub } from '../app/data/types'
 import { Btn, Field, MBody, MFoot, MHead, Note, Pill } from './ui'
 import { STUB_FIELDS, STUB_LABEL, ficaOf, grossOf, matchOf, stubOf, stubYear, takeHome, type StubField } from '../lib/paycheck'
@@ -15,7 +16,7 @@ const HINT: Partial<Record<StubField, string>> = { k401: 'your own pre-tax money
 const YTD: Array<[keyof NonNullable<PayStub['ytd']>, string]> = [['gross', 'Gross pay'], ['fed', 'Federal tax withheld'], ['state', 'State tax withheld'], ['local', 'City / school tax withheld'], ['k401', '401(k), pre-tax'], ['roth401k', 'Roth 401(k)'], ['hsa', 'HSA'], ['sec125', 'Health and other pre-tax']]
 
 export function PaycheckEditor({ ps, onDone }: { ps: PaySchedule; onDone: () => void }) {
-  const { data, settings, saveSettings, update, guarded, canEdit, acctLabels } = useData()
+  const { data, settings, saveSettings, update, guarded, canEdit, acctLabels } = useData()   // `settings` is for display; the save reads the stored map afresh
   const [st, setSt] = useState<PayStub>(() => ({ ...stubOf(settings, ps.id) })); const [gross, setGross] = useState(ps.gross_amount != null && +ps.gross_amount > 0 ? String(ps.gross_amount) : '')
   const [showYtd, setShowYtd] = useState(!!st.ytd)
   const year = +today().slice(0, 4), T = tableFor(year); const p: PaySchedule = { ...ps, gross_amount: parseNum(gross) ?? ps.gross_amount }
@@ -26,10 +27,11 @@ export function PaycheckEditor({ ps, onDone }: { ps: PaySchedule; onDone: () => 
   const inv = investAccounts(data), plans = inv.filter(a => ['k401', 'roth401k'].includes(acctTypeOf(settings, a))), hsas = inv.filter(a => acctTypeOf(settings, a) === 'hsa')
   const off = Math.abs(th.unexplained), ok = off <= Math.max(2, th.net * 0.005)
   const save = () => guarded(async () => {
-    const clean: PayStub = { ...st }; for (const k of Object.keys(clean) as Array<keyof PayStub>) if (clean[k] == null || clean[k] === 0) delete clean[k]
+    const clean: PayStub = { ...st }; for (const k of Object.keys(clean) as Array<keyof PayStub>) if (clean[k] == null || clean[k] === 0 || clean[k] === false) delete clean[k]
     if (!showYtd || !clean.ytd?.asOf) delete clean.ytd
-    const all = { ...(settings.payStubs || {}) }; if (Object.keys(clean).length) all[ps.id] = clean; else delete all[ps.id]
     const gn = parseNum(gross); if (gn != null && gn > 0 && gn !== +(ps.gross_amount || 0)) await update('paySchedules', ps.id, { gross_amount: gn })
+    // change only this schedule's entry, in the map as it is stored now — not a copy taken when the form opened, which would undo a breakdown saved since
+    const all = { ...(useStore.getState().settings().payStubs || {}) }; if (Object.keys(clean).length) all[ps.id] = clean; else delete all[ps.id]
     await saveSettings({ payStubs: all }); onDone()
   }, 'Paycheck breakdown saved')
   return <><MHead title={`Paycheck breakdown · ${ps.name}`} /><MBody>
@@ -52,6 +54,7 @@ export function PaycheckEditor({ ps, onDone }: { ps: PaySchedule; onDone: () => 
       <Field label="401(k) money goes into" hint={plans.length ? 'for contributions by account and performance' : 'add the account on Account Balances first'}><select className="inp" value={st.k401Account || ''} disabled={!canEdit} onChange={e => setSt(x => ({ ...x, k401Account: e.target.value || null }))}><option value="">{plans.length === 1 ? `${acctLabels[plans[0].id]} (your only workplace plan)` : '—'}</option>{inv.map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select></Field>
       <Field label="HSA money goes into"><select className="inp" value={st.hsaAccount || ''} disabled={!canEdit} onChange={e => setSt(x => ({ ...x, hsaAccount: e.target.value || null }))}><option value="">{hsas.length === 1 ? `${acctLabels[hsas[0].id]} (your only HSA)` : '—'}</option>{inv.map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select></Field>
     </div>
+    <label style={{ display: 'block', margin: '4px 0 0' }}><input type="checkbox" checked={!!st.partner} disabled={!canEdit} onChange={e => setSt(x => ({ ...x, partner: e.target.checked || undefined }))} /> This is my spouse's or partner's paycheck — count its 401(k) money against their own yearly limit</label>
     <div className={`msg ${ok ? 'good' : 'warn'}`} style={{ marginTop: 10 }} data-pc="check">
       <b>{fm2(th.gross)}</b> gross − <b>{fm2(th.deductions)}</b> entered − <b>{fm2(th.fica)}</b> Social Security and Medicare = <b>{fm2(th.computed)}</b> · your take-home is <b>{fm2(th.net)}</b>{' '}
       {ok ? <Pill cls="good">adds up</Pill> : th.unexplained > 0 ? <Pill cls="warn">{fm2(off)} more comes out than you have entered</Pill> : <Pill cls="warn">{fm2(off)} too much entered, or take-home is out of date</Pill>}

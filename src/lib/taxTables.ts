@@ -135,10 +135,11 @@ export const contribLimits = (year: number): ContribLimits => { const ys = Objec
 export const rmdStartAge = (birthYear: number) => (birthYear >= 1960 ? 75 : birthYear >= 1951 ? 73 : 72)
 /** The IRS Uniform Lifetime Table (Publication 590-B, Appendix B, Table III; Treas. Reg. §1.401(a)(9)-9(c)), in force since 2022: the year's required
  *  distribution is last year-end's balance ÷ the figure for the age reached this year. Checked 2026-11-22 against the table as reproduced by Capital
- *  Group, Schwab, Fidelity and Bankrate (72: 27.4 … 106: 4.3). Ages past 106 use 106's figure here — the table goes on to 2.0 at 120. */
+ *  Group, Schwab, Fidelity and Bankrate (72: 27.4 … 106: 4.3) and, for 107 to 120+, the regulation's own table at ecfr.gov (107: 4.1 … 119: 2.3, 120 and over: 2.0). */
 export const RMD_DIVISOR: Record<number, number> = { 72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4, 88: 13.7, 89: 12.9,
-  90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0, 102: 5.6, 103: 5.2, 104: 4.9, 105: 4.6, 106: 4.3 }
-export const rmdDivisor = (age: number) => RMD_DIVISOR[Math.min(106, Math.max(72, Math.round(age)))]
+  90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0, 102: 5.6, 103: 5.2, 104: 4.9, 105: 4.6, 106: 4.3, 107: 4.1, 108: 3.9, 109: 3.7,
+  110: 3.5, 111: 3.4, 112: 3.3, 113: 3.1, 114: 3.0, 115: 2.9, 116: 2.8, 117: 2.7, 118: 2.5, 119: 2.3, 120: 2.0 }
+export const rmdDivisor = (age: number) => RMD_DIVISOR[Math.min(120, Math.max(72, Math.round(age)))]
 
 export const TAX_YEARS = Object.keys(FEDERAL).map(Number).sort()
 export const LATEST_TAX_YEAR = TAX_YEARS[TAX_YEARS.length - 1]

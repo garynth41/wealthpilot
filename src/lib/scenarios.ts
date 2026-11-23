@@ -13,7 +13,7 @@ import { simulate, type Strategy } from './debts'
 import { liabilities } from './accounts'
 import { projectRetirement, RETIREMENT_DEFAULTS, drawdown } from './retirement'
 import { retirementAssets } from './portfolio'
-import { effectiveInputs, plannerAuto } from './contrib'
+import { plannerRun } from './retirementTax'
 import { buildPlan, normalizePlan } from './plan'
 import { goalWhatIf } from './planning'
 
@@ -63,7 +63,7 @@ export function metrics(kind: ScenarioKind, d: Data, s: Settings, raw: unknown):
       { k: 'extra', label: 'Extra per month', v: a.extra, text: fmtMoney(a.extra), better: null }]
   }
   if (kind === 'retirement') {
-    const i0 = normalize('retirement', raw); const i = effectiveInputs(i0, plannerAuto(i0, d, s)); const bal = retirementAssets(d).total;   // 0.39.0: what the planner follows on its own applies here too
+    const bal = retirementAssets(d).total; const i = plannerRun(normalize('retirement', raw), d, s, bal).inputs;   // 0.39.0: the same followed figures and yearly tax the planner runs on
     const p = projectRetirement(bal, i); const dd = drawdown(p.real, i)
     return [{ k: 'ready', label: 'Readiness', v: p.readiness, text: `${p.readiness} / 100`, better: 'high' },
       { k: 'real', label: "At retirement (today's $)", v: p.real, text: fmtMoney(p.real), better: 'high' },

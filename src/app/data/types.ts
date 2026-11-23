@@ -225,6 +225,8 @@ export interface PayStub {
   fed?: number; state?: number; local?: number
   matchPct?: number; matchUpToPct?: number; hsaEmployer?: number
   k401Account?: UUID | null; hsaAccount?: UUID | null
+  /** this paycheck is the spouse's or partner's: the workplace-plan limit is per person, so it is counted against their own */
+  partner?: boolean
   ytd?: { asOf: ISODate; gross?: number | null; k401?: number | null; roth401k?: number | null; hsa?: number | null; sec125?: number | null; fed?: number | null; state?: number | null; local?: number | null } | null
 }
 /** How an investment or retirement account is taxed (0.39.0): pre-tax workplace plan, Roth workplace plan, traditional IRA, Roth IRA, HSA, an

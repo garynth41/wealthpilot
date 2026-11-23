@@ -86,10 +86,11 @@ export const tax: GuidePage = {
         { term: 'In the form: After tax', text: 'Roth 401(k) money and any other after-tax deductions, such as union dues or after-tax insurance.' },
         { term: 'In the form: What your employer adds', text: 'The match formula — "matches X% on the first Y% of pay" — and any HSA money your employer puts in each paycheck. The form shows the full match and what you collect.' },
         { term: 'In the form: 401(k) money goes into / HSA money goes into', text: 'The account each goes to, for contributions by account on Investments & Retirement. Left at — it goes to your only workplace plan or HSA when there is exactly one.' },
+        { term: 'In the form: This is my spouse\'s or partner\'s paycheck', text: 'Tick it on their job. The 401(k) limit is per person, so their 401(k) money is counted against their own limit and shown on its own line on Investments & Retirement. Their age is not on file, so no catch-up is added.' },
         { term: 'In the form: year-to-date figures', text: 'Optional. The totals and pay date from your latest pay stub. Up to that date they are used as they are; after it, each paycheck adds the per-paycheck amounts. A line left blank is worked out from the paychecks so far.' },
       ],
       tips: [
-        'The paycheck amounts are assumed to be the same on every paycheck this year unless you give year-to-date figures.',
+        'The paycheck amounts are assumed to be the same on every paycheck this year unless you give year-to-date figures. A worked-out 401(k) total is held to the yearly limit; a year-to-date figure you type is used as it is.',
         'The same breakdown opens from the Breakdown button on a pay schedule on Income & Pay Periods.',
         'If you typed a "Tax withheld (federal)" row before adding a breakdown for the same job, remove the typed row so the tax is not counted twice.',
       ],

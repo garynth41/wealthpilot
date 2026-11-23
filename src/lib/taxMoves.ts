@@ -4,9 +4,10 @@
 import type { Data, Settings } from '../app/data/types'
 import { estimateTax, resolveProfile, tableFor, withholdingToBreakEven, mainW2Schedule, type TaxEstimate, type TaxItem, type TaxItemKind, type TaxProfile } from './tax'
 import { contributions, payrollYear } from './contrib'
+import { stubOf } from './paycheck'
 import { harvestCandidates, ORDINARY_OFFSET_LIMIT, isTaxableAccount, lotSummary } from './lots'
 import { holdingGain } from './portfolio'
-import { round2, sum } from './money'
+import { fmtMoney, round2, sum } from './money'
 import { today } from './dates'
 
 export interface TaxMove {
@@ -16,7 +17,8 @@ export interface TaxMove {
   title: string; detail: string; amount: number; by: string; to?: string
 }
 export interface TaxMoves { moves: TaxMove[]; together: number; year: number; open: boolean }
-const usd = (v: number) => '$' + Math.round(v).toLocaleString('en-US')
+/** whole dollars through the app's own formatter, so privacy mode masks the amounts in a move's title and detail too */
+const usd = (v: number) => fmtMoney(v)
 /** What this year's taxes — federal, state, city and school district — come to with extra rows added to the profile. */
 const withRows = (d: Data, s: Settings, p: Partial<TaxProfile>, asOf: string, rows: Array<[TaxItemKind, number]>): TaxEstimate => {
   const base = resolveProfile(d, s, p, asOf); const extra: TaxItem[] = rows.filter(r => Math.abs(r[1]) > 0.005).map(([kind, amount], n) => ({ id: 'move' + n, kind, label: '', amount, source: 'manual' }))
@@ -37,8 +39,8 @@ export function taxMoves(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf = 
     // the employer match left on the table
     if (c.match.hasFormula && c.match.missedRest > 0.5) moves.push({ id: 'match', kind: 'free', title: `Collect the full employer match: ${usd(c.match.missedRest)} more this year`, detail: `Your employer matches up to ${c.match.neededPct}% of pay and you are putting in less, leaving ${usd(c.match.missedPerCheck)} uncollected each paycheck. Raising your 401(k) to ${c.match.neededPct}% of pay collects it on every paycheck left.`, amount: c.match.missedRest, by: `December 31, ${year}`, to: '/income' })
     // room under the 401(k) limit, as far as the pay still to come can fill it
-    const dl = c.lines.find(l => l.key === 'deferral')!, left = main ? p.paychecksLeft || 0 : 0
-    const restGross = round2(sum(estimateRestGross(d, s, year, asOf, main ? { id: main.id, left } : null)))
+    const theirs = !!(main && stubOf(s, main.id).partner); const dl = c.lines.find(l => l.key === (theirs ? 'deferral2' : 'deferral'))!, left = main ? p.paychecksLeft || 0 : 0
+    const restGross = round2(sum(payrollYear(d, s, year, asOf, main ? { id: main.id, left } : null).filter(r => r.ps.status === 'Active' && !!r.st.partner === theirs).map(r => r.y.gross.rest)))
     const more = round2(Math.min(dl.room, Math.max(0, restGross - dl.rest)))
     const big = restGross > 0 && more > restGross * 0.5   // more than half of the pay still to come: say "up to"
     if (dl.show && more >= 50 && left > 0) { const rows: Array<[TaxItemKind, number]> = [['pretax_deduction', more]]; const sv = saving(rows); joint.push(...rows)
@@ -70,9 +72,6 @@ export function taxMoves(d: Data, s: Settings, p0?: Partial<TaxProfile>, asOf = 
   moves.sort((a, b) => order[a.kind] - order[b.kind] || b.amount - a.amount)
   return { moves, together: joint.length ? Math.max(0, saving(joint)) : 0, year, open: yearOpen || beforeFiling }
 }
-/** Gross pay still to come this tax year on the payroll jobs — the most that 401(k) money could still be taken from. */
-function estimateRestGross(d: Data, s: Settings, year: number, asOf: string, leftOverride: { id: string; left: number } | null): number[] { return contributionsRows(d, s, year, asOf, leftOverride).map(r => r.y.gross.rest) }
-const contributionsRows = (d: Data, s: Settings, year: number, asOf: string, lo: { id: string; left: number } | null) => payrollYear(d, s, year, asOf, lo).filter(r => r.ps.status === 'Active')
 /** Long-term gains sitting in taxable accounts: the gains on lots held over a year, or, for a holding with no lots, its whole gain (assumed long-term). */
 export function unrealizedLongGains(d: Pick<Data, 'holdings' | 'lots' | 'accounts'>, asOf = today()): number {
   let g = 0

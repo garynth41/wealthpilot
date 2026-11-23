@@ -9,7 +9,8 @@ import { emptyData } from '../app/data/types'
 import { estimateTax, tableFor, TAX_DEFAULTS, type TaxEstimate } from './tax'
 import { LATEST_TAX_YEAR, SENIOR_DEDUCTION_LAST_YEAR, rmdDivisor, rmdStartAge, type FilingStatus } from './taxTables'
 import { guaranteedIncome, projectRetirement, ssAnnual, ssBirthYear, ssClaimShare, ssStart } from './retirement'
-import type { Buckets } from './contrib'
+import { bucketsNow, effectiveInputs, plannerAuto, type Buckets, type PlannerAuto } from './contrib'
+import type { Data } from '../app/data/types'
 import { round2 } from './money'
 import { today } from './dates'
 
@@ -80,4 +81,20 @@ export function afterTaxPlan(i: RetirementInputs, now: Buckets, yearly: Buckets,
     out.push({ age, spend, ss: round2(ss), pension: round2(pension), rmd: round2(rmd), fromPretax: round2(rmd + r.wP - surplus), fromRoth: round2(r.wR), fromTaxable: round2(r.wT), tax: round2(r.tx.total), federal: round2(r.tx.federal), state: round2(r.tx.state), short: round2(short), balance: { pretax: round2(P), roth: round2(R), taxable: round2(T), total: round2(P + R + T) } })
   }
   return { atRetirement, years: out, taxByAge, depletionAge, lifetimeTax: round2(lifetimeTax), avgTax: out.length ? round2(lifetimeTax / out.length) : 0, firstTax: out[0]?.tax ?? 0, effRate: lifetimeIncome > 0 ? lifetimeTax / lifetimeIncome : null, rmdAge, firstRmd, conversion }
+}
+
+export interface PlannerRun { /** what the planner runs on: followed figures filled in, and each year's tax when taxes are counted */ inputs: RetirementInputs; auto: PlannerAuto; plan: AfterTaxPlan | null }
+let last: { typed: string; d: Data; s: Settings; balance: number; asOf: string; out: PlannerRun } | null = null
+/** The planner as it actually runs, from the typed inputs: the figures it follows on its own filled in (lib/contrib.ts), and — unless "count
+ *  taxes" is off — the after-tax walk, whose yearly tax goes into the inputs. `balance` is the planner's starting balance; today's accounts supply
+ *  the split by tax type, scaled to it. Every screen that shows a retirement figure goes through here, so they agree. The last result is kept,
+ *  because the Plan asks for the same one many times over. */
+export function plannerRun(typed: RetirementInputs, d: Data, s: Settings, balance: number, asOf = today()): PlannerRun {
+  const key = JSON.stringify(typed); if (last && last.typed === key && last.d === d && last.s === s && last.balance === balance && last.asOf === asOf) return last.out
+  const auto = plannerAuto(typed, d, s, asOf), base = effectiveInputs({ ...typed, taxByAge: undefined }, auto)
+  let plan: AfterTaxPlan | null = null
+  if (base.countTaxes !== false) { const b = bucketsNow(d, s), k = b.total > 0 ? balance / b.total : 0
+    const now = b.total > 0 ? { pretax: b.pretax * k, roth: b.roth * k, taxable: b.taxable * k } : { pretax: balance, roth: 0, taxable: 0 }
+    plan = afterTaxPlan(base, now, auto.contribution ? auto.detected : { pretax: 0, roth: 0, taxable: 0 }, retTaxCtx(s, b.gainShare, asOf)) }
+  const out = { inputs: plan ? { ...base, taxByAge: plan.taxByAge } : base, auto, plan }; last = { typed: key, d, s, balance, asOf, out }; return out
 }

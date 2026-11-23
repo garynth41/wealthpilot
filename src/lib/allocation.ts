@@ -50,11 +50,14 @@ export function driftOf(holdings: Holding[], target: Mix): Drift {
   return { rows, total: m.total, maxDiff, drifted: m.total > 0 && maxDiff > DRIFT_BAND, sell, buy, moveTotal: round2(sum(sell.map(r => r.amount))) }
 }
 /** Getting back to target without selling: send new money to the underweight groups, in proportion to how far under each is. `months` is how long
- *  the yearly contribution takes to close the gap (null when nothing is contributed or nothing is under target). */
+ *  the yearly contribution takes to close the gap (null when nothing is contributed or nothing is under target). The new money makes the whole
+ *  portfolio bigger, so the underweight groups have a larger target to reach: with their target shares adding up to `t`, closing a gap of G takes
+ *  G ÷ (1 − t) of new money, not G. */
 export function contributionPlan(dr: Drift, yearlyContribution: number): { split: Array<{ group: AllocGroup; share: number; perMonth: number }>; months: number | null } {
   const under = sum(dr.buy.map(r => -r.amount)), monthly = Math.max(0, yearlyContribution) / 12
   if (!(under > 0)) return { split: [], months: null }
-  return { split: dr.buy.map(r => ({ group: r.group, share: -r.amount / under, perMonth: round2(monthly * -r.amount / under) })), months: monthly > 0 ? Math.ceil(under / monthly) : null }
+  const t = sum(dr.buy.map(r => r.target)) / 100, need = t < 1 ? under / (1 - t) : Infinity
+  return { split: dr.buy.map(r => ({ group: r.group, share: -r.amount / under, perMonth: round2(monthly * -r.amount / under) })), months: monthly > 0 && isFinite(need) ? Math.ceil(need / monthly - 1e-9) : null }
 }
 
 /** Long-run planning assumptions, nominal, a year: what each group is assumed to return and how much it swings. These are starting points a household
@@ -82,8 +85,9 @@ export interface Performance { points: PerfPoint[]; from: string | null; months:
  *  Value = each account's last recorded balance on or before the month's end (the database's balance history; this month, the latest one). An
  *  account with no recorded balance is left out, and so is the value of holdings that the account's balance does not include.
  *  Money in = transfers into those accounts less transfers out (moves between two of them cancel), plus the payroll money from the paycheck
- *  breakdown — 401(k), Roth 401(k) and employer match on each payday, and payroll HSA when an HSA account is among them — at today's per-paycheck
- *  amounts for earlier paydays too. Earned = change in value − money in. Each month's return is earned ÷ (starting value + half the money in), the
+ *  breakdown — 401(k), Roth 401(k) and employer match on each payday, and payroll HSA — at today's per-paycheck amounts for earlier paydays too.
+ *  Payroll money is counted only when the account it goes into is one of the followed accounts: the account named on the breakdown, else the only
+ *  workplace plan (or HSA), else any followed account of that type. Earned = change in value − money in. Each month's return is earned ÷ (starting value + half the money in), the
  *  Modified Dietz method; months are chained for year-to-date, the last twelve months and since the start (annualized past a year).
  *  History starts at the first month every followed account has a balance; fewer than two months gives no return. */
 export function performance(d: Data, s: Pick<Settings, 'payStubs' | 'invest'>, asOf = today(), typeOf?: (a: Account) => string): Performance {
@@ -93,12 +97,14 @@ export function performance(d: Data, s: Pick<Settings, 'payStubs' | 'invest'>, a
   const firsts = accts.map(a => hist.get(a.id)![0].as_of); if (!firsts.length) return none
   const start = monthKey(firsts.sort()[firsts.length - 1]), end = monthKey(asOf); if (start >= end) return none
   const valueAt = (a: Account, date: string) => { const h = hist.get(a.id)!; let v: number | null = null; for (const p of h) { if (p.as_of > date) break; v = +(p.balance ?? p.bank_balance ?? 0) } return v ?? 0 }
-  const hasHsa = typeOf ? accts.some(a => typeOf(a) === 'hsa') : false
+  const ty = typeOf || ((a: Account) => (a.kind === 'retirement' ? 'k401' : 'taxable')); const isPlan = (a: Account) => ty(a) === 'k401' || ty(a) === 'roth401k', isHsa = (a: Account) => ty(a) === 'hsa'
+  /** does payroll money of this kind land in a followed account? */
+  const lands = (named: string | null | undefined, kind: (a: Account) => boolean) => { const dest = named || (all.filter(kind).length === 1 ? all.filter(kind)[0].id : null); return dest ? ids.has(dest) : accts.some(kind) }
   const payroll = d.paySchedules.filter(p => hasPayroll(p) && (p.status === 'Active' || (p.status === 'Ended' && !!p.ends_on))).map(p => ({ p: p.status === 'Active' ? p : { ...p, status: 'Active' as const }, st: stubOf(s, p.id) }))
   const flowIn = (from: string, to: string) => {
     let f = 0
     for (const t of d.transactions) { if (t.kind !== 'transfer' || t.status === 'void' || t.duplicate_of || t.date < from || t.date > to) continue; const into = !!t.to_account_id && ids.has(t.to_account_id), outOf = !!t.account_id && ids.has(t.account_id); if (into && !outOf) f += +t.amount || 0; else if (outOf && !into) f -= +t.amount || 0 }
-    for (const { p, st } of payroll) { const per = (+(st.k401 || 0) || 0) + (+(st.roth401k || 0) || 0) + matchOf(p, st).perCheck + (hasHsa ? (+(st.hsa || 0) || 0) + (+(st.hsaEmployer || 0) || 0) : 0); if (per > 0) f += per * payDates(p, from, to).length }
+    for (const { p, st } of payroll) { const per = (lands(st.k401Account, isPlan) ? (+(st.k401 || 0) || 0) + (+(st.roth401k || 0) || 0) + matchOf(p, st).perCheck : 0) + (lands(st.hsaAccount, isHsa) ? (+(st.hsa || 0) || 0) + (+(st.hsaEmployer || 0) || 0) : 0); if (per > 0) f += per * payDates(p, from, to).length }
     return round2(f)
   }
   const points: PerfPoint[] = []; let prev = round2(sum(accts.map(a => valueAt(a, monthEnd(start))))), contributed = 0, earned = 0

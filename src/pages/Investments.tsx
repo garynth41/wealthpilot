@@ -18,13 +18,15 @@ import { today } from '../lib/dates'
 import { LotsModal, HarvestCard } from './Lots'
 import { lotsFor } from '../lib/lots'
 import { ContributionsCard, TargetCard, PerformanceCard, AfterTaxCard } from './InvestParts'
-import { bucketsNow, effectiveInputs, plannerAuto } from '../lib/contrib'
-import { afterTaxPlan, retTaxCtx } from '../lib/retirementTax'
+import { plannerRun } from '../lib/retirementTax'
 import { wanted, steadyAge } from '../lib/retirement'
 
 const SECTORS = ['Diversified', 'Fixed income', 'Cash', 'Technology', 'Healthcare', 'Financials', 'Consumer', 'Industrials', 'Energy', 'Utilities', 'Real estate', 'Communication', 'Materials', 'Crypto', 'Other']
 export function InvestmentsPage() {
   const { data, settings, saveSettings, insert, update, remove, guarded, canEdit, accts, acctLabels, mode, household, refresh } = useData(); const confirm = useConfirm(); const { open, close } = useModal(); const c = C(); const pal = PALETTE(); const [pulling, setPulling] = useState(false)
+  // the saved planner inputs keep one identity until they are saved again, so a re-render of this page (a tax type chosen, a price update) does not
+  // throw away what is being typed in the planner (0.39.0)
+  const plannerInputs = useMemo<RetirementInputs>(() => ({ ...RETIREMENT_DEFAULTS, ...(settings.retirement || {}) }), [settings.retirement])
   const invAccts = accts.filter(a => a.kind === 'investment' || a.kind === 'retirement'); const [acctF, setAcctF] = useState('')
   const pf = useMemo(() => portfolio(data, acctF || null), [data, acctF]); const ra = useMemo(() => retirementAssets(data), [data])
   const cols: Col<Holding>[] = [
@@ -61,7 +63,7 @@ export function InvestmentsPage() {
       <Card span={4} title="Asset allocation">{pie('Asset allocation', pf.byClass)}</Card>
       <Card span={4} title="Sector allocation">{pie('Sector allocation', pf.bySector)}</Card>
       <Card span={4} title="Risk allocation">{pie('Risk allocation', pf.byRisk)}<div className="tblwrap"><table className="tbl"><tbody>{pf.byRisk.map(s => <tr key={s.key}><td>{s.label}</td><td className="num">{fmtMoney(s.value)}</td><td className="num">{Math.round(s.pct * 100)}%</td></tr>)}</tbody></table></div></Card>
-      <Retirement balance={ra.total} inputs={{ ...RETIREMENT_DEFAULTS, ...(settings.retirement || {}) }} onSave={i => guarded(() => saveSettings({ retirement: i }), 'Planner inputs saved')} canEdit={canEdit} c={c} />
+      <Retirement balance={ra.total} inputs={plannerInputs} onSave={i => guarded(() => saveSettings({ retirement: i }), 'Planner inputs saved')} canEdit={canEdit} c={c} />
     </div>
   </>
 }
@@ -70,11 +72,7 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
   const [typed, setI] = useState<RetirementInputs>(inputs); useEffect(() => setI(inputs), [inputs]); const { data, settings } = useData()
   // 0.39.0: the planner follows the household on its own — contributions from the paychecks and transfers, income from the pay schedules, and
   // (when asked) return and volatility from the actual mix — and counts income tax on what comes out. `typed` is what is saved; `i` is what runs.
-  const auto = useMemo(() => plannerAuto(typed, data, settings), [typed, data, settings]); const base = useMemo(() => effectiveInputs(typed, auto), [typed, auto])
-  const plan = useMemo(() => { if (base.countTaxes === false) return null; const b = bucketsNow(data, settings), k = b.total > 0 ? balance / b.total : 0
-    const now = b.total > 0 ? { pretax: b.pretax * k, roth: b.roth * k, taxable: b.taxable * k } : { pretax: balance, roth: 0, taxable: 0 }
-    return afterTaxPlan(base, now, auto.contribution ? auto.detected : { pretax: 0, roth: 0, taxable: 0 }, retTaxCtx(settings, b.gainShare)) }, [base, auto, data, settings, balance])
-  const i = useMemo<RetirementInputs>(() => (plan ? { ...base, taxByAge: plan.taxByAge } : base), [base, plan])
+  const { inputs: i, auto, plan } = useMemo(() => plannerRun(typed, data, settings, balance), [typed, data, settings, balance])   // one helper, shared with the Plan and saved scenarios
   const flag = (k: 'autoContribution' | 'autoIncome' | 'followMix' | 'countTaxes', on: boolean) => setI(x => ({ ...x, [k]: on }))
   const [runs, setRuns] = useState<'1000' | '5000' | '10000'>('1000'); const [mc, setMc] = useState<MonteCarlo | null>(null); const [busy, setBusy] = useState(false); const worker = useRef<Worker | null>(null)
   const [custom, setCustom] = useState('4.5')

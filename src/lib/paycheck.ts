@@ -15,7 +15,7 @@ export const hasPayroll = (p: Pick<PaySchedule, 'kind'>) => p.kind === 'salary' 
 export const stubOf = (s: Pick<Settings, 'payStubs'>, id: string): PayStub => (s.payStubs || {})[id] || {}
 const n = (v: unknown) => { const x = +(v as number); return Number.isFinite(x) && x > 0 ? x : 0 }
 /** True once anything has been entered for the paycheck. */
-export const hasStub = (st: PayStub | undefined | null) => !!st && (STUB_FIELDS.some(f => n(st[f]) > 0) || n(st.matchPct) > 0 || n(st.hsaEmployer) > 0 || !!st.ytd)
+export const hasStub = (st: PayStub | undefined | null) => !!st && (STUB_FIELDS.some(f => n(st[f]) > 0) || n(st.matchPct) > 0 || n(st.hsaEmployer) > 0 || !!st.ytd)   // the partner tick alone is not a breakdown
 /** Gross pay per paycheck: the schedule's gross when set, else its net (the tax page flags that). */
 export const grossOf = (p: Pick<PaySchedule, 'gross_amount' | 'net_amount'>) => (p.gross_amount != null && +p.gross_amount > 0 ? +p.gross_amount : +p.net_amount || 0)
 
@@ -52,9 +52,12 @@ const inYear = (ps: PaySchedule, year: number, from: string, to: string) => { co
  *  So far = this paycheck's amounts × the paydays up to `asOf` — or, when the stub carries year-to-date figures from a pay stub, those figures plus
  *  this paycheck's amounts × the paydays since that pay stub. To come = this paycheck's amounts × the paydays left (`leftOverride` replaces the
  *  count — the Tax page's "paychecks left" slider). `limits` stops the 401(k) money at the yearly limit and the HSA money (employee + employer) at
- *  the HSA limit, as payroll does: once the limit is reached the paychecks left contribute nothing more.
+ *  the HSA limit, as payroll does: once the limit is reached the paychecks left contribute nothing more. `limits.deferral` / `hsa` is the room this
+ *  job has for the year (what other jobs left of the person's limit); `deferralPlan` is the limit itself, which a single payroll never goes past —
+ *  so a worked-out year-to-date amount is held to it, while a year-to-date figure typed from a pay stub is left as it is. The employer match
+ *  follows: paychecks that can no longer take 401(k) money earn no match.
  *  An ended schedule with a last payday is counted up to it; pass it as it is — payDates() stops at `ends_on`. */
-export function stubYear(ps: PaySchedule, st: PayStub, year: number, asOf = today(), opts: { leftOverride?: number | null; limits?: { deferral?: number; hsa?: number } } = {}): StubYear {
+export function stubYear(ps: PaySchedule, st: PayStub, year: number, asOf = today(), opts: { leftOverride?: number | null; limits?: { deferral?: number; deferralPlan?: number; hsa?: number } } = {}): StubYear {
   const live: PaySchedule = ps.status === 'Ended' && ps.ends_on ? { ...ps, status: 'Active' } : ps
   const paidDates = asOf < `${year}-01-01` ? [] : inYear(live, year, `${year}-01-01`, asOf), leftDates = asOf >= `${year}-12-31` ? [] : inYear(live, year, addDays(asOf, 1), `${year}-12-31`)
   const paid = paidDates.length, left = opts.leftOverride != null ? Math.max(0, Math.round(opts.leftOverride)) : leftDates.length
@@ -68,9 +71,14 @@ export function stubYear(ps: PaySchedule, st: PayStub, year: number, asOf = toda
   const m = matchOf(ps, st); const match = amt(m.perCheck), hsaEmployer = amt(n(st.hsaEmployer)), gross = amt(grossOf(ps), y?.gross)
   const capped = { deferral: false, hsa: false }
   // payroll stops the 401(k) money at the yearly limit: scale what is still to come down to the room left
-  const cap = (limit: number | undefined, parts: StubAmount[], key: 'deferral' | 'hsa') => { if (!(limit != null && limit > 0)) return; const ytd = parts.reduce((a, x) => a + x.ytd, 0), rest = parts.reduce((a, x) => a + x.rest, 0); const room = Math.max(0, limit - ytd)
-    if (rest > room + 0.005) { const k = rest > 0 ? room / rest : 0; for (const x of parts) { x.rest = round2(x.rest * k); x.total = round2(x.ytd + x.rest) } capped[key] = true } }
-  cap(opts.limits?.deferral, [by.k401, by.roth401k], 'deferral'); cap(opts.limits?.hsa, [by.hsa, hsaEmployer], 'hsa')
+  const cap = (limit: number | undefined, plan: number | undefined, parts: StubAmount[], key: 'deferral' | 'hsa', typed: boolean): [number, number] => {
+    let ytd = parts.reduce((a, x) => a + x.ytd, 0), kY = 1, kR = 1; const rest = parts.reduce((a, x) => a + x.rest, 0)
+    if (!typed && plan != null && plan > 0 && ytd > plan + 0.005) { kY = plan / ytd; for (const x of parts) x.ytd = round2(x.ytd * kY); ytd = plan; capped[key] = true }   // worked out, so it cannot have gone past the limit
+    if (limit != null && limit > 0) { const room = Math.max(0, limit - ytd); if (rest > room + 0.005) { kR = rest > 0 ? room / rest : 0; for (const x of parts) x.rest = round2(x.rest * kR); capped[key] = true } }
+    for (const x of parts) x.total = round2(x.ytd + x.rest); return [kY, kR] }
+  const [kY, kR] = cap(opts.limits?.deferral, opts.limits?.deferralPlan ?? opts.limits?.deferral, [by.k401, by.roth401k], 'deferral', !!y && (y.k401 != null || y.roth401k != null))
+  if (kY < 1 || kR < 1) { match.ytd = round2(match.ytd * kY); match.rest = round2(match.rest * kR); match.total = round2(match.ytd + match.rest) }
+  cap(opts.limits?.hsa, opts.limits?.hsa, [by.hsa, hsaEmployer], 'hsa', !!y && y.hsa != null)
   return { paid, left, gross, match, hsaEmployer, by, fromYtd: !!y, capped }
 }
 /** Paychecks a schedule pays in the twelve months after `asOf` — the yearly rate going forward (a job that ends sooner counts only what is left). */

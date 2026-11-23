@@ -29,6 +29,7 @@ import { retirementAssets } from './portfolio'
 import { oneOffPay } from './paySchedule'
 import { RETIREMENT_DEFAULTS, projectRetirement } from './retirement'
 import { resolveRetirement } from './contrib'
+import { plannerRun } from './retirementTax'
 
 export type AllocMode = 'debt_first' | 'goals_first' | 'retirement_first' | 'split'
 export interface PlanAssumptions {
@@ -83,7 +84,7 @@ export function buildPlan(d: Data, s: Settings, raw?: Partial<PlanAssumptions>):
   // base contributions = today's, less whatever an applied plan added (the same base applyPlanPatches works from)
   const applied = s.plan
   const goalBaseOf = (g: Goal) => Math.max(0, (+g.monthly_contribution || 0) - (+(applied?.goalExtra?.[g.id] || 0)))
-  const ri0 = resolveRetirement(d, s, t); const baseAnnual = Math.max(0, (+ri0.annualContribution || 0) - (+(applied?.retireExtra || 0)) * 12)
+  const ri0 = plannerRun({ ...RETIREMENT_DEFAULTS, ...(s.retirement || {}) }, d, s, retirementAssets(d).total, t).inputs; const baseAnnual = Math.max(0, (+ri0.annualContribution || 0) - (+(applied?.retireExtra || 0)) * 12)
   const ri = { ...ri0, annualContribution: baseAnnual }; const realMonthly = Math.pow((1 + ri.expectedReturn) / (1 + ri.inflation), 1 / 12) - 1
   // what retirement still needs this month to be fully funded, from the retirement planner (today's dollars, like the plan's balance)
   const retireNeedAt = (bal: number, m: number) => { const age = (+ri.currentAge || 0) + Math.floor(m / 12); if (age >= ri.retireAge) return 0
@@ -166,7 +167,7 @@ export function applyPlanPatches(d: Data, s: Settings, r: PlanResult) {
   const prev = s.plan; const goals: Array<{ id: string; from: number; to: number }> = []
   const ids = new Set([...Object.keys(r.now.goals), ...Object.keys(prev?.goalExtra || {})])
   for (const id of ids) { const g = d.goals.find(x => x.id === id); if (!g) continue; const base = Math.max(0, (+g.monthly_contribution || 0) - (prev?.goalExtra?.[id] || 0)); const to = round2(base + (r.now.goals[id] || 0)); if (Math.abs(to - (+g.monthly_contribution || 0)) > 0.005) goals.push({ id, from: +g.monthly_contribution || 0, to }) }
-  const ri = { ...RETIREMENT_DEFAULTS, ...(s.retirement || {}) }; const retBase = Math.max(0, (+ri.annualContribution || 0) - (prev?.retireExtra || 0) * 12)
+  const ri = resolveRetirement(d, s); const retBase = Math.max(0, (+ri.annualContribution || 0) - (prev?.retireExtra || 0) * 12)   // the same baseline buildPlan simulates: the followed contribution when the planner follows the paychecks
   const retirement = { from: +ri.annualContribution || 0, to: round2(retBase + r.now.retirement * 12) }
   return { goals, retirement, plan: { assumptions: r.a as unknown as Record<string, unknown>, appliedAt: new Date().toISOString(), debtExtra: r.now.debt, goalExtra: Object.fromEntries(Object.entries(r.now.goals).filter(([, v]) => v > 0.005)), retireExtra: r.now.retirement, strategy: r.a.strategy } }
 }

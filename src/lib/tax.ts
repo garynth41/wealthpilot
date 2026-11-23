@@ -2,7 +2,7 @@
 // Pure functions; every rate and threshold comes from taxTables.ts. This is a planning estimate, not a return.
 import type { Data, PaySchedule, Settings } from '../app/data/types'
 import { FEDERAL, STATES, LATEST_TAX_YEAR, TAX_YEARS, ohioYear, underpaymentRateOn, type FilingStatus, type FederalYear } from './taxTables'
-import { round2, sum } from './money'
+import { fmtMoney, round2, sum } from './money'
 import { REC_PER_YEAR } from './recurring'
 import { holdingValue } from './portfolio'
 import { payDates } from './paySchedule'
@@ -72,7 +72,8 @@ export function autoItems(d: Data, year: number, s?: Settings | null, asOf = tod
   for (const r of rec) out.push({ id: 'auto-rec-' + r.id, kind: 'rental', label: `${r.name} (${REC_PER_YEAR[r.frequency]}/yr)`, amount: round2((+r.amount || 0) * REC_PER_YEAR[r.frequency]), source: 'auto' })
   return out
 }
-const money0 = (v: number) => '$' + Math.round(v).toLocaleString('en-US')
+/** whole dollars through the app's own formatter, so privacy mode masks these too */
+const money0 = (v: number) => fmtMoney(v)
 /** Every row the estimate adds up: the rows the app works out (pay schedules, paycheck breakdowns, holdings, rent) and the ones typed by hand.
  *  `s` supplies the paycheck breakdowns; the "paychecks left" what-if (a number on the profile) applies to the main W-2 job's paychecks to come. */
 export const mergedItems = (d: Data, p: TaxProfile, s?: Settings | null, asOf = today()): TaxItem[] => { if (!p.autoAggregate) return [...p.items]; const main = s && p.paychecksLeft != null ? mainW2Schedule(d, p.year, asOf) : null
