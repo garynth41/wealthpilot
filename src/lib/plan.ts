@@ -28,6 +28,7 @@ import { goalProgress } from './goals'
 import { retirementAssets } from './portfolio'
 import { oneOffPay } from './paySchedule'
 import { RETIREMENT_DEFAULTS, projectRetirement } from './retirement'
+import { resolveRetirement } from './contrib'
 
 export type AllocMode = 'debt_first' | 'goals_first' | 'retirement_first' | 'split'
 export interface PlanAssumptions {
@@ -82,7 +83,7 @@ export function buildPlan(d: Data, s: Settings, raw?: Partial<PlanAssumptions>):
   // base contributions = today's, less whatever an applied plan added (the same base applyPlanPatches works from)
   const applied = s.plan
   const goalBaseOf = (g: Goal) => Math.max(0, (+g.monthly_contribution || 0) - (+(applied?.goalExtra?.[g.id] || 0)))
-  const ri0 = { ...RETIREMENT_DEFAULTS, ...(s.retirement || {}) }; const baseAnnual = Math.max(0, (+ri0.annualContribution || 0) - (+(applied?.retireExtra || 0)) * 12)
+  const ri0 = resolveRetirement(d, s, t); const baseAnnual = Math.max(0, (+ri0.annualContribution || 0) - (+(applied?.retireExtra || 0)) * 12)
   const ri = { ...ri0, annualContribution: baseAnnual }; const realMonthly = Math.pow((1 + ri.expectedReturn) / (1 + ri.inflation), 1 / 12) - 1
   // what retirement still needs this month to be fully funded, from the retirement planner (today's dollars, like the plan's balance)
   const retireNeedAt = (bal: number, m: number) => { const age = (+ri.currentAge || 0) + Math.floor(m / 12); if (age >= ri.retireAge) return 0

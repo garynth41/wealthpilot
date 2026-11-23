@@ -17,6 +17,10 @@ import { fmtMoney, fm2, fmtPct, parseNum } from '../lib/money'
 import { today } from '../lib/dates'
 import { LotsModal, HarvestCard } from './Lots'
 import { lotsFor } from '../lib/lots'
+import { ContributionsCard, TargetCard, PerformanceCard, AfterTaxCard } from './InvestParts'
+import { bucketsNow, effectiveInputs, plannerAuto } from '../lib/contrib'
+import { afterTaxPlan, retTaxCtx } from '../lib/retirementTax'
+import { wanted, steadyAge } from '../lib/retirement'
 
 const SECTORS = ['Diversified', 'Fixed income', 'Cash', 'Technology', 'Healthcare', 'Financials', 'Consumer', 'Industrials', 'Energy', 'Utilities', 'Real estate', 'Communication', 'Materials', 'Crypto', 'Other']
 export function InvestmentsPage() {
@@ -45,6 +49,10 @@ export function InvestmentsPage() {
     </div>
     {pf.concentrationWarning && <div className="banner warn" style={{ marginBottom: 12 }}>{pf.concentrationWarning}.</div>}
     <div className="grid g12">
+      <ContributionsCard />
+      <TargetCard />
+      <PerformanceCard />
+
       <Card span={12} title="Holdings" hint="positions in your investment and retirement accounts · value = quantity × price · update prices when you check your statements" right={<span className="btnrow"><select className="inp" style={{ width: 'auto', padding: '4px 8px' }} value={acctF} onChange={e => setAcctF(e.target.value)} aria-label="Show holdings in"><option value="">All accounts</option>{invAccts.map(a => <option key={a.id} value={a.id}>{acctLabels[a.id]}</option>)}</select>{canEdit && mode === 'db' && auto.length > 0 && <Btn sm onClick={pull} disabled={pulling}>{pulling ? 'Updating…' : 'Update prices now'}</Btn>}{canEdit && <Btn primary sm onClick={add}>+ Add holding</Btn>}</span>}>
         <Table rows={pf.holdings} cols={cols} editable={canEdit} name="holdings" defaultSort={{ k: '_v', dir: -1 }} onChange={(h, k, v) => guarded(() => update('holdings', h.id, { [k]: v === '' ? null : v, ...(k === 'price' ? { price_as_of: today() } : {}) } as Partial<Holding>))} actions={h => h.asset_class === 'cash' ? null : <Btn sm onClick={() => open(<LotsModal h={h} onDone={close} />, { wide: true })} title="Purchase lots: dates and costs for short- and long-term gains" aria-label={`Tax lots for ${h.symbol || h.name} (${lotsFor(data, h.id).length})`}>{lotsFor(data, h.id).length ? `Lots (${lotsFor(data, h.id).length})` : 'Lots'}</Btn>} onDelete={async h => { if (await confirm(`Delete ${h.symbol || h.name}?`)) guarded(() => remove('holdings', h.id), 'Deleted') }} empty="No holdings yet — add the funds and stocks in your 401(k), IRA and brokerage accounts." />
         <Note>{auto.length ? <>{auto.length} holding{auto.length === 1 ? '' : 's'} with a symbol {auto.length === 1 ? 'is' : 'are'} priced by the daily feed after the US close (stocks, ETFs, mutual funds; crypto as e.g. BTC → BTC-USD){stale ? <> · <b>{stale}</b> not updated in the last 4 days{mode === 'demo' ? ' (the offline demo has no feed)' : ''}</> : ''}. </> : null}Set <b>Price from</b> to “Typed by hand” for private assets, cash or anything the feed cannot quote. The account balance on Accounts is used wherever it is larger than the itemised holdings.</Note>
@@ -59,7 +67,15 @@ export function InvestmentsPage() {
 }
 
 function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; inputs: RetirementInputs; onSave: (i: RetirementInputs) => void; canEdit: boolean; c: ReturnType<typeof C> }) {
-  const [i, setI] = useState<RetirementInputs>(inputs); useEffect(() => setI(inputs), [inputs])
+  const [typed, setI] = useState<RetirementInputs>(inputs); useEffect(() => setI(inputs), [inputs]); const { data, settings } = useData()
+  // 0.39.0: the planner follows the household on its own — contributions from the paychecks and transfers, income from the pay schedules, and
+  // (when asked) return and volatility from the actual mix — and counts income tax on what comes out. `typed` is what is saved; `i` is what runs.
+  const auto = useMemo(() => plannerAuto(typed, data, settings), [typed, data, settings]); const base = useMemo(() => effectiveInputs(typed, auto), [typed, auto])
+  const plan = useMemo(() => { if (base.countTaxes === false) return null; const b = bucketsNow(data, settings), k = b.total > 0 ? balance / b.total : 0
+    const now = b.total > 0 ? { pretax: b.pretax * k, roth: b.roth * k, taxable: b.taxable * k } : { pretax: balance, roth: 0, taxable: 0 }
+    return afterTaxPlan(base, now, auto.contribution ? auto.detected : { pretax: 0, roth: 0, taxable: 0 }, retTaxCtx(settings, b.gainShare)) }, [base, auto, data, settings, balance])
+  const i = useMemo<RetirementInputs>(() => (plan ? { ...base, taxByAge: plan.taxByAge } : base), [base, plan])
+  const flag = (k: 'autoContribution' | 'autoIncome' | 'followMix' | 'countTaxes', on: boolean) => setI(x => ({ ...x, [k]: on }))
   const [runs, setRuns] = useState<'1000' | '5000' | '10000'>('1000'); const [mc, setMc] = useState<MonteCarlo | null>(null); const [busy, setBusy] = useState(false); const worker = useRef<Worker | null>(null)
   const [custom, setCustom] = useState('4.5')
   const proj = useMemo(() => projectRetirement(balance, i), [balance, i])
@@ -74,13 +90,20 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
   useEffect(() => () => worker.current?.terminate(), [])
   const readyCls = proj.readiness >= 90 ? c.good : proj.readiness >= 60 ? c.warn : c.crit
   const steps = [{ range: [0, 60] as [number, number], color: cssVar('--crit-soft') }, { range: [60, 90] as [number, number], color: cssVar('--warn-soft') }, { range: [90, 100] as [number, number], color: cssVar('--good-soft') }]
-  const num = (label: string, k: keyof RetirementInputs, hint?: string, isPct = false) => <Field label={label} hint={hint}><input className="inp" inputMode="decimal" defaultValue={isPct ? pct(k as 'expectedReturn') : String(i[k])} key={`${k}-${i[k]}`} onBlur={e => set(k, e.target.value)} /></Field>
+  const num = (label: string, k: keyof RetirementInputs, hint?: string, isPct = false, follows = false) => <Field label={label} hint={hint}><input className="inp" inputMode="decimal" defaultValue={isPct ? pct(k as 'expectedReturn') : String(i[k])} key={`${k}-${i[k]}`} disabled={follows} title={follows ? 'Followed automatically — untick the box below to type your own' : undefined} onBlur={e => set(k, e.target.value)} /></Field>
   return <>
-    <Card span={5} title="Retirement planner" hint="today's dollars · contributions grow with inflation" right={canEdit ? <Btn sm primary onClick={() => onSave(i)}>Save inputs</Btn> : undefined}>
-      <ScenarioBar kind="retirement" current={i as unknown as Record<string, unknown>} onLoad={x => setI(normalize('retirement', x))} compact />
+    <Card span={5} title="Retirement planner" hint="today's dollars · contributions grow with inflation" right={canEdit ? <Btn sm primary onClick={() => onSave(typed)}>Save inputs</Btn> : undefined}>
+      <ScenarioBar kind="retirement" current={typed as unknown as Record<string, unknown>} onLoad={x => setI(normalize('retirement', x))} compact />
       <div className="grid3">{num('Current age', 'currentAge')}{num('Retire at', 'retireAge')}{num('Plan to age', 'lifeExpectancy')}</div>
-      <div className="grid3">{num('Contribution / yr', 'annualContribution', 'incl. employer match')}{num('Expected return %', 'expectedReturn', 'nominal', true)}{num('Inflation %', 'inflation', undefined, true)}</div>
-      <div className="grid3">{num('Income wanted / yr', 'desiredIncome', 'in retirement, today\'s $')}{num('Income today / yr', 'currentIncome', 'for the replacement ratio')}{num('Return volatility %', 'returnStdDev', 'std dev, for Monte Carlo', true)}</div>
+      <div className="grid3">{num('Contribution / yr', 'annualContribution', auto.contribution ? 'from your paychecks and transfers' : 'incl. employer match', false, auto.contribution)}{num('Expected return %', 'expectedReturn', auto.mix ? 'from your mix' : 'nominal', true, auto.mix)}{num('Inflation %', 'inflation', undefined, true)}</div>
+      <div className="grid3">{num(plan ? 'To spend / yr, after tax' : 'Income wanted / yr', 'desiredIncome', 'in retirement, today\'s $')}{num('Income today / yr', 'currentIncome', auto.income ? 'gross, from your pay schedules' : 'for the replacement ratio', false, auto.income)}{num('Return volatility %', 'returnStdDev', auto.mix ? 'from your mix' : 'std dev, for Monte Carlo', true, auto.mix)}</div>
+      <div data-ret="follows" style={{ display: 'grid', gap: 2, margin: '6px 0 2px', fontSize: 13 }}>
+        {auto.detected.total > 0 && <label><input type="checkbox" checked={typed.autoContribution !== false} onChange={e => flag('autoContribution', e.target.checked)} /> Follow my paychecks and transfers — {fmtMoney(auto.detected.payroll)} from pay, {fmtMoney(auto.detected.match)} employer match, {fmtMoney(auto.detected.transfers)} moved in over the last year{auto.planExtra > 0 ? `, plus ${fmtMoney(auto.planExtra)} from your Plan` : ''}</label>}
+        {auto.gross > 0 && <label><input type="checkbox" checked={typed.autoIncome !== false} onChange={e => flag('autoIncome', e.target.checked)} /> Take income today from my pay schedules — {fmtMoney(auto.gross)} a year, gross</label>}
+        {auto.implied && <label><input type="checkbox" checked={typed.followMix === true} onChange={e => flag('followMix', e.target.checked)} /> Take return and volatility from my actual mix — {(auto.implied.ret * 100).toFixed(1)}% and {(auto.implied.vol * 100).toFixed(0)}% (planning assumptions)</label>}
+        <label><input type="checkbox" checked={typed.countTaxes !== false} onChange={e => flag('countTaxes', e.target.checked)} /> Count income tax in retirement{plan ? ` — about ${fmtMoney(plan.avgTax)} a year on this plan` : ''}</label>
+        {auto.detected.total === 0 && <span className="note" style={{ margin: 0 }}>Add your paycheck breakdown on Income &amp; Pay Periods and the contribution here follows your paychecks on its own.</span>}
+      </div>
       <h3 style={{ margin: '10px 0 4px', fontSize: 14 }}>Guaranteed income</h3>
       <div className="grid3">
         <Field label="Social Security at full retirement age / month" hint={`yours is ${fra.months ? `${fra.years} and ${fra.months} months` : fra.years} · today's $`}><input className="inp" inputMode="decimal" key={`ss-${ssAnnual(i)}`} defaultValue={String(Math.round(ssAnnual(i) / 12))} onBlur={e => { const n = parseNum(e.target.value); if (n == null) return; setI(x => ({ ...x, ssMonthly: n, socialSecurity: n * 12 })) }} /></Field>
@@ -97,18 +120,19 @@ function Retirement({ balance, inputs, onSave, canEdit, c }: { balance: number; 
       </div>)}
       {(i.pensions || []).length > 0 && <div className="pens note" style={{ margin: 0 }}><span>name</span><span>per month</span><span>from age</span><span /><span /></div>}
       <Btn sm onClick={() => setI(x => ({ ...x, pensions: [...(x.pensions || []), { id: 'pen' + Date.now().toString(36), name: 'Pension', monthly: 500, startAge: x.retireAge, cola: true }] }))}>+ Add a pension</Btn>
-      <Note>Starting balance: <b>{fmtMoney(balance)}</b> — your retirement + investment accounts. Readiness = projected portfolio ÷ what it must hold: (income wanted − guaranteed income) at a 4% withdrawal rate, plus the bridge years before Social Security starts, which the portfolio funds in full. Social Security: enter the monthly benefit your SSA statement shows at full retirement age — 67 for anyone born in 1960 or later, 66 to 66 and 10 months for 1943–1959 (worked out here from your current age). Claiming earlier pays less for life (70% at 62 when it is 67); each year you wait past it adds 8%, up to age 70.</Note>
+      <Note>Starting balance: <b>{fmtMoney(balance)}</b> — your retirement + investment accounts. Readiness = projected portfolio ÷ what it must hold: (income wanted{plan ? ' + that year\'s income tax' : ''} − guaranteed income) at a 4% withdrawal rate, plus the bridge years before Social Security starts, which the portfolio funds in full. Social Security: enter the monthly benefit your SSA statement shows at full retirement age — 67 for anyone born in 1960 or later, 66 to 66 and 10 months for 1943–1959 (worked out here from your current age). Claiming earlier pays less for life (70% at 62 when it is 67); each year you wait past it adds 8%, up to age 70.</Note>
     </Card>
     <Card span={7} title="Projection" hint={`${proj.years} years to retirement · real return ${(proj.realRate * 100).toFixed(1)}%/yr`}>
       <div className="kpis" style={{ marginBottom: 10 }}>
         <KPI l="At retirement (today's $)" v={fmtMoney(proj.real)} cls="info" s={`${fmtMoney(proj.nominal)} nominal`} />
         <KPI l="Needed" v={fmtMoney(proj.needed)} cls={proj.shortfall ? 'warn' : 'good'} s={proj.shortfall ? `shortfall ${fmtMoney(proj.shortfall)}` : 'funded'} />
-        <KPI l="Sustainable income" v={fmtMoney(proj.sustainableIncome) + '/yr'} cls={proj.sustainableIncome >= i.desiredIncome ? 'good' : 'warn'} s={`4% rule + ${fmtMoney(proj.guaranteed)} guaranteed · want ${fmtMoney(i.desiredIncome)}`} />
+        <KPI l={plan ? 'Sustainable income, before tax' : 'Sustainable income'} v={fmtMoney(proj.sustainableIncome) + '/yr'} cls={proj.sustainableIncome >= wanted(i, steadyAge(i)) ? 'good' : 'warn'} s={`4% rule + ${fmtMoney(proj.guaranteed)} guaranteed · want ${fmtMoney(i.desiredIncome)}${plan ? ` to spend + ${fmtMoney(wanted(i, steadyAge(i)) - i.desiredIncome)} tax` : ''}`} />
         <KPI l="Income replacement" v={fmtPct(proj.replacementRatio)} cls={proj.replacementRatio == null ? 'idle' : proj.replacementRatio >= 0.7 ? 'good' : 'warn'} s="of today's income · 70–80% is the usual target" />
       </div>
       <div className="grid g12"><div style={{ gridColumn: 'span 5' }}><Gauge value={proj.readiness} max={100} label={`${proj.readiness} / 100`} color={readyCls} steps={steps} />{proj.contributionForTarget != null && <Note>To fully fund the plan: contribute <b>{fmtMoney(proj.contributionForTarget)}/yr</b> (today's dollars) instead of {fmtMoney(i.annualContribution)}.</Note>}</div>
         <div style={{ gridColumn: 'span 7' }}><Chart title="Projected balance" data={[{ type: 'scatter', mode: 'lines', name: "Today's dollars", x: proj.path.map(p => p.age), y: proj.path.map(p => p.real), line: { color: c.accent, width: 2 }, fill: 'tozeroy', fillcolor: c.accentSoft, hovertemplate: 'age %{x}: $%{y:,.0f}<extra></extra>' }, { type: 'scatter', mode: 'lines', name: 'Nominal', x: proj.path.map(p => p.age), y: proj.path.map(p => p.nominal), line: { color: c.idle, width: 1, dash: 'dot' }, hovertemplate: 'age %{x}: $%{y:,.0f}<extra></extra>' }, { type: 'scatter', mode: 'lines', name: 'Needed', x: [i.currentAge, i.retireAge], y: [proj.needed, proj.needed], line: { color: c.crit, width: 1, dash: 'dash' }, hoverinfo: 'skip' }]} layout={{ showlegend: true, yaxis: { tickprefix: '$' }, xaxis: { title: { text: 'Age' } } }} height={260} /></div></div>
     </Card>
+    <AfterTaxCard plan={plan} i={i} onOff={canEdit ? on => flag('countTaxes', on) : undefined} />
     <Card span={7} title="Monte Carlo simulation" hint="random yearly returns around your expected return · success = money lasts to the plan age" right={<span className="btnrow"><Seg value={runs} options={[['1000', '1,000 runs'], ['5000', '5,000'], ['10000', '10,000']]} onChange={setRuns} /><Btn primary sm onClick={simulate} disabled={busy}>{busy ? 'Running…' : mc ? 'Run again' : 'Run simulation'}</Btn></span>}>
       {!mc ? <Empty>Run the simulation to see the range of outcomes. 10,000 runs take a few seconds and run in the background.</Empty> : <>
         <div className="kpis" style={{ marginBottom: 10 }}>

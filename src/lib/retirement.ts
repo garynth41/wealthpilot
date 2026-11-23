@@ -51,8 +51,19 @@ export function guaranteedIncome(i: RetirementInputs, age: number, haircut = i.s
   const pen = (i.pensions || []).filter(p => +p.monthly > 0 && age >= +p.startAge).reduce((n, p) => n + (+p.monthly * 12) * (p.cola === false ? Math.pow(1 + i.inflation, -(age - +p.startAge)) : 1), 0)
   return round2(ss + pen)
 }
+/** What a year of retirement has to bring in at `age`, today's dollars: the income wanted — plus, when the plan counts taxes (0.39.0,
+ *  lib/retirementTax.ts fills `taxByAge`), the income tax that year, so "income wanted" is what is left to spend. Past the last age worked out, the
+ *  last year's tax is used. */
+export function wanted(i: RetirementInputs, age: number): number {
+  const t = i.taxByAge; if (!t) return i.desiredIncome
+  if (t[age] != null) return i.desiredIncome + t[age]
+  const ks = Object.keys(t).map(Number); if (!ks.length) return i.desiredIncome
+  return i.desiredIncome + t[age < Math.min(...ks) ? Math.min(...ks) : Math.max(...ks)]
+}
+/** The age every guaranteed line has started by. */
+export const steadyAge = (i: RetirementInputs) => Math.max(ssStart(i), ...(i.pensions || []).map(p => +p.startAge || 0), i.retireAge)
 /** Guaranteed income once every line has started (the steady state the 4% rule is measured against). */
-export const steadyGuaranteed = (i: RetirementInputs, haircut = i.ssHaircut || 0) => guaranteedIncome(i, Math.max(ssStart(i), ...(i.pensions || []).map(p => +p.startAge || 0), i.retireAge), haircut)
+export const steadyGuaranteed = (i: RetirementInputs, haircut = i.ssHaircut || 0) => guaranteedIncome(i, steadyAge(i), haircut)
 export interface Drawdown { path: Array<{ age: number; guaranteed: number; draw: number; balance: number }>; depletionAge: number | null; endingBalance: number; bridgeYears: number; bridgeDraw: number; totalDraw: number; totalGuaranteed: number }
 /** Year by year from retirement (or now, if retired already) to the plan age, today's dollars at the expected real return: what guaranteed income
  *  covers, what the portfolio must supply, and what is left. Each row is the year of that age: its draw comes out after the year's growth, and
@@ -61,8 +72,8 @@ export function drawdown(balanceAtRet: number, i: RetirementInputs, haircut = i.
   const realRate = (1 + i.expectedReturn) / (1 + i.inflation) - 1; const path: Drawdown['path'] = []; let b = balanceAtRet, depletion: number | null = null, totalDraw = 0, totalG = 0, bridgeYears = 0, bridgeDraw = 0
   const start = drawStart(i)
   for (let age = start; age < Math.max(start + 1, i.lifeExpectancy); age++) {
-    const g = guaranteedIncome(i, age, haircut); const draw = Math.max(0, i.desiredIncome - g); if (age < ssStart(i)) { bridgeYears++; bridgeDraw += draw }
-    totalDraw += draw; totalG += Math.min(g, i.desiredIncome)
+    const g = guaranteedIncome(i, age, haircut); const want = wanted(i, age); const draw = Math.max(0, want - g); if (age < ssStart(i)) { bridgeYears++; bridgeDraw += draw }
+    totalDraw += draw; totalG += Math.min(g, want)
     b = b * (1 + realRate) - draw; if (b <= 0 && depletion == null) depletion = age; b = Math.max(0, b)
     path.push({ age, guaranteed: g, draw: round2(draw), balance: round2(b) })
   }
@@ -78,9 +89,9 @@ export function projectRetirement(balance: number, i: RetirementInputs, swr = 0.
   const real = round2(nominal / Math.pow(1 + g, years))
   // the portfolio must fund (income wanted − guaranteed income) at the withdrawal rate once every guaranteed line has started, plus the bridge
   // years before Social Security begins, which it funds in full (discounted at the real rate)
-  const steady = steadyGuaranteed(i); const needFromPortfolio = Math.max(0, i.desiredIncome - steady)
+  const steady = steadyGuaranteed(i); const needFromPortfolio = Math.max(0, wanted(i, steadyAge(i)) - steady)
   const start = drawStart(i)
-  let bridge = 0; for (let age = start; age < ssStart(i) && age < i.lifeExpectancy; age++) { const extra = Math.max(0, i.desiredIncome - guaranteedIncome(i, age)) - needFromPortfolio; bridge += Math.max(0, extra) / Math.pow(1 + realRate, age - start) }
+  let bridge = 0; for (let age = start; age < ssStart(i) && age < i.lifeExpectancy; age++) { const extra = Math.max(0, wanted(i, age) - guaranteedIncome(i, age)) - needFromPortfolio; bridge += Math.max(0, extra) / Math.pow(1 + realRate, age - start) }
   const needed = round2(needFromPortfolio / swr + bridge)
   const sustainableIncome = round2(real * swr + steady)
   const readiness = Math.max(0, Math.min(100, Math.round(needed > 0 ? real / needed * 100 : 100)))
@@ -104,7 +115,7 @@ export interface MonteCarlo { runs: number; successRate: number; median: number;
  *  same age. A run that runs out stays at $0 — it never borrows. */
 export function monteCarlo(balance: number, i: RetirementInputs, runs = 1000, seed = 42): MonteCarlo {
   const u = rng(seed); const accYears = Math.max(0, i.retireAge - i.currentAge), drawYears = Math.max(1, i.lifeExpectancy - drawStart(i)); const total = accYears + drawYears
-  const needAt = (age: number) => Math.max(0, i.desiredIncome - guaranteedIncome(i, age)); const finals: number[] = [], atRet: number[] = [], depletion: number[] = []; const byYear: number[][] = Array.from({ length: total + 1 }, () => [])
+  const needAt = (age: number) => Math.max(0, wanted(i, age) - guaranteedIncome(i, age)); const finals: number[] = [], atRet: number[] = [], depletion: number[] = []; const byYear: number[][] = Array.from({ length: total + 1 }, () => [])
   for (let k = 0; k < runs; k++) {
     let v = balance, contrib = i.annualContribution; let dead = -1
     byYear[0].push(v)
