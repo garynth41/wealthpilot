@@ -112,9 +112,13 @@ describe('contributions and limits', () => {
   })
   it('each person has their own workplace-plan limit', () => {
     const two = D({ paySchedules: [PS(), PS({ id: 'ps2', name: 'Partner pay' })] }), mk = (partner: boolean) => S({ payStubs: { ps1: { k401: 900 }, ps2: { k401: 900, ...(partner ? { partner: true } : {}) } } })
-    const one = contributions(two, mk(false), 2026, '2026-11-22'); expect(one.lines.find(l => l.key === 'deferral')).toMatchObject({ ytd: 41400, rest: 2700, room: 0, over: 19600 }); expect(one.lines.find(l => l.key === 'deferral2')!.show).toBe(false)   // one person, two jobs: one limit — each payroll kept going, so the year is over it, and the second job gets no more room
+    const one = contributions(two, mk(false), 2026, '2026-11-22'); expect(one.lines.find(l => l.key === 'deferral')).toMatchObject({ ytd: 41400, rest: 0, room: 0, over: 16900 }); expect(one.lines.find(l => l.key === 'deferral2')!.show).toBe(false)   // one person, two jobs: one limit — each payroll kept going, so the year is over it, and the second job gets no more room
     const both = contributions(two, mk(true), 2026, '2026-11-22'); expect(both.lines.find(l => l.key === 'deferral')).toMatchObject({ ytd: 20700, rest: 2700, limit: 24500, room: 1100 }); expect(both.lines.find(l => l.key === 'deferral2')).toMatchObject({ show: true, ytd: 20700, rest: 2700, limit: 24500 })
     expect(yearlyContributions(two, mk(true), '2026-11-22').pretax).toBe(46800); expect(yearlyContributions(two, mk(false), '2026-11-22').pretax).toBe(24500)
+  })
+  it('what every job has already taken comes off the limit before any paycheck to come gets room, whichever job is listed first', () => {
+    const a = PS(), b = PS({ id: 'ps2', name: 'Second job' }), st = S({ payStubs: { ps1: { k401: 900 }, ps2: { k401: 900, ytd: { asOf: '2026-11-20', k401: 24500 } } } as never })
+    for (const order of [[a, b], [b, a]]) { const l = contributions(D({ paySchedules: order }), st, 2026, '2026-11-22').lines.find(x => x.key === 'deferral')!; expect(l.rest).toBe(0); expect(l.ytd).toBe(45200); expect(l.room).toBe(0) }
   })
   it('a rollover is not a contribution, and payroll money sent to a left-out account is not the planner\'s', () => {
     const T = (id: string, from: string, to: string, amount: number) => ({ id, household_id: 'h', date: '2026-03-02', kind: 'transfer', amount, account_id: from, to_account_id: to, status: 'cleared', source: 'manual' }) as Transaction

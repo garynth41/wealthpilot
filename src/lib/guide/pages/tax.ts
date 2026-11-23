@@ -6,7 +6,8 @@ export const tax: GuidePage = {
   start: [
     'In Your tax profile, pick the tax year, filing status, dependents and state, type your city and school-district rates and last year\'s total tax and AGI, then click Save.',
     'Set gross pay on your pay schedules on Income & Pay Periods, so the W-2 wages row uses gross pay instead of take-home.',
-    'In Income, deductions & payments, add what the app cannot see: federal tax withheld so far (from your latest pay stub), 401(k), HSA and health-premium deductions, estimated payments made, capital gains and 1099 income. Click Save again.',
+    'Under Paycheck breakdown, click Add breakdown on each job and enter what comes out of one paycheck: 401(k), HSA, health premiums and the federal, state and city tax withheld. The app then writes those rows for the year on its own.',
+    'In Income, deductions & payments, add only what the app still cannot see: estimated payments made, capital gains, 1099 income, and deductions or withholding for a job with no breakdown. If you typed 401(k), HSA, health-premium or withholding rows before adding a breakdown, remove them so nothing is counted twice. Click Save again.',
     'Read the Underpayment risk monitor, then use Tax provisioning to try a W-4 change or estimated payments.',
   ],
   top: [

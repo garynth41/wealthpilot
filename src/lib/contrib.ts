@@ -56,10 +56,17 @@ export const payrollSchedules = (d: Pick<Data, 'paySchedules'>) => d.paySchedule
  *  listed (a second job only gets the room the first left), and a breakdown marked as the spouse's or partner's is counted against their own
  *  limit. The HSA limit is shared. `leftOverride` replaces one schedule's count of paychecks still to come. */
 export function payrollYear(d: Pick<Data, 'paySchedules'>, s: Pick<Settings, 'payStubs' | 'retirement' | 'invest'>, year: number, asOf = today(), leftOverride?: { id: string; left: number } | null): PayrollRow[] {
-  const lim = limitsFor(s, year, asOf); const room = { me: lim.deferral, partner: lim.partnerDeferral }; let hsaRoom = lim.hsa
-  return payrollSchedules(d).map(ps => { const st = stubOf(s, ps.id), who = st.partner ? 'partner' : 'me'
-    const y = stubYear(ps, st, year, asOf, { leftOverride: leftOverride && leftOverride.id === ps.id ? leftOverride.left : null, limits: { deferral: Math.max(0.01, room[who]), deferralPlan: who === 'me' ? lim.deferral : lim.partnerDeferral, hsa: Math.max(0.01, hsaRoom) } })
-    room[who] -= y.by.k401.total + y.by.roth401k.total; hsaRoom -= y.by.hsa.total + y.hsaEmployer.total; return { ps, st, y } })
+  const lim = limitsFor(s, year, asOf), plan = { me: lim.deferral, partner: lim.partnerDeferral }
+  // first what every job has already taken this year, then the room that leaves for the paychecks to come — so the answer does not depend on
+  // which job is listed first, and a job that has used the whole limit leaves none for another
+  const jobs = payrollSchedules(d).map(ps => { const st = stubOf(s, ps.id), who: 'me' | 'partner' = st.partner ? 'partner' : 'me', left = leftOverride && leftOverride.id === ps.id ? leftOverride.left : null
+    const y0 = stubYear(ps, st, year, asOf, { leftOverride: left, limits: { deferralPlan: plan[who] } })
+    return { ps, st, who, left, dY: y0.by.k401.ytd + y0.by.roth401k.ytd, hY: y0.by.hsa.ytd + y0.hsaEmployer.ytd } })
+  const taken = (who: 'me' | 'partner') => sum(jobs.filter(j => j.who === who).map(j => j.dY))
+  const room = { me: Math.max(0, plan.me - taken('me')), partner: Math.max(0, plan.partner - taken('partner')) }; let hsaRoom = Math.max(0, lim.hsa - sum(jobs.map(j => j.hY)))
+  return jobs.map(j => {
+    const y = stubYear(j.ps, j.st, year, asOf, { leftOverride: j.left, limits: { deferral: Math.max(0.01, j.dY + room[j.who]), deferralPlan: plan[j.who], hsa: Math.max(0.01, j.hY + hsaRoom) } })
+    room[j.who] = Math.max(0, room[j.who] - (y.by.k401.rest + y.by.roth401k.rest)); hsaRoom = Math.max(0, hsaRoom - (y.by.hsa.rest + y.hsaEmployer.rest)); return { ps: j.ps, st: j.st, y } })
 }
 
 // ---------------- contributions against the limits ----------------
