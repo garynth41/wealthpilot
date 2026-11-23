@@ -40,6 +40,7 @@ export const income: GuidePage = {
         { term: 'Starts / Ends', text: 'Optional first and last pay dates. No paydays are counted outside them — in the tax estimate too, so a job that starts or ends during the year counts only the paychecks it actually pays.' },
         { term: 'Status', text: 'Active sources count everywhere. Paused and Ended sources stay on the list, grayed out, but drop out of every total, the paychecks ahead and the forecast. The one exception: the tax estimate still counts what an Ended source paid in the tax year up to its Ends date.' },
         { term: 'Notes / ID', text: 'Your own notes, and a short reference you can quote or search for.' },
+        { term: 'Breakdown', text: 'On a salary, hourly or severance row: opens the paycheck breakdown — what comes out of each paycheck before tax (401(k), HSA, health premiums), the federal, state and city tax withheld, after-tax deductions, and what your employer adds. Entered once from a pay stub; Tax Planning, the contribution limits and the retirement planner all read it and stay current as paydays pass. A ✓ means one is saved.' },
       ],
       tips: [
         'When your budget runs by pay period, the periods follow the active source with the largest take-home.',

@@ -30,6 +30,8 @@ export interface FederalYear {
   calendar: Array<{ date: string; label: string; kind: 'estimate' | 'filing' | 'extension' | 'other' }>
 }
 const B = (s: number[], r = [0.10, 0.12, 0.22, 0.24, 0.32, 0.35, 0.37]): Bracket[] => [...s.map((upTo, i) => ({ upTo, rate: r[i] })), { upTo: null, rate: r[6] }]
+/** The last tax year of the senior deduction (2025 through 2028 — see FederalYear.senior). */
+export const SENIOR_DEDUCTION_LAST_YEAR = 2028
 const SENIOR_2025_2028: FederalYear['senior'] = { perPerson: 6000, magiOver: { single: 75000, mfj: 150000, mfs: null, hoh: 75000 }, phaseoutRate: 0.06 }
 export const FEDERAL: Record<number, FederalYear> = {
   // 2025 sources (checked 2026-11-07):
@@ -104,6 +106,41 @@ export const UNDERPAYMENT_RATES: Array<{ from: string; rate: number }> = [
 ]
 /** The underpayment rate in force on a date: the latest quarter on or before it (the earliest listed before the list starts, the last listed after it ends). */
 export const underpaymentRateOn = (date: string): number => ([...UNDERPAYMENT_RATES].reverse().find(r => r.from <= date) || UNDERPAYMENT_RATES[0]).rate
+// ---------------- contribution limits and required distributions (0.39.0) ----------------
+/** What a person may put into tax-favoured accounts in a year. `deferral` = the employee's own 401(k) / 403(b) / governmental 457 / TSP money, pre-tax
+ *  and Roth together (IRC §402(g)); `catchUp50` more from the year they turn 50, or `catchUp60to63` instead in the years they turn 60 to 63. `ira` =
+ *  traditional and Roth IRAs together, `iraCatchUp50` more from 50. `hsaSelf` / `hsaFamily` = the HSA limit by coverage (employer money counts toward
+ *  it), `hsaCatchUp55` more from 55.
+ *  Sources (checked 2026-11-22):
+ *   2026 — IRS news release IR-2025-111 (Nov. 13, 2025), https://www.irs.gov/newsroom/401k-limit-increases-to-24500-for-2026-ira-limit-increases-to-7500
+ *     ($24,500, up from $23,500 for 2025; catch-up $8,000, up from $7,500; ages 60–63 $11,250, unchanged; IRA $7,500, up from $7,000; IRA catch-up
+ *     $1,100, up from $1,000) — the 2025 figures are the "up from" amounts in the same release.
+ *   2027 — IRS news release IR-2026-136 (Nov. 12, 2026), https://www.irs.gov/node/167581 ($25,500; catch-up $8,500; IRA remains $7,500 and its
+ *     catch-up $1,100); ages 60–63 $11,750 as reported from Notice 2026-66 by PSCA and Ascensus (the IRS page itself was not opened this session).
+ *   HSA — Rev. Proc. 2025-19, https://www.irs.gov/pub/irs-drop/rp-25-19.pdf (2026: $4,400 self-only, $8,750 family, up from $4,300 / $8,550 for 2025);
+ *     2027: $4,500 / $9,000 from Rev. Proc. 2026-24 as reported by 401(k) Specialist and Lockton. The $1,000 catch-up from 55 is set in the statute
+ *     (IRC §223(b)(3)) and is not indexed. */
+export interface ContribLimits { year: number; deferral: number; catchUp50: number; catchUp60to63: number; ira: number; iraCatchUp50: number; hsaSelf: number; hsaFamily: number; hsaCatchUp55: number }
+export const CONTRIB_LIMITS: Record<number, ContribLimits> = {
+  2025: { year: 2025, deferral: 23500, catchUp50: 7500, catchUp60to63: 11250, ira: 7000, iraCatchUp50: 1000, hsaSelf: 4300, hsaFamily: 8550, hsaCatchUp55: 1000 },
+  2026: { year: 2026, deferral: 24500, catchUp50: 8000, catchUp60to63: 11250, ira: 7500, iraCatchUp50: 1100, hsaSelf: 4400, hsaFamily: 8750, hsaCatchUp55: 1000 },
+  2027: { year: 2027, deferral: 25500, catchUp50: 8500, catchUp60to63: 11750, ira: 7500, iraCatchUp50: 1100, hsaSelf: 4500, hsaFamily: 9000, hsaCatchUp55: 1000 },
+}
+/** The limits for a year: that year's, else the latest earlier year's, else the earliest listed. `year` on the result says which were used. */
+export const contribLimits = (year: number): ContribLimits => { const ys = Object.keys(CONTRIB_LIMITS).map(Number).sort((a, b) => a - b); return CONTRIB_LIMITS[[...ys].reverse().find(y => y <= year) ?? ys[0]] }
+/** The age required minimum distributions start, by year of birth (SECURE 2.0 §107): 73 for 1951–1959, 75 for 1960 or later; 72 for anyone older who is
+ *  still in the table's range. Source (checked 2026-11-22): the final regulations as summarised by EY Tax News 2024-1945 ("73 for individuals who attain
+ *  age 72 after December 31, 2022 and age 73 before January 1, 2033 … 75 for individuals who attain age 74 after December 31, 2032") and Mercer (1959:
+ *  the 2024 proposed regulations make it 73). */
+export const rmdStartAge = (birthYear: number) => (birthYear >= 1960 ? 75 : birthYear >= 1951 ? 73 : 72)
+/** The IRS Uniform Lifetime Table (Publication 590-B, Appendix B, Table III; Treas. Reg. §1.401(a)(9)-9(c)), in force since 2022: the year's required
+ *  distribution is last year-end's balance ÷ the figure for the age reached this year. Checked 2026-11-22 against the table as reproduced by Capital
+ *  Group, Schwab, Fidelity and Bankrate (72: 27.4 … 106: 4.3) and, for 107 to 120+, the regulation's own table at ecfr.gov (107: 4.1 … 119: 2.3, 120 and over: 2.0). */
+export const RMD_DIVISOR: Record<number, number> = { 72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0, 79: 21.1, 80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4, 88: 13.7, 89: 12.9,
+  90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9, 96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4, 101: 6.0, 102: 5.6, 103: 5.2, 104: 4.9, 105: 4.6, 106: 4.3, 107: 4.1, 108: 3.9, 109: 3.7,
+  110: 3.5, 111: 3.4, 112: 3.3, 113: 3.1, 114: 3.0, 115: 2.9, 116: 2.8, 117: 2.7, 118: 2.5, 119: 2.3, 120: 2.0 }
+export const rmdDivisor = (age: number) => RMD_DIVISOR[Math.min(120, Math.max(72, Math.round(age)))]
+
 export const TAX_YEARS = Object.keys(FEDERAL).map(Number).sort()
 export const LATEST_TAX_YEAR = TAX_YEARS[TAX_YEARS.length - 1]
 

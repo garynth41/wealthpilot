@@ -169,7 +169,9 @@ export function demoSeed(): { household: Household; data: Data } {
   { const bp = (account_id: string, k: number, balance: number, source: 'book' | 'bank' | 'value', bank: number | null = null) => d.balances.push({ id: demoId(), household_id: hh, account_id, as_of: addDays(t, k), balance, bank_balance: bank, source })
     bp(car.id, -470, 26900, 'value'); bp(car.id, -287, 24600, 'value'); bp(car.id, -104, 22800, 'value')
     for (let m = 6; m >= 1; m--) bp(auto.id, -m * 30, Math.round((9420 + m * 268) * 100) / 100, 'book')
-    bp(chk.id, -60, 2410.55, 'bank', 2410.55); bp(chk.id, -30, 2896.1, 'bank', 2896.1) }
+    bp(chk.id, -60, 2410.55, 'bank', 2410.55); bp(chk.id, -30, 2896.1, 'bank', 2896.1)
+    // 0.39.0: six months of investment balances, so Performance has something to separate into money in and investment return
+    ;[[-180, 36900, 10950], [-150, 37850, 11120], [-120, 38600, 11010], [-90, 39800, 11390], [-60, 40650, 11540], [-30, 41500, 11700], [0, 42300, 11860]].forEach(([k, a, b]) => { bp(k401.id, k, a, 'value'); bp(brok.id, k, b, 'value') }) }
   // manual credit-score trend (0.24.0): the card issuer's free FICO each quarter, one VantageScore from a monitoring app, and Sam's
   ;([['Me', -330, 688, 'Experian', 'FICO 8', 'Discover card'], ['Me', -240, 694, 'Experian', 'FICO 8', 'Discover card'], ['Me', -200, 705, 'Equifax', 'VantageScore 3.0', 'Credit Karma'], ['Me', -150, 701, 'Experian', 'FICO 8', 'Discover card'], ['Me', -60, 712, 'Experian', 'FICO 8', 'Discover card'], ['Me', -20, 716, 'Experian', 'FICO 8', 'Discover card'], ['Sam', -45, 774, 'TransUnion', 'FICO 8', 'Bank app']] as const)
     .forEach(([person, k, score, bureau, model, source], i) => d.scores.push({ id: demoId(), household_id: hh, person, date: addDays(t, k), score, bureau, model, source, notes: null, created_at: new Date(Date.parse(addDays(t, k) + 'T12:00:00') + i).toISOString() }))
@@ -183,7 +185,10 @@ export function demoSeed(): { household: Household; data: Data } {
   const household: Household = { id: hh, name: 'Sample household (demo)', currency: 'USD', settings: { ...SETTINGS_DEFAULTS, periodType: 'month', reserveFloor: 3000, runwayGreen: 6, runwayYellow: 3,
     // sample tax data (demo only): year-to-date federal withholding from the W-2 pay stubs, last year's return, Lewis Center-style local rates
     tax: { year: 2026, filingStatus: 'single', state: 'OH', localRate: 2.5, schoolDistrictRate: 0, priorYearTax: 10200, priorYearAgi: 84000, autoAggregate: true, paychecksLeft: null, extraWithholdingPerCheck: 0, plannedEstimates: 0, seSetAsidePct: 25,
-      items: [{ id: 'dt1', kind: 'withholding', label: 'Federal withholding to date (pay stub, Oct 31)', amount: 8560, source: 'manual' }, { id: 'dt2', kind: 'pretax_deduction', label: '401(k) deferrals + health premiums', amount: 7800, source: 'manual' }, { id: 'dt3', kind: 'estimated_payment', label: 'Q2 estimated payment (consulting)', amount: 600, source: 'manual' }] } } }
+      items: [{ id: 'dt3', kind: 'estimated_payment', label: 'Q2 estimated payment (consulting)', amount: 600, source: 'manual' }] },
+    // 0.39.0: the paycheck, taken apart once (it adds up to the take-home) — the tax estimate, the limits and the planner follow it. The employer
+    // matches 50% of the first 6% of pay and 4% goes in, so some match is left on the table for the sample to show.
+    payStubs: { [ps.id]: { k401: 130.77, sec125: 107, fed: 330, state: 75, local: 79.06, matchPct: 50, matchUpToPct: 6 } } } }
   d.members = [{ household_id: hh, user_id: 'demo-user', email: 'demo@example.com', role: 'owner', read_only: false }, { household_id: hh, user_id: 'demo-partner', email: 'sam@example.com', display_name: 'Sam', role: 'editor', read_only: false }]
   // a comment thread (0.21.0) on the split Target run
   { const target = d.transactions.find(x => x.payee === 'Target' && x.amount === 54.18); if (target) { const at = (h: number) => new Date(Date.parse(target.date + 'T18:00:00') + h * 3600000).toISOString()

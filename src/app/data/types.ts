@@ -209,6 +209,37 @@ export interface Settings {
   setupDismissed?: boolean          // 0.23.0: the Dashboard's getting-started checklist was hidden
   defaultInflationPct?: number      // 0.22.0: inflation used for new goals and the insurance needs estimate (default 3)
   defaultAccounts?: Record<string, UUID>   // 0.36.0: each person's default account, by user id — the account pages open on (lib/defaultAccount.ts)
+  /** 0.39.0: what comes out of each paycheck, by pay schedule id (lib/paycheck.ts) — the tax estimate, the contribution limits and the retirement
+   *  planner all read it, so nothing about a paycheck is typed twice */
+  payStubs?: Record<UUID, PayStub>
+  /** 0.39.0: investing set-up — each account's tax type, HSA coverage, the target mix and the return assumptions (lib/contrib.ts, lib/allocation.ts) */
+  invest?: InvestSettings
+}
+/** One paycheck, taken apart (0.39.0). Every amount is per paycheck, in dollars. Pre-tax: `k401` (traditional 401(k), 403(b), 457, TSP), `hsa`
+ *  (HSA through payroll) and `sec125` (health, dental, vision premiums, FSA and other pre-tax benefits). After-tax: `roth401k` and `afterTax`.
+ *  Withheld: `fed`, `state`, `local`. The employer puts in `matchPct`% of what the employee contributes, on the first `matchUpToPct`% of gross pay,
+ *  plus `hsaEmployer` a paycheck into the HSA. `ytd` is optional: the year-to-date figures from the latest pay stub and its date — when present
+ *  they are used up to that date in place of "this paycheck's amounts × the paychecks so far" (a raise, a bonus or a mid-year start). */
+export interface PayStub {
+  k401?: number; roth401k?: number; hsa?: number; sec125?: number; afterTax?: number
+  fed?: number; state?: number; local?: number
+  matchPct?: number; matchUpToPct?: number; hsaEmployer?: number
+  k401Account?: UUID | null; hsaAccount?: UUID | null
+  /** this paycheck is the spouse's or partner's: the workplace-plan limit is per person, so it is counted against their own */
+  partner?: boolean
+  ytd?: { asOf: ISODate; gross?: number | null; k401?: number | null; roth401k?: number | null; hsa?: number | null; sec125?: number | null; fed?: number | null; state?: number | null; local?: number | null } | null
+}
+/** How an investment or retirement account is taxed (0.39.0): pre-tax workplace plan, Roth workplace plan, traditional IRA, Roth IRA, HSA, an
+ *  ordinary taxable account, or something else (a 529, an annuity) that the planner treats as taxable. */
+export type AcctTaxType = 'k401' | 'roth401k' | 'ira' | 'rothIra' | 'hsa' | 'taxable' | 'other'
+export const ACCT_TAX_LABEL: Record<AcctTaxType, string> = { k401: 'Workplace plan, pre-tax (401(k), 403(b), 457, TSP)', roth401k: 'Workplace plan, Roth', ira: 'Traditional IRA', rothIra: 'Roth IRA', hsa: 'HSA', taxable: 'Taxable account', other: 'Other (529, annuity)' }
+/** The five groups a target mix is set in (0.39.0, lib/allocation.ts). */
+export type AllocGroup = 'stocks' | 'bonds' | 'cash' | 'real_estate' | 'other'
+export interface InvestSettings {
+  acctType?: Record<UUID, AcctTaxType>            // only the accounts the household changed; the rest are worked out from the account's name and kind
+  hsaCoverage?: 'self' | 'family'                 // which HSA limit applies (default self-only)
+  targets?: Partial<Record<AllocGroup, number>>   // the target mix in percent, adding up to 100
+  assumptions?: Partial<Record<AllocGroup, { ret: number; vol: number }>>   // yearly return and volatility, decimals — planning assumptions, editable
 }
 /** What 'Apply this plan' wrote (0.20.0), so other pages agree with the Plan view and a re-apply replaces rather than adds. */
 export interface AppliedPlan { scenarioId?: string | null; name?: string | null; assumptions: Record<string, unknown>; appliedAt: string; debtExtra: number; goalExtra: Record<string, number>; retireExtra: number; strategy?: 'avalanche' | 'snowball' }
@@ -223,6 +254,11 @@ export interface MemberNotify { push?: boolean; email?: boolean; email_to?: stri
 /** A guaranteed income line in retirement (0.20.0): Social Security or a pension — monthly amount in today's dollars from a start age. */
 export interface Pension { id: string; name: string; monthly: number; startAge: number; cola?: boolean }
 export interface RetirementInputs {
+  /** 0.39.0 — what the planner follows on its own (all default on except `followMix`): `autoContribution` = the yearly contribution is what the
+   *  paychecks and transfers actually put in (plus any Plan extra) instead of the typed number; `autoIncome` = "income today" is the gross pay on the
+   *  pay schedules; `followMix` = expected return and volatility come from the actual mix (lib/allocation.ts); `countTaxes` = "income wanted" is
+   *  after tax and the plan pays income tax on its withdrawals (lib/retirementTax.ts). `taxByAge` is worked out, never saved: the tax each year. */
+  autoContribution?: boolean; autoIncome?: boolean; followMix?: boolean; countTaxes?: boolean; taxByAge?: Record<number, number>
   currentAge: number; retireAge: number; lifeExpectancy: number; annualContribution: number; expectedReturn: number; inflation: number; returnStdDev: number; desiredIncome: number
   /** Social Security, $/yr in today's dollars (kept for compatibility; ssMonthly wins when set) */
   socialSecurity: number; currentIncome: number
