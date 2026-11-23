@@ -1,0 +1,1 @@
+import{V as e,ji as t}from"./native-B3PD-yrL.js";var n=e();function r(e,r){let{base:i,l4:a}=t(e,r);return a?(0,n.jsxs)(`b`,{children:[i,(0,n.jsx)(`span`,{style:{color:`var(--ink-3)`,fontWeight:400,marginLeft:`.3em`},children:`(${a})`})]}):(0,n.jsx)(`b`,{children:i})}export{r as t};
