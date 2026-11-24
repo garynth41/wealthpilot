@@ -16,7 +16,27 @@ export const Pill = ({ cls, children }: { cls: string; children: ReactNode }) =>
 export const Money = ({ v, sign }: { v: number | null | undefined; sign?: boolean }) => { const n = +(v ?? 0) || 0; return <span style={{ color: sign ? (n >= 0 ? 'var(--good)' : 'var(--crit)') : undefined }}>{sign && n > 0 ? '+' : ''}{fmtMoney(n)}</span> }
 export const Note = ({ children }: { children: ReactNode }) => <div className="note">{children}</div>
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>
-export const Btn = ({ onClick, children, primary, sm, danger, disabled, title, type = 'button', block, 'aria-label': ariaLabel, autoFocusHere }: { onClick?: () => void; children: ReactNode; primary?: boolean; sm?: boolean; danger?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; block?: boolean; 'aria-label'?: string; /** the dialog puts focus here when it opens */ autoFocusHere?: boolean }) => <button type={type} className={`btn ${primary ? 'primary' : ''} ${sm ? 'sm' : ''} ${danger ? 'danger' : ''} ${block ? 'block' : ''}`} onClick={onClick} disabled={disabled} title={title} aria-label={ariaLabel} data-autofocus={autoFocusHere ? '' : undefined}>{children}</button>
+/** A button that cannot be pressed twice for one piece of work (0.39.1). A press that starts saving — the handler returns a promise, or the
+ *  store's busy count goes up while the handler runs — locks this button until that work ends, so a double click or a second tap on Save
+ *  cannot record the same payment twice. A press that starts nothing (opens a dialog, changes a tab) locks nothing. The button keeps the
+ *  keyboard focus while it is locked (aria-disabled, not disabled). */
+export const Btn = ({ onClick, children, primary, sm, danger, disabled, title, type = 'button', block, 'aria-label': ariaLabel, autoFocusHere }: { onClick?: () => unknown; children: ReactNode; primary?: boolean; sm?: boolean; danger?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; block?: boolean; 'aria-label'?: string; /** the dialog puts focus here when it opens */ autoFocusHere?: boolean }) => {
+  const [locked, setLocked] = useState(false); const lock = useRef(false), alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  const press = onClick ? () => {
+    if (lock.current) return
+    const before = useStore.getState().busy; const r = onClick(); const waits = !!r && typeof (r as { then?: unknown }).then === 'function', started = useStore.getState().busy > before
+    if (!waits && !started) return
+    lock.current = true; setLocked(true)
+    let unsub = () => {}; let timer: ReturnType<typeof setTimeout> | undefined
+    const free = () => { if (!lock.current) return; lock.current = false; clearTimeout(timer); unsub(); if (alive.current) setLocked(false) }
+    // freed when the returned promise settles, or when the store is as idle again as it was before the press — and never held longer than 20 s
+    timer = setTimeout(free, 20000)
+    if (waits) (r as Promise<unknown>).then(free, free)
+    else { unsub = useStore.subscribe(st => { if (st.busy <= before) free() }); if (useStore.getState().busy <= before) free() }
+  } : undefined
+  return <button type={type} className={`btn ${primary ? 'primary' : ''} ${sm ? 'sm' : ''} ${danger ? 'danger' : ''} ${block ? 'block' : ''}`} onClick={press} disabled={disabled} aria-disabled={locked || undefined} aria-busy={locked || undefined} title={title} aria-label={ariaLabel} data-autofocus={autoFocusHere ? '' : undefined}>{children}</button>
+}
 export const Seg = <T extends string>({ value, options, onChange }: { value: T; options: Array<[T, string]>; onChange: (v: T) => void }) => <span className="seg">{options.map(([v, l]) => <button key={v} className={v === value ? 'on' : ''} aria-pressed={v === value} onClick={() => onChange(v)} type="button">{l}</button>)}</span>
 /** A password box with a show/hide eye (0.19.2). Starts hidden; the eye is a plain button so Enter in the box still submits the form. Everything else (id, autoComplete, required, minLength, autoFocus…) passes straight to the input. */
 export const PasswordInput = ({ className = '', ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) => {

@@ -217,7 +217,10 @@ for (const W of [1400, 390]) {
     ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.lines.some(l => l.planned === 999)), 'editing a planned amount saves the budget line')
     // bills: mark paid
     await p.goto('http://localhost:4173/#/bills'); await p.waitForTimeout(800); const nTx = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length)
-    const mp = p.locator('button:has-text("Mark paid")').first(); if (await mp.count()) { await mp.click(); await p.waitForTimeout(300); await p.click('.modal button:has-text("Save")'); await p.waitForTimeout(600); ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length) === nTx + 1, 'Mark paid logs a transaction'); ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.occurrences.some(o => o.status === 'paid')), 'and records the occurrence as paid') }
+    const mp = p.locator('button:has-text("Mark paid")').first(); if (await mp.count()) { await mp.click(); await p.waitForTimeout(300)
+      // 0.39.1: Save pressed twice in the same instant (a double click) records the payment once
+      await p.evaluate(() => { const b = [...document.querySelectorAll('.modal button')].find(x => /^Save$/.test(x.textContent.trim())); b.click(); b.click() }); await p.waitForTimeout(700)
+      ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.transactions.length) === nTx + 1, 'Mark paid logs one transaction, even when Save is pressed twice'); ok(await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.occurrences.some(o => o.status === 'paid')), 'and records the occurrence as paid') }
     // debts: record payment on Chase
     await p.goto('http://localhost:4173/#/debts'); await p.waitForTimeout(800); const bal0 = await p.evaluate(() => JSON.parse(localStorage.getItem('wealthpilot.demo')).data.accounts.find(a => a.name === 'Chase Freedom').balance)
     const rows = p.locator('table.tbl tr:has-text("Chase Freedom") button:has-text("Record payment")'); await rows.first().click(); await p.waitForTimeout(300); await p.click('.modal button:has-text("Minimum")'); await p.click('.modal button:has-text("Save payment")'); await p.waitForTimeout(600)

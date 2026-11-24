@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../app/hooks'
-import type { Recurring, Transaction } from '../app/data/types'
+import type { BillOccurrence, Recurring, Transaction } from '../app/data/types'
+import { useStore } from '../app/store'
+import { InputError } from '../lib/validate'
 import { REC_FREQ_LABEL } from '../app/data/types'
 import { Card, KPI, Btn, Pill, Note, useConfirm, useModal, MHead, MBody, MFoot, Field } from '../components/ui'
 import { Table, type Col } from '../components/Table'
@@ -64,15 +66,29 @@ export function BillsPage() {
   </>
 }
 function PayModal({ u, onDone }: { u: Upcoming; onDone: () => void }) {
-  const { data, insert, update, guarded, acctLabels, accts } = useData()
+  const { data, insert, update, remove, guarded, acctLabels, accts } = useData()
   const [date, setDate] = useState(today() < u.date ? today() : u.date); const [amt, setAmt] = useState(u.amount.toFixed(2)); const [from, setFrom] = useState(u.r.account_id || accts.find(a => a.kind === 'checking')?.id || '')
   const target = u.r.liability_account_id ? data.accounts.find(a => a.id === u.r.liability_account_id) : null
+  // One payment per due date (0.39.1). Two saves a second apart once wrote the same bill payment twice: each added a transaction and took the
+  // amount off the balance. Now the due date is claimed first — and a new occurrence is unique per bill and due date in the database — so a
+  // second save, from this form, another tab or another device, stops before a transaction exists or a balance moves.
   const save = () => { const a = parseNum(amt); if (!a || a <= 0) return
-    guarded(async () => { const kind: Transaction['kind'] = u.r.kind === 'income' ? 'income' : target ? 'transfer' : 'expense'
-      const tx = await insert('transactions', { date, kind, amount: Math.round(a * 100) / 100, account_id: from || null, to_account_id: target ? target.id : null, category_id: u.r.category_id || null, payee: u.r.payee || u.r.name, memo: u.r.name, tags: [], status: 'cleared', source: 'recurring', recurring_id: u.r.id, exclude_from_budget: false })
+    return guarded(async () => { const kind: Transaction['kind'] = u.r.kind === 'income' ? 'income' : target ? 'transfer' : 'expense'
+      const already = new InputError(`${u.r.name} is already ${u.r.kind === 'income' ? 'recorded' : 'marked paid'} for ${fmtD(u.date)} — nothing was recorded a second time`)
+      // the due date as the store holds it now, not as it was when this form opened
+      const was = useStore.getState().data.occurrences.find(o => o.recurring_id === u.r.id && o.due_date === u.date) || null
+      if (was && was.status === 'paid') throw already
+      let occ: BillOccurrence
+      try { occ = was ? await update('occurrences', was.id, { status: 'paid', paid_on: date, amount: a }) : await insert('occurrences', { recurring_id: u.r.id, due_date: u.date, amount: a, status: 'paid', paid_on: date }) }
+      catch (e) { if (/duplicate key|unique/i.test((e as Error)?.message || '')) throw already; throw e }
+      let tx: Transaction
+      try { tx = await insert('transactions', { date, kind, amount: Math.round(a * 100) / 100, account_id: from || null, to_account_id: target ? target.id : null, category_id: u.r.category_id || null, payee: u.r.payee || u.r.name, memo: u.r.name, tags: [], status: 'cleared', source: 'recurring', recurring_id: u.r.id, exclude_from_budget: false }) }
+      catch (e) {   // no payment was recorded: give the due date back as it was
+        try { if (was) await update('occurrences', was.id, { status: was.status, paid_on: was.paid_on ?? null, amount: was.amount }); else await remove('occurrences', occ.id) } catch { /* the next load shows what the server holds */ }
+        throw e }
       await post(data, (id, p) => update('accounts', id, p), tx, 1, date)
       if (target && isLiability(target) && target.due_date && a >= (+target.minimum_payment || 0) - 0.005 && date <= addDays(target.due_date, 3)) await update('accounts', target.id, { last_paid_due: target.due_date })
-      if (u.occ) await update('occurrences', u.occ.id, { status: 'paid', paid_on: date, transaction_id: tx.id, amount: a }); else await insert('occurrences', { recurring_id: u.r.id, due_date: u.date, amount: a, status: 'paid', paid_on: date, transaction_id: tx.id })
+      await update('occurrences', occ.id, { transaction_id: tx.id })
       await update('recurring', u.r.id, { last_paid_on: date, last_paid_amount: a, next_due: u.r.frequency === 'irregular' ? u.r.next_due : undefined as unknown as string })
       onDone() }, `${fm2(a)} recorded`) }
   return <><MHead title={`${u.r.kind === 'income' ? 'Received' : 'Mark paid'} — ${u.r.name}`} /><MBody>

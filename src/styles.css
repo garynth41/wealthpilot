@@ -106,7 +106,7 @@ kbd{font:600 11px var(--mono);background:var(--surface-2);border:1px solid var(-
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--idle);flex:none;margin-top:5px}
 .dot.good{background:var(--good)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--crit)} .dot.info{background:var(--info)} .dot.soon{background:var(--soon)} .dot.wait{background:var(--wait)}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);padding:7px 13px;border-radius:var(--radius);cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap}
-.btn:hover:not(:disabled){background:var(--surface-2);border-color:var(--ink-3)} .btn:disabled{opacity:.5;cursor:default}
+.btn:hover:not(:disabled):not([aria-disabled="true"]){background:var(--surface-2);border-color:var(--ink-3)} .btn:disabled,.btn[aria-disabled="true"]{opacity:.5;cursor:default}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600} .btn.primary:hover:not(:disabled){background:var(--accent-deep);border-color:var(--accent-deep);color:var(--on-accent)}
 .btn.danger{color:var(--crit-ink);border-color:var(--crit)} .btn.danger:hover{background:var(--crit-soft)} .btn.sm{padding:3px 9px;font-size:12px} .btn.block{width:100%;justify-content:center}
 .btnrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
