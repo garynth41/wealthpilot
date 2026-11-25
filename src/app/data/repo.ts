@@ -1,5 +1,5 @@
 import type { RestoreSummary } from '../../lib/restore'
-import type { Collection, Data, Household, MemberNotify, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult, Reconciliation, ReconciliationInput, AuditEvent, AuditKind } from './types'
+import type { Collection, Data, Household, MemberNotify, RowOf, Settings, EmailLedgerRow, Role, InviteRequest, InviteResult, SyncStatus, SyncResult, Reconciliation, ReconciliationInput, AuditEvent, AuditKind, BillOccurrence } from './types'
 
 /** Every read and write goes through a Repo. Two implementations: Supabase (real) and Memory (offline demo + tests). */
 export interface Repo {
@@ -9,6 +9,9 @@ export interface Repo {
   insertMany<C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]): Promise<RowOf<C>[]>
   update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>): Promise<RowOf<C>>
   remove(coll: Collection, id: string): Promise<void>
+  /** 0.39.2: claim a bill's due date before recording its payment. Returns the row when the claim was taken; null when the due date is already
+   *  paid or another save holds a claim newer than two minutes. One statement on the database's clock, so two devices cannot both win. */
+  claimOccurrence(id: string): Promise<BillOccurrence | null>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
   /** 0.25.1: one member's alert choices (null = back to the household default), written onto the household's stored alert settings and
    *  nothing else — so an editor can save their own row (the database lets anyone but an owner change only their own entry) */

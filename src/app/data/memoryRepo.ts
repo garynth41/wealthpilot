@@ -52,6 +52,10 @@ export class MemoryRepo implements Repo {
     if (coll === 'balances') throw new Error('Balance history is written by the database')
     ;(this.data[coll] as unknown as RowOf<C>[]).push(r); if (coll === 'accounts') this.recordBalance(r as unknown as Account); this.changed(); return r
   }
+  /** the same rule as public.claim_bill_occurrence: not paid, and no claim newer than two minutes */
+  async claimOccurrence(id: string) { const o = this.data.occurrences.find(x => x.id === id); if (!o || o.status === 'paid') return null
+    if (o.claimed_at && Date.now() - new Date(o.claimed_at).getTime() < 120000) return null
+    o.claimed_at = new Date().toISOString(); this.changed(); return { ...o } }
   async insertMany<C extends Collection>(coll: C, rows: Partial<RowOf<C>>[]) { const out: RowOf<C>[] = []; for (const r of rows) out.push(await this.insert(coll, r)); return out }
   async update<C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) {
     if ((coll as string) === 'audit' || (coll as string) === 'reconciliations') throw new Error('Audit events and completed reconciliations are immutable')

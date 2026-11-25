@@ -1,5 +1,5 @@
 import type { Repo } from './repo'
-import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type MemberNotify, type RowOf, type Settings, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
+import { TABLE, SETTINGS_DEFAULTS, emptyData, type Collection, type Data, type Household, type Member, type MemberNotify, type RowOf, type Settings, type BillOccurrence, type EmailLedgerRow, type Role, type InviteRequest, type InviteResult, type SyncStatus, type SyncResult, type SyncConnection, type ReconciliationInput, type Reconciliation, type AuditEvent, type AuditKind, type SyncLogRow } from './types'
 import { sb } from '../supabase'
 import { APP_VERSION } from '../config'
 import { withMemberNotify } from '../../lib/memberNotify'
@@ -49,6 +49,7 @@ export class SupabaseRepo implements Repo {
     const { data, error } = await sb().from(TABLE[coll]).update(strip(patch)).eq('id', id).eq('household_id', this.hh).select('*').single(); if (error) throw error; return this.num(data) as RowOf<C>
   }
   async remove(coll: Collection, id: string) { const { error } = await sb().from(TABLE[coll]).delete().eq('id', id).eq('household_id', this.hh); if (error) throw error }
+  async claimOccurrence(id: string) { const { data, error } = await sb().rpc('claim_bill_occurrence', { p_id: id }); if (error) throw error; const row = (Array.isArray(data) ? data : data ? [data] : []).find((r: { household_id?: string }) => r.household_id === this.hh); return row ? this.num(row) as BillOccurrence : null }
   async saveSettings(patch: Partial<Settings>) {
     const { data: cur, error: e1 } = await sb().from('households').select('settings').eq('id', this.hh).single(); if (e1) throw e1
     const next = { ...SETTINGS_DEFAULTS, ...(cur?.settings || {}), ...patch }

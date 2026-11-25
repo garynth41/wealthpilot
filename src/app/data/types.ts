@@ -76,6 +76,9 @@ export interface Transaction extends Stamped {
   duplicate_of?: UUID | null
   /** the owner said this row is not a duplicate — never merge it automatically */
   dedupe_ok?: boolean
+  /** 0.39.2, on a hidden duplicate: its posting was taken back off the stored balance when it was merged, so restoring it puts the posting
+   *  back (migration 0026). False on a copy merged before then — restoring one of those changes no balance. */
+  unposted?: boolean
   /** check register: the check number; cleared_on = the bank date it cleared; reconciliation_id = the completed reconciliation it was ticked in */
   check_number?: string | null; cleared_on?: ISODate | null; reconciliation_id?: UUID | null
 }
@@ -101,7 +104,7 @@ export interface Recurring extends Stamped {
   autopay: boolean; reminder_days: number; starts_on?: ISODate | null; ends_on?: ISODate | null
   status: 'Active' | 'Paused' | 'Cancelled'; last_paid_on?: ISODate | null; last_paid_amount?: number | null; notes?: string | null; sort_order: number
 }
-export interface BillOccurrence extends Stamped { recurring_id: UUID; due_date: ISODate; amount: number; status: 'due' | 'scheduled' | 'paid' | 'skipped' | 'overdue'; paid_on?: ISODate | null; transaction_id?: UUID | null; email_item_id?: UUID | null; notes?: string | null }
+export interface BillOccurrence extends Stamped { recurring_id: UUID; due_date: ISODate; amount: number; status: 'due' | 'scheduled' | 'paid' | 'skipped' | 'overdue'; paid_on?: ISODate | null; transaction_id?: UUID | null; email_item_id?: UUID | null; notes?: string | null; /** 0.39.2: set while a payment for this due date is being recorded (migration 0026); a claim older than two minutes has lapsed */ claimed_at?: string | null }
 
 export interface Goal extends Stamped {
   ref?: string | null; name: string; kind: 'savings' | 'emergency_fund' | 'debt_payoff' | 'sinking_fund' | 'purchase' | 'other'
