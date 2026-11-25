@@ -83,6 +83,47 @@ describe('merging two typed copies of one entry', () => {
   })
 })
 
+// 0.39.3 — a failure part-way leaves the balances and the copy agreeing, so the same action can simply be tried again
+describe('when a write fails part-way through a merge or a restore', () => {
+  const setup2 = () => {
+    const seed = demoSeed(); const repo = new MemoryRepo(seed); const from = seed.data.accounts.find(a => a.name === 'Huntington Checking')!, to = seed.data.accounts.find(a => a.name === 'Ally Savings')!
+    from.bank_balance = null; to.bank_balance = null; from.balance = 1000 - 50 - 50; to.balance = 2000 + 50 + 50   // a typed transfer, entered twice
+    const base = seed.data.transactions.find(t => t.kind === 'expense')!
+    const mk = (id: string) => ({ ...base, id, ref: null, date: '2026-11-09', kind: 'transfer', amount: 50, account_id: from.id, to_account_id: to.id, category_id: null, payee: 'To savings', tags: [], status: 'cleared', source: 'manual', external_id: null, recurring_id: null, duplicate_of: null, dedupe_ok: false, unposted: false }) as Transaction
+    seed.data.transactions.push(mk('x-keep'), mk('x-copy'))
+    useStore.setState({ mode: 'db', repo, household: seed.household, data: structuredClone(seed.data), role: 'owner', readOnly: false, modules: null, offlineAt: null, undo: [] })
+    const bal = (id: string) => +useStore.getState().data.accounts.find(a => a.id === id)!.balance
+    const failOn = (hit: (coll: string, id: string) => boolean) => { const real = repo.update.bind(repo); let on = true
+      repo.update = (async (coll: never, id: string, patch: never) => { if (on && hit(coll as string, id)) throw new Error('the connection dropped'); return real(coll, id, patch) }) as typeof repo.update
+      return () => { on = false } }
+    return { repo, from: from.id, to: to.id, bal, failOn } }
+  const hid = () => useStore.getState().data.duplicates.find(t => t.id === 'x-copy')
+
+  it('a transfer copy touches two accounts: if the second cannot be written, the first is put back, and the merge can be tried again', async () => {
+    const { from, to, bal, failOn } = setup2(); const mend = failOn((coll, id) => coll === 'accounts' && id === to)
+    await expect(useStore.getState().mergeDuplicates('x-keep', ['x-copy'])).rejects.toThrow('the connection dropped')
+    expect([bal(from), bal(to)]).toEqual([900, 2100]); expect(row('x-copy')).toMatchObject({ duplicate_of: null })
+    mend(); await useStore.getState().mergeDuplicates('x-keep', ['x-copy'])
+    expect([bal(from), bal(to)]).toEqual([950, 2050]); expect(hid()?.unposted).toBe(true)
+  })
+  it('restore: if a balance cannot be written, the copy stays hidden and marked, and Restore can be pressed again', async () => {
+    const { from, to, bal, failOn } = setup2(); await useStore.getState().mergeDuplicates('x-keep', ['x-copy'])
+    const mend = failOn((coll, id) => coll === 'accounts' && id === to)
+    await expect(useStore.getState().restoreDuplicate('x-copy')).rejects.toThrow('the connection dropped')
+    expect([bal(from), bal(to)]).toEqual([950, 2050]); expect(hid()).toMatchObject({ duplicate_of: 'x-keep', unposted: true })
+    mend(); await useStore.getState().restoreDuplicate('x-copy')
+    expect([bal(from), bal(to)]).toEqual([900, 2100]); expect(row('x-copy')).toMatchObject({ duplicate_of: null, unposted: false })
+  })
+  it('restore: if the copy itself cannot be restored, the balances go back to where they were', async () => {
+    const { repo, from, to, bal, failOn } = setup2(); await useStore.getState().mergeDuplicates('x-keep', ['x-copy'])
+    const mend = failOn((coll, id) => coll === 'transactions' && id === 'x-copy')
+    await expect(useStore.getState().restoreDuplicate('x-copy')).rejects.toThrow('the connection dropped')
+    expect([bal(from), bal(to)]).toEqual([950, 2050]); expect(hid()).toMatchObject({ duplicate_of: 'x-keep', unposted: true })
+    const held = (await repo.loadAll()).data.accounts; expect([+held.find(a => a.id === from)!.balance, +held.find(a => a.id === to)!.balance]).toEqual([950, 2050])
+    mend(); await useStore.getState().restoreDuplicate('x-copy'); expect([bal(from), bal(to)]).toEqual([900, 2100])
+  })
+})
+
 // 0.39.2 — a due date is claimed before its payment is recorded (the offline demo follows the same rule as the database function)
 describe('claiming a bill\'s due date', () => {
   it('is taken once, refused while the claim is fresh, free again after two minutes, and refused once paid', async () => {

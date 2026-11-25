@@ -133,6 +133,18 @@ const changesMoney = (was: Transaction, patch?: Partial<Transaction>) => !!patch
 /** What a row holds on stored balances that no bank figure will ever replace: its effects on accounts with no bank balance. */
 const unbankedEffects = (d: Data, t: Transaction): Delta[] => effects(d, t).filter(e => { const a = d.accounts.find(x => x.id === e.id); return !!a && a.bank_balance == null })
 
+/** 0.39.3 — stored balances move together or not at all. Each account's balance moves by its delta times `dir`, read as it stands at that
+ *  moment. If one cannot be written, the ones already written are put back and the error is passed on. The function returned puts all of
+ *  them back, for when the step that follows fails. */
+async function moveBalances(repo: Repo, deltas: Delta[], dir: 1 | -1): Promise<() => Promise<void>> {
+  const one = async (id: string, delta: number) => { const a = useStore.getState().data.accounts.find(x => x.id === id); if (!a) return
+    const r = await repo.update('accounts', id, { balance: Math.round(((+a.balance || 0) + delta) * 100) / 100 }); useStore.setState(s => ({ data: { ...s.data, accounts: s.data.accounts.map(x => x.id === id ? r : x) } })) }
+  const moved: Delta[] = []
+  const undo = async () => { for (const m of moved.splice(0).reverse()) { try { await one(m.id, -m.delta * dir) } catch { /* the next load shows what the server holds */ } } }
+  try { for (const e of deltas) { await one(e.id, e.delta * dir); moved.push(e) } } catch (e) { await undo(); throw e }
+  return undo
+}
+
 // 0.39.1 — which guarded piece of work started last. A button reads the count before and after its handler runs: if it went up, the handler
 // started work, and `guardedWork().last` settles when exactly that work ends (never rejects). Kept outside the store so reading it re-renders nothing.
 let guardedSeq = 0, guardedLast: Promise<void> = Promise.resolve()
@@ -235,27 +247,28 @@ export const useStore = create<State>((set, get) => ({
     const patched = !!patch && Object.keys(patch).length > 0
     if (patched) { const k = await repo.update('transactions', keeper, patch!); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) }
     let done = 0
-    // 0.39.2: an account's stored balance moves by `delta`, read as it stands now
-    const bump = async (accountId: string, delta: number) => { const a = get().data.accounts.find(x => x.id === accountId); if (!a) return
-      const r = await repo.update('accounts', accountId, { balance: Math.round(((+a.balance || 0) + delta) * 100) / 100 }); set(s => ({ data: { ...s.data, accounts: s.data.accounts.map(x => x.id === accountId ? r : x) } })) }
     try { for (const id of dups) {
       const copy = get().data.transactions.find(t => t.id === id)
       const give = was && copy && enteredHere(was) && enteredHere(copy) && !changesMoney(was, patch) ? unbankedEffects(get().data, copy) : []
-      // the copy's posting comes off first; if hiding the copy then fails, it goes back on, so the two rows are again two counted rows
-      for (const e of give) await bump(e.id, -e.delta)
+      // the copy's posting comes off first — every account it touched, or none (0.39.3). If hiding the copy then fails, it all goes back
+      // on, so the two rows are again two counted rows and the merge can simply be tried again.
+      const putBack = await moveBalances(repo, give, -1)
       let d: Transaction
       try { d = await repo.update('transactions', id, give.length ? { duplicate_of: keeper, unposted: true } : { duplicate_of: keeper }) }
-      catch (e) { for (const g of give) { try { await bump(g.id, g.delta) } catch { /* the next load shows what the server holds */ } } throw e }
+      catch (e) { await putBack(); throw e }
       done++; set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) } }
     catch (e) { if (patched && was && !done) { try { const k = await repo.update('transactions', keeper, back as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) } catch { /* the next load shows what the server holds */ } } throw e }
   },
   async restoreDuplicate(id) {
     const repo = need(get); const dup = get().data.duplicates.find(t => t.id === id); const keeper = dup?.duplicate_of ? get().data.transactions.find(t => t.id === dup.duplicate_of) : undefined
-    const r = await repo.update('transactions', id, dup?.unposted ? { duplicate_of: null, dedupe_ok: true, unposted: false } : { duplicate_of: null, dedupe_ok: true })
+    // 0.39.2: a copy whose posting the merge took off the stored balance gets it back — on the accounts that still have no bank balance.
+    // 0.39.3: the posting goes back on first, and the mark comes off only with the restore itself. If either step fails, the balances are
+    // as they were and the copy is still hidden and still marked, so Restore can simply be pressed again.
+    const takeOff = dup?.unposted ? await moveBalances(repo, unbankedEffects(get().data, dup), 1) : null
+    let r: Transaction
+    try { r = await repo.update('transactions', id, dup?.unposted ? { duplicate_of: null, dedupe_ok: true, unposted: false } : { duplicate_of: null, dedupe_ok: true }) }
+    catch (e) { if (takeOff) await takeOff(); throw e }
     set(s => ({ data: { ...s.data, duplicates: s.data.duplicates.filter(t => t.id !== id), transactions: [...s.data.transactions.filter(t => t.id !== id), r] } }))
-    // 0.39.2: a copy whose posting the merge took off the stored balance gets it back — on the accounts that still have no bank balance
-    if (dup?.unposted) for (const e of unbankedEffects(get().data, r)) { const a = get().data.accounts.find(x => x.id === e.id); if (!a) continue
-      const acc = await repo.update('accounts', a.id, { balance: Math.round(((+a.balance || 0) + e.delta) * 100) / 100 }); set(s => ({ data: { ...s.data, accounts: s.data.accounts.map(x => x.id === a.id ? acc : x) } })) }
     // the card or loan side of a paired payment (0.25.1): the kept checking or savings row goes back to the expense it arrived as
     const unpair = dup && keeper ? unpairPatch(keeper as unknown as DTxn, dup as unknown as DTxn) : null
     if (keeper && unpair) { const k = await repo.update('transactions', keeper.id, unpair as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper.id ? k : t) } })) }
