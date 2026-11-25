@@ -118,6 +118,10 @@ const inTurn = <T,>(fn: () => Promise<T>): Promise<T> => { const run = turn.then
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
 
+// 0.39.1 — which guarded piece of work started last. A button reads the count before and after its handler runs: if it went up, the handler
+// started work, and `guardedWork().last` settles when exactly that work ends (never rejects). Kept outside the store so reading it re-renders nothing.
+let guardedSeq = 0, guardedLast: Promise<void> = Promise.resolve()
+export const guardedWork = () => ({ seq: guardedSeq, last: guardedLast })
 export const useStore = create<State>((set, get) => ({
   mode: null, booting: true, ai: null, user: null, session: null, repo: null, household: null, data: emptyData(), role: 'viewer', readOnly: false, modules: null, households: [], householdsFor: null, householdsError: null, latest: null, nativeMin: null, appAdmin: null, nativeLatest: null, offlineAt: null, loadError: null, toasts: [], undo: [], busy: 0, lastRefresh: null, mfaPending: false, recovering: LANDED_ON_RECOVERY,
   settings: () => ({ ...SETTINGS_DEFAULTS, ...(get().household?.settings || {}) }),
@@ -371,10 +375,11 @@ export const useStore = create<State>((set, get) => ({
   async guarded(fn, ok) {
     if (get().busy > 2) return undefined
     set(s => ({ busy: s.busy + 1 }))
+    let done = () => {}; guardedSeq++; guardedLast = new Promise<void>(r => { done = r })   // 0.39.1: a button waits for the work its own press started
     const undoBefore = get().undo.length
     try { const r = await fn(); if (ok) { const grew = get().undo.length > undoBefore; get().toast(ok, false, grew ? { label: 'Undo', run: () => { void get().guarded(() => get().undoLast(), 'Undone') } } : undefined) } return r }
     catch (e) { if (!isInputError(e)) console.error(e); get().toast((e as Error).message || String(e), true); return undefined }
-    finally { set(s => ({ busy: Math.max(0, s.busy - 1) })) }
+    finally { set(s => ({ busy: Math.max(0, s.busy - 1) })); done() }
   },
 }))
 
