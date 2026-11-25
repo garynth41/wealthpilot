@@ -1,5 +1,5 @@
 import { Component, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type ReactElement, type InputHTMLAttributes, type RefObject } from 'react'
-import { useStore } from '../app/store'
+import { useStore, guardedWork } from '../app/store'
 import { fmtMoney } from '../lib/money'
 import { captureError } from '../lib/errors'
 import { openHelp } from '../lib/helpBus'
@@ -17,23 +17,23 @@ export const Money = ({ v, sign }: { v: number | null | undefined; sign?: boolea
 export const Note = ({ children }: { children: ReactNode }) => <div className="note">{children}</div>
 export const Empty = ({ children }: { children: ReactNode }) => <div className="empty">{children}</div>
 /** A button that cannot be pressed twice for one piece of work (0.39.1). A press that starts saving — the handler returns a promise, or the
- *  store's busy count goes up while the handler runs — locks this button until that work ends, so a double click or a second tap on Save
- *  cannot record the same payment twice. A press that starts nothing (opens a dialog, changes a tab) locks nothing. The button keeps the
- *  keyboard focus while it is locked (aria-disabled, not disabled). */
+ *  handler starts guarded work while it runs — locks this button until that same work ends (or 20 seconds pass), so a double click or a
+ *  second tap on Save cannot record the same payment twice. A press that starts nothing (opens a dialog, changes a tab) locks nothing. The
+ *  button keeps the keyboard focus while it is locked (aria-disabled, not disabled). */
+let pressSeq = 0
 export const Btn = ({ onClick, children, primary, sm, danger, disabled, title, type = 'button', block, 'aria-label': ariaLabel, autoFocusHere }: { onClick?: () => unknown; children: ReactNode; primary?: boolean; sm?: boolean; danger?: boolean; disabled?: boolean; title?: string; type?: 'button' | 'submit'; block?: boolean; 'aria-label'?: string; /** the dialog puts focus here when it opens */ autoFocusHere?: boolean }) => {
-  const [locked, setLocked] = useState(false); const lock = useRef(false), alive = useRef(true)
+  const [locked, setLocked] = useState(false); const lock = useRef(0), alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const press = onClick ? () => {
     if (lock.current) return
-    const before = useStore.getState().busy; const r = onClick(); const waits = !!r && typeof (r as { then?: unknown }).then === 'function', started = useStore.getState().busy > before
+    const before = guardedWork().seq; const r = onClick(); const waits = !!r && typeof (r as { then?: unknown }).then === 'function', started = guardedWork().seq !== before
     if (!waits && !started) return
-    lock.current = true; setLocked(true)
-    let unsub = () => {}; let timer: ReturnType<typeof setTimeout> | undefined
-    const free = () => { if (!lock.current) return; lock.current = false; clearTimeout(timer); unsub(); if (alive.current) setLocked(false) }
-    // freed when the returned promise settles, or when the store is as idle again as it was before the press — and never held longer than 20 s
-    timer = setTimeout(free, 20000)
-    if (waits) (r as Promise<unknown>).then(free, free)
-    else { unsub = useStore.subscribe(st => { if (st.busy <= before) free() }); if (useStore.getState().busy <= before) free() }
+    // the work this press started: the promise the handler returned, or the guarded work it began without returning it
+    const work: Promise<unknown> = waits ? r as Promise<unknown> : guardedWork().last
+    const mine = ++pressSeq; lock.current = mine; setLocked(true)
+    // only this press's own release frees the button — a slow earlier press that settles late cannot free a later one. Never held past 20 s.
+    const free = () => { if (lock.current !== mine) return; lock.current = 0; clearTimeout(timer); if (alive.current) setLocked(false) }
+    const timer = setTimeout(free, 20000); work.then(free, free)
   } : undefined
   return <button type={type} className={`btn ${primary ? 'primary' : ''} ${sm ? 'sm' : ''} ${danger ? 'danger' : ''} ${block ? 'block' : ''}`} onClick={press} disabled={disabled} aria-disabled={locked || undefined} aria-busy={locked || undefined} title={title} aria-label={ariaLabel} data-autofocus={autoFocusHere ? '' : undefined}>{children}</button>
 }
