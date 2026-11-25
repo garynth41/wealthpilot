@@ -881,5 +881,18 @@ for (const W of [390, 1400]) {
   ok((await tp.locator('h2:has-text("Create account")').count()) === 1 && await tp.evaluate(() => !localStorage.getItem('wealthpilot.mode')), `${W}: someone in the demo can go on to create an account from the invitation`)
   ok(!errs.length, `${W}: no page errors on the tester pages ${errs.slice(0, 2).join(' | ')}`); await tp.close()
 }
+// 0.39.4: a release is stored whole when it installs, so the app opens offline straight after an update. (The app registers its service
+// worker only over https; here it is registered by hand on localhost, where browsers allow one.)
+{ const octx = await b.newContext(); const op = await octx.newPage(); const lost = []; op.on('requestfailed', r => lost.push(r.url().replace('http://localhost:4173/', '')))
+  await op.goto('http://localhost:4173/'); await op.evaluate(() => navigator.serviceWorker.register('./sw.js')); await op.evaluate(() => navigator.serviceWorker.ready)
+  const st = await op.evaluate(async () => { const list = await (await fetch('./asset-manifest.json')).json(); const name = (await caches.keys())[0]; const c = await caches.open(name)
+    const missing = []; for (const u of list) if (!(await c.match(new URL(u, location.href).href))) missing.push(u); return { n: list.length, missing, name } })
+  ok(st.n > 20 && !st.missing.length, `the build lists every file (${st.n}) and installing stores them all in ${st.name} ${st.missing.slice(0, 3).join(' ')}`)
+  await op.reload(); await op.waitForTimeout(600); lost.length = 0; await octx.setOffline(true); await op.reload().catch(() => {})
+  let up = true; try { await op.waitForSelector('text=Open the offline demo', { timeout: 8000 }) } catch { up = false }
+  ok(up && !lost.length, `with no connection the app still opens, and nothing it asks for is missing ${[...new Set(lost)].slice(0, 3).join(' ')}`)
+  if (up) { await op.click('text=Open the offline demo'); await op.waitForTimeout(900); await op.goto('http://localhost:4173/#/investments').catch(() => {}); let page2 = true; try { await op.waitForSelector('h1', { timeout: 8000 }) } catch { page2 = false }
+    ok(page2 && !lost.length, `and a page not opened before loads offline too ${[...new Set(lost)].slice(0, 3).join(' ')}`) }
+  await octx.close() }
 console.log('smoke fails', F); await b.close(); srv.close()
 process.exit(F ? 1 : 0)   // a failed check fails CI (before 0.25.0's follow-up it only printed the count)
