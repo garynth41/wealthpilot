@@ -31,6 +31,18 @@ const { data: hist } = await owner.from('balance_history').select('as_of, balanc
 ok(hist?.length === 1 && +hist[0].balance === 1234.5 && hist[0].source === 'book', 'every balance change is kept — one row per account per day (trigger)')
 ok(await refused(owner.from('balance_history').insert({ household_id: hh, account_id: acct.id, as_of: '2020-01-01', balance: 1, source: 'book' })), 'balance history cannot be written by hand')
 ok((await viewer.from('accounts').select('id').eq('household_id', hh)).data?.length === 1, 'the viewer can read the household')
+// 0.39.2 (migration 0026): a bill's due date is claimed once before its payment is recorded, on the database's clock
+{ const { data: bill } = await owner.from('recurring').insert({ household_id: hh, name: 'E2E bill', amount: 40 }).select('id').single()
+  const { data: occ } = await owner.from('bill_occurrences').insert({ household_id: hh, recurring_id: bill.id, due_date: '2026-12-01', amount: 40, status: 'due' }).select('id').single()
+  const c3 = await viewer.rpc('claim_bill_occurrence', { p_id: occ.id }); ok(!!c3.error || (c3.data || []).length === 0, 'a read-only viewer cannot claim a due date, even an unclaimed one')
+  const c1 = await owner.rpc('claim_bill_occurrence', { p_id: occ.id }); ok(!c1.error && Array.isArray(c1.data) && c1.data.length === 1 && !!c1.data[0].claimed_at, 'the owner still can: the first save claims the due date ' + (c1.error?.message || ''))
+  const c2 = await owner.rpc('claim_bill_occurrence', { p_id: occ.id }); ok(!c2.error && Array.isArray(c2.data) && c2.data.length === 0, 'a second save a moment later gets nothing')
+  await owner.from('bill_occurrences').update({ status: 'paid', claimed_at: null }).eq('id', occ.id)
+  const c4 = await owner.rpc('claim_bill_occurrence', { p_id: occ.id }); ok(!c4.error && c4.data.length === 0, 'a due date already paid cannot be claimed')
+  const { data: t1, error: te } = await owner.from('transactions').insert({ household_id: hh, date: '2026-01-03', kind: 'expense', amount: 5, account_id: acct.id, status: 'cleared', source: 'manual' }).select('id, unposted').single()
+  ok(!te && t1.unposted === false, 'a transaction starts with its posting counted ' + (te?.message || ''))
+  const { data: t2 } = await owner.from('transactions').update({ unposted: true }).eq('id', t1.id).select('unposted').single(); ok(t2?.unposted === true, 'and a merge can mark a hidden copy as given back')
+  await owner.from('transactions').delete().eq('id', t1.id); await owner.from('recurring').delete().eq('id', bill.id) }
 ok(await refused(viewer.from('transactions').insert({ household_id: hh, date: '2026-01-02', kind: 'expense', amount: 5, account_id: acct.id, status: 'cleared', source: 'manual' }).select('id')), 'a read-only viewer cannot add a transaction (RLS)')
 ok(await refused(viewer.from('accounts').update({ balance: 1 }).eq('id', acct.id).select('id')), 'a read-only viewer cannot change a balance (RLS)')
 ok(!!(await viewer.rpc('request_household_deletion', { p_household: hh, p_confirm: NAME })).error, 'only an owner can delete the household')

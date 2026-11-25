@@ -111,7 +111,7 @@ export const transactions: GuidePage = {
   glossary: [
     { term: 'Split transaction', def: 'One transaction divided into lines, each with its own category and amount. The lines add up to the transaction, and each counts against its own budget line.' },
     { term: 'Saved view', def: 'A named set of ledger filters — range, type, account and tag — kept as a button for everyone in the household.' },
-    { term: 'Merged duplicate', def: 'A second copy of a transaction merged into the copy that was kept. It is hidden from every total but not deleted, and Undo in the duplicates dialog restores it.' },
+    { term: 'Merged duplicate', def: 'A second copy of a transaction merged into the copy that was kept. It is hidden from every total but not deleted, and Undo in the duplicates dialog restores it. When both copies were typed in (or recorded from a bill) on an account with no bank balance, merging also puts back what the hidden copy took off that account\'s balance, and restoring it takes it off again. This applies to copies merged from version 0.39.2 on; restoring a copy merged earlier changes no balance.' },
     { term: 'Flagged for review', def: 'A transaction a payee rule tagged #review so someone checks it. It shows under Needs attention on the Dashboard until the flag is removed.' },
     { term: 'Transaction source', def: 'Where a transaction came from: typed by hand, captured from email, imported from the bank feed or a statement file, or logged from a bill.' },
   ],

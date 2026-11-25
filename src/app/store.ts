@@ -11,13 +11,13 @@ import { LS, APP_VERSION, cmpVer } from './config'
 import { canViewPath } from '../lib/access'
 import { planDedupe, unpairPatch, type DTxn } from '../lib/dedupe'
 import { paycheckOnFile } from '../lib/paySchedule'
-import { post } from '../lib/ledger'
+import { post, effects, type Delta } from '../lib/ledger'
 import { suggest } from '../lib/rules'
 import { arrivals } from '../lib/categorize'
 import { askSession } from '../lib/askSession'
 import { forecastSnapshot, needsSnapshot } from '../lib/forecastCheck'
 import { patchProblem, InputError, isInputError } from '../lib/validate'
-import type { Account, Transaction } from './data/types'
+import type { Account, BillOccurrence, Transaction } from './data/types'
 import { leaveOut, unpairForLeavingOut, everyAccount } from '../lib/leftOut'
 import { planAccountMerge, feedRemap } from '../lib/accountMerge'
 
@@ -74,6 +74,8 @@ interface State {
   logPaycheck: (row: Partial<Transaction>) => Promise<{ txn: Transaction; existing: boolean }>
   update: <C extends Collection>(coll: C, id: string, patch: Partial<RowOf<C>>) => Promise<RowOf<C>>
   remove: (coll: Collection, id: string) => Promise<void>
+  /** 0.39.2: claim a bill's due date before recording its payment — the row when the claim was taken, null when it is paid or being recorded elsewhere */
+  claimOccurrence: (id: string) => Promise<BillOccurrence | null>
   saveSettings: (patch: Partial<Settings>) => Promise<void>
   /** 0.25.1: one member's alert choices only (null = household default) — see Repo.saveMemberNotify */
   saveMemberNotify: (userId: string, patch: Partial<MemberNotify> | null) => Promise<void>
@@ -117,6 +119,19 @@ const inTurn = <T,>(fn: () => Promise<T>): Promise<T> => { const run = turn.then
 /** paycheck saves still running, per pay schedule (logPaycheck) */
 const paycheckSaves = new Map<string, Promise<{ txn: Transaction; existing: boolean }>>()
 let toastSeq = 0, unsub: (() => void) | null = null, refreshTimer: ReturnType<typeof setTimeout> | null = null
+
+// 0.39.2 — a merged copy gives its money back. Hiding a duplicate takes it out of every total, but the copy had already been posted to the
+// stored balance when it was entered, and nothing took that back. On an account with a bank balance behind it that does not last: the
+// next sync or statement sets the balance from the bank's figure. On an account with none, the stored balance is the only figure there
+// is, and it stayed one posting out for good. So: when both the kept row and the hidden copy were entered in the app (typed in, or
+// recorded from a bill — rows the app always posts; a bank-feed row never is, and a file or emailed row may not have been), and the merge
+// does not change what the kept row moves, the copy's posting comes back off every such account, and the copy is marked `unposted` so
+// that Restore puts exactly that back. A copy merged before this carries no mark, and restoring it changes no balance, as before.
+const enteredHere = (t: Transaction) => !t.external_id && (t.source === 'manual' || t.source === 'recurring')
+const MOVES = ['kind', 'amount', 'account_id', 'to_account_id', 'status'] as const
+const changesMoney = (was: Transaction, patch?: Partial<Transaction>) => !!patch && MOVES.some(k => k in patch && (patch[k] ?? null) !== (was[k] ?? null))
+/** What a row holds on stored balances that no bank figure will ever replace: its effects on accounts with no bank balance. */
+const unbankedEffects = (d: Data, t: Transaction): Delta[] => effects(d, t).filter(e => { const a = d.accounts.find(x => x.id === e.id); return !!a && a.bank_balance == null })
 
 // 0.39.1 — which guarded piece of work started last. A button reads the count before and after its handler runs: if it went up, the handler
 // started work, and `guardedWork().last` settles when exactly that work ends (never rejects). Kept outside the store so reading it re-renders nothing.
@@ -220,13 +235,27 @@ export const useStore = create<State>((set, get) => ({
     const patched = !!patch && Object.keys(patch).length > 0
     if (patched) { const k = await repo.update('transactions', keeper, patch!); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) }
     let done = 0
-    try { for (const id of dups) { const d = await repo.update('transactions', id, { duplicate_of: keeper }); done++; set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) } }
+    // 0.39.2: an account's stored balance moves by `delta`, read as it stands now
+    const bump = async (accountId: string, delta: number) => { const a = get().data.accounts.find(x => x.id === accountId); if (!a) return
+      const r = await repo.update('accounts', accountId, { balance: Math.round(((+a.balance || 0) + delta) * 100) / 100 }); set(s => ({ data: { ...s.data, accounts: s.data.accounts.map(x => x.id === accountId ? r : x) } })) }
+    try { for (const id of dups) {
+      const copy = get().data.transactions.find(t => t.id === id)
+      const give = was && copy && enteredHere(was) && enteredHere(copy) && !changesMoney(was, patch) ? unbankedEffects(get().data, copy) : []
+      // the copy's posting comes off first; if hiding the copy then fails, it goes back on, so the two rows are again two counted rows
+      for (const e of give) await bump(e.id, -e.delta)
+      let d: Transaction
+      try { d = await repo.update('transactions', id, give.length ? { duplicate_of: keeper, unposted: true } : { duplicate_of: keeper }) }
+      catch (e) { for (const g of give) { try { await bump(g.id, g.delta) } catch { /* the next load shows what the server holds */ } } throw e }
+      done++; set(s => ({ data: { ...s.data, transactions: s.data.transactions.filter(t => t.id !== id), duplicates: [...s.data.duplicates.filter(t => t.id !== id), d] } })) } }
     catch (e) { if (patched && was && !done) { try { const k = await repo.update('transactions', keeper, back as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper ? k : t) } })) } catch { /* the next load shows what the server holds */ } } throw e }
   },
   async restoreDuplicate(id) {
     const repo = need(get); const dup = get().data.duplicates.find(t => t.id === id); const keeper = dup?.duplicate_of ? get().data.transactions.find(t => t.id === dup.duplicate_of) : undefined
-    const r = await repo.update('transactions', id, { duplicate_of: null, dedupe_ok: true })
+    const r = await repo.update('transactions', id, dup?.unposted ? { duplicate_of: null, dedupe_ok: true, unposted: false } : { duplicate_of: null, dedupe_ok: true })
     set(s => ({ data: { ...s.data, duplicates: s.data.duplicates.filter(t => t.id !== id), transactions: [...s.data.transactions.filter(t => t.id !== id), r] } }))
+    // 0.39.2: a copy whose posting the merge took off the stored balance gets it back — on the accounts that still have no bank balance
+    if (dup?.unposted) for (const e of unbankedEffects(get().data, r)) { const a = get().data.accounts.find(x => x.id === e.id); if (!a) continue
+      const acc = await repo.update('accounts', a.id, { balance: Math.round(((+a.balance || 0) + e.delta) * 100) / 100 }); set(s => ({ data: { ...s.data, accounts: s.data.accounts.map(x => x.id === a.id ? acc : x) } })) }
     // the card or loan side of a paired payment (0.25.1): the kept checking or savings row goes back to the expense it arrived as
     const unpair = dup && keeper ? unpairPatch(keeper as unknown as DTxn, dup as unknown as DTxn) : null
     if (keeper && unpair) { const k = await repo.update('transactions', keeper.id, unpair as Partial<Transaction>); set(s => ({ data: { ...s.data, transactions: s.data.transactions.map(t => t.id === keeper.id ? k : t) } })) }
@@ -347,6 +376,7 @@ export const useStore = create<State>((set, get) => ({
     try { const r = await repo.update(coll, id, patch); put(r as unknown as { id: string }); return r }
     catch (e) { put(prev); throw e }
   },
+  async claimOccurrence(id) { const repo = need(get); const r = await repo.claimOccurrence(id); if (r) set(s => ({ data: { ...s.data, occurrences: s.data.occurrences.map(o => o.id === id ? r : o) } })); return r },
   async remove(coll, id) {
     const repo = need(get); const before = get().data
     set(s => ({ data: { ...s.data, [coll]: (s.data[coll] as unknown as Array<{ id: string }>).filter(x => x.id !== id) } }))

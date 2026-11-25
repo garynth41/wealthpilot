@@ -421,7 +421,7 @@ export const settings: GuidePage = {
         { term: 'Show near-matches for review', text: 'The same payee with an amount a little different (a tip, tax or a pending hold that settled) or the same amount up to ten days later (an order charged when it shipped). Never merged on their own; decide each in Transactions → Duplicates.' },
         { term: 'Check for duplicates now', text: 'Runs the engine over everything at once and says how many merged and how many are left to review.' },
       ],
-      tips: ['Nothing is deleted: a merged copy is hidden from every total and can be restored from Transactions → Duplicates, after which it is never merged again.', 'Every automatic merge is written to the change history (Settings → Members → history).', 'Typing a transaction that is already here warns before saving; Save again adds it anyway.'],
+      tips: ['Nothing is deleted: a merged copy is hidden from every total and can be restored from Transactions → Duplicates, after which it is never merged again.', 'Two typed copies of one entry each changed the account\'s balance when they were entered. On an account with no bank balance, merging them gives back what the hidden copy took; on an account with a bank balance, the bank\'s figure sets the balance at the next sync or statement.', 'Every automatic merge is written to the change history (Settings → Members → history).', 'Typing a transaction that is already here warns before saving; Save again adds it anyway.'],
     },
     {
       title: 'Backup',

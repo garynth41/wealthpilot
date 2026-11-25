@@ -71,32 +71,37 @@ function PayModal({ u, onDone }: { u: Upcoming; onDone: () => void }) {
   const { data, insert, update, remove, guarded, acctLabels, accts } = useData()
   const [date, setDate] = useState(today() < u.date ? today() : u.date); const [amt, setAmt] = useState(u.amount.toFixed(2)); const [from, setFrom] = useState(u.r.account_id || accts.find(a => a.kind === 'checking')?.id || '')
   const target = u.r.liability_account_id ? data.accounts.find(a => a.id === u.r.liability_account_id) : null
-  // One payment per due date (0.39.1). Two saves a second apart once wrote the same bill payment twice: each added a transaction and took the
-  // amount off the balance. Three things now stand in the way. This tab records one payment per due date at a time (`paying`). A due date
-  // already paid — as the store holds it now, not as it was when this form opened — is refused. And a due date with no row yet is claimed
-  // with a 'due' row before any money moves: the database allows one row per bill and due date, so a save from another tab or device at the
-  // same moment stops there. The row turns 'paid' only once the transaction exists, so a save that is cut short leaves the bill due, not
-  // paid with nothing behind it.
+  // One payment per due date (0.39.1, 0.39.2). Two saves a second apart once wrote the same bill payment twice: each added a transaction and
+  // took the amount off the balance. Now a due date is claimed before any money moves, and the claim is taken in one statement on the
+  // database's clock (claim_bill_occurrence, migration 0026): it is refused when the due date is already paid, or when another save — from
+  // this tab, another tab or another device — took it less than two minutes ago. A due date with no row yet gets one first ('due'), and the
+  // database allows one row per bill and due date. The row turns 'paid' as soon as the transaction exists and before the balance is
+  // posted, so a save cut short before the transaction leaves the bill due (its claim lapses by itself), and one cut short after it
+  // leaves the bill paid — never due with a payment already behind it. This tab also records one payment per due date at a time (`paying`).
   const save = () => { const a = parseNum(amt); if (!a || a <= 0) return
     return guarded(async () => { const kind: Transaction['kind'] = u.r.kind === 'income' ? 'income' : target ? 'transfer' : 'expense'
       const what = u.r.kind === 'income' ? 'recorded' : 'marked paid', key = `${u.r.id}|${u.date}`
+      const taken = () => new InputError(`${u.r.name} for ${fmtD(u.date)} is already ${what}, or is being ${what} somewhere else right now — reload to see it. Nothing was recorded a second time. If a save was just interrupted, try again in a couple of minutes`)
       if (paying.has(key)) throw new InputError(`${u.r.name} for ${fmtD(u.date)} is being ${what} — nothing was recorded a second time`)
       paying.add(key)
       try {
         const was = useStore.getState().data.occurrences.find(o => o.recurring_id === u.r.id && o.due_date === u.date) || null
         if (was && was.status === 'paid') throw new InputError(`${u.r.name} is already ${what} for ${fmtD(u.date)} — nothing was recorded a second time`)
-        let occ: BillOccurrence
-        if (was) occ = was
-        else try { occ = await insert('occurrences', { recurring_id: u.r.id, due_date: u.date, amount: a, status: 'due' }) }
-          catch (e) { if (/duplicate key|unique/i.test((e as Error)?.message || '')) throw new InputError(`${u.r.name} for ${fmtD(u.date)} is already ${what}, or is being ${what} somewhere else — reload to see it. Nothing was recorded a second time`); throw e }
+        let row: BillOccurrence
+        if (was) row = was
+        else try { row = await insert('occurrences', { recurring_id: u.r.id, due_date: u.date, amount: a, status: 'due' }) }
+          catch (e) { if (/duplicate key|unique/i.test((e as Error)?.message || '')) throw taken(); throw e }
+        const occ = await useStore.getState().claimOccurrence(row.id); if (!occ) throw taken()
         let tx: Transaction
         try { tx = await insert('transactions', { date, kind, amount: Math.round(a * 100) / 100, account_id: from || null, to_account_id: target ? target.id : null, category_id: u.r.category_id || null, payee: u.r.payee || u.r.name, memo: u.r.name, tags: [], status: 'cleared', source: 'recurring', recurring_id: u.r.id, exclude_from_budget: false }) }
-        catch (e) {   // no payment was recorded: take the claim away again (left behind, it only says the bill is due)
-          if (!was) try { await remove('occurrences', occ.id) } catch { /* the bill still shows as due */ }
+        catch (e) {   // no payment was recorded: let the due date go again (a row made only for this save is taken away)
+          try { if (was) await update('occurrences', occ.id, { claimed_at: null }); else await remove('occurrences', occ.id) } catch { /* the claim lapses by itself in two minutes */ }
           throw e }
+        // the due date is paid from the moment its transaction exists — written before anything else, so if a later step fails (the
+        // connection drops before the balance is posted) a retry is told it is already paid and cannot add a second transaction
+        await update('occurrences', occ.id, { status: 'paid', paid_on: date, amount: a, transaction_id: tx.id, claimed_at: null })
         await post(data, (id, p) => update('accounts', id, p), tx, 1, date)
         if (target && isLiability(target) && target.due_date && a >= (+target.minimum_payment || 0) - 0.005 && date <= addDays(target.due_date, 3)) await update('accounts', target.id, { last_paid_due: target.due_date })
-        await update('occurrences', occ.id, { status: 'paid', paid_on: date, amount: a, transaction_id: tx.id })
         await update('recurring', u.r.id, { last_paid_on: date, last_paid_amount: a, next_due: u.r.frequency === 'irregular' ? u.r.next_due : undefined as unknown as string })
         onDone()
       } finally { paying.delete(key) } }, `${fm2(a)} recorded`) }
