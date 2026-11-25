@@ -9,12 +9,21 @@ const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg', 
 // that cache. So right after every update the new cache held the new page and none of its files, and opening the app offline before the
 // next online load showed nothing. Now install reads asset-manifest.json (written by the build: every file under assets/) and stores each
 // one: a file an earlier release already holds under the same hashed name is copied across, the rest are fetched. If any of them cannot
-// be stored, install fails, the release in charge stays in charge with its cache untouched, and the browser tries again later.
+// be stored — or the list itself cannot be read — install fails, the release in charge stays in charge with its cache untouched, and the
+// browser tries again later.
 async function storeRelease() {
   const c = await caches.open(CACHE)
   await c.addAll(SHELL.map(u => new Request(u, { cache: 'no-cache' })))
   let files = []
-  try { const r = await fetch('./asset-manifest.json', { cache: 'no-cache' }); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) files = j.filter(u => typeof u === 'string' && /^\.\/assets\/[^?#]+$/.test(u)) } } catch { /* no list: files are stored as they are used, as before */ }
+  // Only a plain "not found" means this build has no list (files are then stored as they are used, as before). A request that fails, any
+  // other error, or an answer that is not a list fails the install — letting it through would store the shell alone and then delete the
+  // release before it, which is the very gap this closes.
+  const r = await fetch('./asset-manifest.json', { cache: 'no-cache' })
+  if (r.status !== 404) {
+    if (!r.ok) throw new Error('could not read asset-manifest.json (' + r.status + ')')
+    const j = await r.json(); if (!Array.isArray(j)) throw new Error('asset-manifest.json is not a list')
+    files = j.filter(u => typeof u === 'string' && /^\.\/assets\/[^?#]+$/.test(u))
+  }
   const one = async u => {
     const url = new URL(u, self.location).href; if (await c.match(url)) return
     const held = await caches.match(url); if (held && held.ok) { await c.put(url, held); return }
