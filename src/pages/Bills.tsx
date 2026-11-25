@@ -75,8 +75,9 @@ function PayModal({ u, onDone }: { u: Upcoming; onDone: () => void }) {
   // took the amount off the balance. Now a due date is claimed before any money moves, and the claim is taken in one statement on the
   // database's clock (claim_bill_occurrence, migration 0026): it is refused when the due date is already paid, or when another save — from
   // this tab, another tab or another device — took it less than two minutes ago. A due date with no row yet gets one first ('due'), and the
-  // database allows one row per bill and due date. The row turns 'paid' only once the transaction exists, so a save that is cut short
-  // leaves the bill due, and its claim lapses by itself. This tab also records one payment per due date at a time (`paying`).
+  // database allows one row per bill and due date. The row turns 'paid' as soon as the transaction exists and before the balance is
+  // posted, so a save cut short before the transaction leaves the bill due (its claim lapses by itself), and one cut short after it
+  // leaves the bill paid — never due with a payment already behind it. This tab also records one payment per due date at a time (`paying`).
   const save = () => { const a = parseNum(amt); if (!a || a <= 0) return
     return guarded(async () => { const kind: Transaction['kind'] = u.r.kind === 'income' ? 'income' : target ? 'transfer' : 'expense'
       const what = u.r.kind === 'income' ? 'recorded' : 'marked paid', key = `${u.r.id}|${u.date}`
@@ -96,9 +97,11 @@ function PayModal({ u, onDone }: { u: Upcoming; onDone: () => void }) {
         catch (e) {   // no payment was recorded: let the due date go again (a row made only for this save is taken away)
           try { if (was) await update('occurrences', occ.id, { claimed_at: null }); else await remove('occurrences', occ.id) } catch { /* the claim lapses by itself in two minutes */ }
           throw e }
+        // the due date is paid from the moment its transaction exists — written before anything else, so if a later step fails (the
+        // connection drops before the balance is posted) a retry is told it is already paid and cannot add a second transaction
+        await update('occurrences', occ.id, { status: 'paid', paid_on: date, amount: a, transaction_id: tx.id, claimed_at: null })
         await post(data, (id, p) => update('accounts', id, p), tx, 1, date)
         if (target && isLiability(target) && target.due_date && a >= (+target.minimum_payment || 0) - 0.005 && date <= addDays(target.due_date, 3)) await update('accounts', target.id, { last_paid_due: target.due_date })
-        await update('occurrences', occ.id, { status: 'paid', paid_on: date, amount: a, transaction_id: tx.id, claimed_at: null })
         await update('recurring', u.r.id, { last_paid_on: date, last_paid_amount: a, next_due: u.r.frequency === 'irregular' ? u.r.next_due : undefined as unknown as string })
         onDone()
       } finally { paying.delete(key) } }, `${fm2(a)} recorded`) }
